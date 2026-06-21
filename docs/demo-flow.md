@@ -1,16 +1,16 @@
 # Demo Flow
 
-This script outlines the steps for a successful hackathon demonstration of ZK-PayLink.
+This script outlines the steps for a successful hackathon demonstration of Atreus.
 
 ## 1. Creation Phase
 - **Actor**: Sender
 - **Action**: 
     1. Navigate to `/create`.
     2. Input amount: `100 XLM`.
-    3. Click "Create PayLink".
+    3. Click "Create Link".
 - **Visuals**:
     - Loader showing "Escrowing funds on Stellar...".
-    - Success screen with a shareable URL: `https://zk-paylink.io/claim#secret_xyz123`.
+    - Success screen with a shareable URL: `https://atreus.app/claim#secret_xyz123`.
 
 ## 2. Sharing Phase
 - **Action**: Sender copies the link and sends it to Recipient (e.g., via Telegram or QR Code).

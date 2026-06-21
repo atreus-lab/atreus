@@ -10,8 +10,8 @@ Onboarding new users to Web3 remains one of the biggest hurdles. Traditional pay
     - Privacy is limited; the link secret is often revealed on-chain during claiming.
     - Lack of robust, hardware-backed authentication for "guest" users.
 
-## The ZK-PayLink Approach
-ZK-PayLink solves these problems by combining **Link-based Payments** with **Zero-Knowledge Proofs** and **Passkeys**:
+## The Atreus Approach
+Atreus solves these problems by combining **Link-based Payments** with **Zero-Knowledge Proofs** and **Passkeys**:
 
 - **Onboarding-Free**: Anyone with a browser can claim funds. No wallet download required initially.
 - **Privacy-Preserving**: By using ZK proofs, the specific link being claimed can be obscured, and the secret is never revealed in plain text on the blockchain.

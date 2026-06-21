@@ -1,7 +1,7 @@
-# System Architecture: ZK-PayLink
+# System Architecture: Atreus
 
 ## High-Level Architecture
-ZK-PayLink consists of three main layers: the Frontend (Prover), the Blockchain (Escrow & Verifier), and the ZK-Circuits (Logic).
+Atreus consists of three main layers: the Frontend (Prover), the Blockchain (Escrow & Verifier), and the ZK-Circuits (Logic).
 
 ```mermaid
 graph TD
@@ -12,7 +12,7 @@ graph TD
     end
 
     subgraph "Blockchain Layer (Soroban)"
-        F[PayLink Contract]
+        F[Escrow Contract]
         G[Verifier Contract]
         H[Token Contract]
     end
@@ -36,11 +36,11 @@ graph TD
 4.  **Frontend** generates a **ZK Proof**:
     - **Private Input**: `secret`
     - **Public Inputs**: `link_hash`, `recipient_address`, `nullifier`
-5.  **Frontend** calls the `claim_link` function on the **PayLink Contract**.
-6.  **PayLink Contract** forwards the proof to the **Verifier Contract**.
+5.  **Frontend** calls the `claim_link` function on the **Escrow Contract**.
+6.  **Escrow Contract** forwards the proof to the **Verifier Contract**.
 7.  **Verifier Contract** performs the math to ensure `hash(secret) == link_hash` and the proof is valid.
-8.  **PayLink Contract** checks if the `nullifier` has been used (double-claim prevention).
-9.  **PayLink Contract** triggers the `Token Contract` to transfer funds to the `recipient_address`.
+8.  **Escrow Contract** checks if the `nullifier` has been used (double-claim prevention).
+9.  **Escrow Contract** triggers the `Token Contract` to transfer funds to the `recipient_address`.
 
 ## Component Interaction
 - **Stellar SDK**: Used for building and signing transactions (XLM/Assets).

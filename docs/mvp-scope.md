@@ -1,9 +1,9 @@
-# MVP Scope: ZK-PayLink (Hackathon)
+# MVP Scope: Atreus (Hackathon)
 
 ## MUST BUILD (Core Requirements)
-1.  **Create PayLink**: A simple UI for senders to input amount/asset and generate a secure link.
-2.  **Fund PayLink**: Integration with Stellar/Soroban to escrow funds in a smart contract.
-3.  **Claim PayLink**: A dedicated landing page for recipients to claim funds using the secret embedded in the link.
+1.  **Create Link**: A simple UI for senders to input amount/asset and generate a secure link.
+2.  **Fund Link**: Integration with Stellar/Soroban to escrow funds in a smart contract.
+3.  **Claim Link**: A dedicated landing page for recipients to claim funds using the secret embedded in the link.
 4.  **Passkey Integration**: Use WebAuthn for the claim process to ensure only the link holder can authorize the transfer.
 5.  **Noir Proof Generation**: Client-side generation of a ZK proof that proves knowledge of the link secret without revealing it.
 6.  **Soroban Verification**: A contract that verifies the Noir proof on-chain before releasing funds.

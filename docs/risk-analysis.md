@@ -1,4 +1,4 @@
-# Risk Analysis: ZK-PayLink
+# Risk Analysis: Atreus
 
 ## Technical Risks
 
@@ -18,7 +18,7 @@
 ## UX Risks
 - **Complexity Perception**: Users might be intimidated by "Zero-Knowledge" and "Passkeys".
   - *Mitigation*: Abstract all terminology; use "Magic Links" and "FaceID/TouchID" instead of "ZK" and "WebAuthn".
-- **Lost Secrets**: If a user loses their PayLink, the funds are stuck.
+- **Lost Secrets**: If a user loses their link, the funds are stuck.
   - *Mitigation*: Senders can "Reclaim" funds after an expiration period (Stage 1 feature).
 
 ## Hackathon Risks

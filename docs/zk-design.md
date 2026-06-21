@@ -1,4 +1,4 @@
-# ZK Design: ZK-PayLink
+# ZK Design: Atreus
 
 ## Stage 1: Proof of Claim Authorization (Hackathon MVP)
 The core ZK requirement is to prove that a claimant knows the `secret` associated with a `link_hash` without revealing the `secret` on the public ledger.

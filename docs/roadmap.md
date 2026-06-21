@@ -1,6 +1,6 @@
-# Roadmap: ZK-PayLink
+# Roadmap: Atreus
 
-## Phase 1: Private PayLinks (Hackathon MVP)
+## Phase 1: Private Links (Hackathon MVP)
 - **Goal**: Functional proof-of-concept for private link claiming.
 - **Features**: ZK-Proof of knowledge for claim authorization, Passkey integration, Soroban escrow.
 - **Technical Requirements**: Noir circuits, Soroban verifier, Next.js frontend.
@@ -22,16 +22,16 @@
 - **Goal**: Enterprise-grade distribution.
 - **Features**: Bulk link generation, CSV imports, privacy-preserving reporting for employers.
 - **Technical Requirements**: Batch proof generation, server-side ZK-acceleration.
-- **Success Metrics**: First pilot with a small organization distributing wages via ZK-PayLinks.
+- **Success Metrics**: First pilot with a small organization distributing wages via Atreus Links.
 
 ## Phase 5: Private Treasury Distribution
 - **Goal**: DAO and Treasury integration.
 - **Features**: Multi-sig link creation, governance-gated distributions.
 - **Technical Requirements**: Soroban multi-sig patterns, bridge to popular treasury tools.
-- **Success Metrics**: A Stellar DAO uses ZK-PayLink for anonymous contributor rewards.
+- **Success Metrics**: A Stellar DAO uses Atreus for anonymous contributor rewards.
 
 ## Phase 6: Developer Platform
 - **Goal**: Ecosystem-wide adoption.
-- **Features**: ZK-PayLink SDK, API for link creation, Whitelabel frontend components.
+- **Features**: Atreus SDK, API for link creation, Whitelabel frontend components.
 - **Technical Requirements**: Documentation, stable TS/Rust SDKs.
-- **Success Metrics**: 5+ external projects integrating ZK-PayLink for their distribution needs.
+- **Success Metrics**: 5+ external projects integrating Atreus for their distribution needs.
