@@ -4,14 +4,18 @@
 
 **Atreus** enables friction-free asset distribution via secure, shareable links — eliminating traditional Web3 onboarding barriers while maintaining absolute transactional privacy through Zero-Knowledge cryptography and hardware-bound Passkeys.
 
-## Repositories
+## Structure
 
-| Repo | Description |
-|------|-------------|
-| [atreus-frontend](https://github.com/atreus-lab/atreus-frontend) | Next.js 15 web app for creating and claiming payment links |
-| [atreus-backend](https://github.com/atreus-lab/atreus-backend) | Express API service for link management |
-| [atreus-contracts](https://github.com/atreus-lab/atreus-contracts) | Soroban smart contracts (escrow + ZK verifier) |
-| **atreus/roadmap** (this repo) | Vision, architecture, milestones, and planning docs |
+```
+atreus/
+├── frontend/     → Next.js 15 web app (create/claim payment links)
+├── backend/      → Express API service (link management)
+├── contracts/    → Soroban smart contracts (escrow + ZK verifier)
+├── docs/         → Vision, architecture, milestones, planning
+└── README.md
+```
+
+All code repos are included as **git submodules** — see [`.gitmodules`](./.gitmodules).
 
 ## Docs
 
