@@ -1,7 +1,0 @@
-[package]
-name = "zk_paylink_circuits"
-type = "lib"
-authors = [""]
-compiler_version = ">=0.31.0"
-
-[dependencies]
