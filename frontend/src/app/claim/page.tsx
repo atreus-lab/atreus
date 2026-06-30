@@ -2,9 +2,11 @@
 
 import { useEffect, useState } from "react";
 
+type ClaimStatus = "idle" | "proving" | "claiming" | "success";
+
 export default function ClaimPage() {
   const [secret, setSecret] = useState("");
-  const [status, setStatus] = useState("idle"); // idle, proving, claiming, success
+  const [status, setStatus] = useState<ClaimStatus>("idle");
 
   useEffect(() => {
     const hash = window.location.hash.substring(1);
@@ -13,10 +15,8 @@ export default function ClaimPage() {
 
   const handleClaim = async () => {
     setStatus("proving");
-    // Simulate ZK Proof generation
     setTimeout(() => {
       setStatus("claiming");
-      // Simulate Soroban transaction
       setTimeout(() => {
         setStatus("success");
       }, 2000);
@@ -24,22 +24,22 @@ export default function ClaimPage() {
   };
 
   return (
-    <div className="max-w-md w-full bg-slate-900 p-8 rounded-2xl border border-slate-800 space-y-6 text-center">
-      <h2 className="text-2xl font-bold">Claim PayLink</h2>
-      
+    <div className="card text-centered">
+      <h2 className="card-title">Claim PayLink</h2>
+
       {secret ? (
-        <div className="space-y-6">
-          <p className="text-slate-400">
+        <div className="card-flush">
+          <p className="card-body">
             A payment has been found! Verify your identity to claim it.
           </p>
-          <div className="p-3 bg-slate-950 rounded border border-slate-800 font-mono text-xs overflow-hidden">
+          <div className="status-badge">
             Link Secret: {secret}
           </div>
-          
-          <button 
+
+          <button
             disabled={status !== "idle"}
             onClick={handleClaim}
-            className="w-full bg-blue-600 hover:bg-blue-700 disabled:bg-slate-700 p-4 rounded-lg font-bold transition flex items-center justify-center gap-2"
+            className="btn-claim"
           >
             {status === "idle" && "Claim with Passkey"}
             {status === "proving" && "Generating ZK Proof..."}
@@ -48,12 +48,12 @@ export default function ClaimPage() {
           </button>
         </div>
       ) : (
-        <p className="text-red-400">No secret found in URL. Please use a valid PayLink.</p>
+        <p className="status-error">No secret found in URL. Please use a valid PayLink.</p>
       )}
 
       {status === "success" && (
-        <div className="mt-4 text-green-400 animate-bounce">
-          🎉 Funds have been transferred to your wallet!
+        <div className="status-success">
+          Funds have been transferred to your wallet!
         </div>
       )}
     </div>

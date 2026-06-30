@@ -2,12 +2,182 @@
 @tailwind components;
 @tailwind utilities;
 
-:root {
-  --background: #020617;
-  --foreground: #f8fafc;
+@layer base {
+  :root {
+    --background-primary: #020617;
+    --background-card: #0f172a;
+    --background-elevated: #1e293b;
+    --foreground-primary: #f8fafc;
+    --foreground-secondary: #94a3b8;
+    --accent-primary: #3b82f6;
+    --accent-hover: #2563eb;
+    --border-default: #1e293b;
+    --border-subtle: #0f172a;
+    --success: #22c55e;
+    --error: #f87171;
+  }
+
+  body {
+    background: var(--background-primary);
+    color: var(--foreground-primary);
+    font-family: var(--font-inter), -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+
+  h1, h2, h3, h4, h5, h6 {
+    font-family: var(--font-manrope), -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    line-height: 1.2;
+  }
+
+  * {
+    border-color: var(--border-default);
+  }
 }
 
-body {
-  background: var(--background);
-  color: var(--foreground);
+@layer components {
+  .page {
+    @apply min-h-screen flex flex-col items-center justify-center p-8;
+  }
+
+  .page-content {
+    @apply max-w-2xl text-center space-y-6;
+  }
+
+  .page-title {
+    font-family: var(--font-manrope), -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    @apply text-6xl font-bold tracking-tight;
+  }
+
+  .page-subtitle {
+    @apply text-xl;
+    color: var(--foreground-secondary);
+  }
+
+  .card {
+    @apply w-full p-8 rounded-2xl border space-y-6 max-w-md;
+    background: var(--background-card);
+    border-color: var(--border-default);
+  }
+
+  .card-flush {
+    @apply space-y-2;
+  }
+
+  .card-title {
+    font-family: var(--font-manrope), -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    @apply text-2xl font-bold;
+  }
+
+  .card-body {
+    @apply text-base;
+    color: var(--foreground-secondary);
+  }
+
+  .btn-primary {
+    @apply w-full p-4 rounded-lg font-bold transition;
+    background: var(--accent-primary);
+  }
+
+  .btn-primary:hover {
+    background: var(--accent-hover);
+  }
+
+  .btn-primary:disabled {
+    background: var(--background-elevated);
+  }
+
+  .btn-secondary {
+    @apply px-6 py-3 rounded-lg font-semibold transition;
+    background: var(--background-elevated);
+    color: var(--foreground-primary);
+  }
+
+  .btn-secondary:hover {
+    opacity: 0.9;
+  }
+
+  .btn-ghost {
+    @apply px-6 py-3 rounded-lg font-semibold transition;
+    background: var(--accent-primary);
+  }
+
+  .btn-ghost:hover {
+    background: var(--accent-hover);
+  }
+
+  .input {
+    @apply w-full p-3 rounded-lg outline-none border;
+    background: var(--background-primary);
+    border-color: var(--background-elevated);
+  }
+
+  .input:focus {
+    border-color: var(--accent-primary);
+    box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.3);
+  }
+
+  .input-label {
+    @apply text-sm mb-2;
+    color: var(--foreground-secondary);
+  }
+
+  .link-primary {
+    color: var(--accent-primary);
+  }
+
+  .flex-center {
+    @apply flex items-center justify-center;
+  }
+
+  .flex-gap {
+    @apply flex gap-4;
+  }
+
+  .flex-gap-center {
+    @apply flex-gap justify-center;
+  }
+
+  .mono-text {
+    @apply text-xs break-all font-mono;
+    color: var(--accent-primary);
+  }
+
+  .status-badge {
+    @apply rounded font-mono text-xs overflow-hidden p-3;
+    background: var(--background-primary);
+    border: 1px solid var(--background-elevated);
+  }
+
+  .link-preview {
+    @apply mt-6 p-4 rounded-lg border border-dashed;
+    background: var(--background-primary);
+    border-color: var(--background-elevated);
+  }
+
+  .status-success {
+    @apply mt-4 animate-bounce;
+    color: var(--success);
+  }
+
+  .status-error {
+    color: var(--error);
+  }
+
+  .text-centered {
+    @apply text-center;
+  }
+
+  .btn-claim {
+    @apply w-full p-4 rounded-lg font-bold transition flex items-center justify-center gap-2;
+    background: var(--accent-primary);
+  }
+
+  .btn-claim:hover:not(:disabled) {
+    background: var(--accent-hover);
+  }
+
+  .btn-claim:disabled {
+    background: var(--background-elevated);
+  }
 }

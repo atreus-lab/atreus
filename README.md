@@ -39,13 +39,21 @@ pnpm dev:backend  # backend only (localhost:3001)
 | backend    | Express + TS      | Link management API, tx relay    |
 | contracts  | Rust (Soroban)    | Escrow + ZK verifier contracts   |
 
+## Repo History
+
+This monorepo was assembled from three separate repos using `git subtree`:
+- [`atreus-frontend`](https://github.com/atreus-lab/atreus-frontend) → `frontend/`
+- [`atreus-backend`](https://github.com/atreus-lab/atreus-backend) → `backend/`
+- [`atreus-contracts`](https://github.com/atreus-lab/atreus-contracts) → `contracts/`
+
+The original repos are archived. All development now happens here.
+
 ## Docs
 
 All documentation lives in [`docs/`](./docs):
 
 - [Vision](./docs/vision.md)
-- [Architecture](./docs/architecture.md) — *original pre-monorepo*
-- [ARCHITECTURE.md](./ARCHITECTURE.md) — *post-monorepo design*
+- [Architecture](./docs/architecture.md)
 - [Design System](./docs/design.md)
 - [Problem Statement](./docs/problem-statement.md)
 - [MVP Scope](./docs/mvp-scope.md)
