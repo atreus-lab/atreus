@@ -7,6 +7,6 @@ export const networkPassphrase = Networks.TESTNET;
 export const nativeAsset = Asset.native();
 
 export const createEscrowTx = async (creator: string, amount: string, hash: string) => {
-  // Logic to build and sign transaction for PayLinkContract.create_link
+  // Logic to build and sign transaction for AtreusContract.create_link
   console.log("Creating escrow for", amount, "XLM with hash", hash);
 };

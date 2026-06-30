@@ -25,7 +25,7 @@ app.get("/health", (_req, res) => {
 });
 
 app.listen(PORT, () => {
-  logger.info(`PayLink backend running on port ${PORT}`);
+  logger.info(`Atreus backend running on port ${PORT}`);
 });
 
 export default app;

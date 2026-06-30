@@ -59,7 +59,7 @@ Atreus is a self-custodial wallet that lets you send money with programmable rul
 │              Stellar (Soroban)                   │
 │                                                  │
 │  ┌──────────────────┐  ┌────────────────────┐   │
-│  │  PayLinkContract  │  │  VerifierContract   │   │
+│  │  AtreusContract  │  │  VerifierContract   │   │
 │  │                   │  │                     │   │
 │  │  • create_link()  │◄─┤  • verify_proof()   │   │
 │  │  • claim_link()   │  │                     │   │
@@ -78,7 +78,7 @@ Atreus is a self-custodial wallet that lets you send money with programmable rul
 ```
 
 **Contracts:**
-- **PayLinkContract** — Manages escrow: `create_link` deposits funds keyed by `link_hash`, `claim_link` releases to the proven recipient.
+- **AtreusContract** — Manages escrow: `create_link` deposits funds keyed by `link_hash`, `claim_link` releases to the proven recipient.
 - **VerifierContract** — Validates UltraPlonk ZK proofs. Returns true/false. Designed to work with Noir-generated verification keys.
 - **Token Contract** — Stellar Asset Contract (SAC) for non-native assets, or native XLM.
 - **Soroswap** — Automatic token swap when funds are deposited into a link (e.g., USDC → XLM).
@@ -199,7 +199,7 @@ Stellar Keypair (Ed25519)
 
 ## Smart Contract Design
 
-### PayLinkContract
+### AtreusContract
 
 ```rust
 pub struct LinkInfo {

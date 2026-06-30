@@ -5,8 +5,8 @@ use soroban_sdk::{testutils::Address as _, Env, BytesN};
 #[test]
 fn test_create_and_claim() {
     let env = Env::default();
-    let contract_id = env.register_contract(None, PayLinkContract);
-    let client = PayLinkContractClient::new(&env, &contract_id);
+    let contract_id = env.register_contract(None, AtreusContract);
+    let client = AtreusContractClient::new(&env, &contract_id);
 
     let creator = Address::generate(&env);
     let token = Address::generate(&env);

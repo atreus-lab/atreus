@@ -11,10 +11,10 @@ pub struct LinkInfo {
 }
 
 #[contract]
-pub struct PayLinkContract;
+pub struct AtreusContract;
 
 #[contractimpl]
-impl PayLinkContract {
+impl AtreusContract {
     /// Create a new payment link by escrowing funds.
     pub fn create_link(
         env: Env,

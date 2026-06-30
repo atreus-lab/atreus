@@ -10,7 +10,7 @@ export default function Home() {
       </p>
       <div className="flex-gap-center">
         <Link href="/create" className="btn-ghost">
-          Create PayLink
+          Create Link
         </Link>
         <Link href="/claim" className="btn-secondary">
           Claim Funds

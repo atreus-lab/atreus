@@ -2,7 +2,7 @@
 resolver = "2"
 
 members = [
-    "paylink-contract",
+    "atreus-contract",
     "verifier-contract",
 ]
 

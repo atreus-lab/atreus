@@ -25,7 +25,7 @@ export default function ClaimPage() {
 
   return (
     <div className="card text-centered">
-      <h2 className="card-title">Claim PayLink</h2>
+      <h2 className="card-title">Claim Link</h2>
 
       {secret ? (
         <div className="card-flush">
@@ -48,7 +48,7 @@ export default function ClaimPage() {
           </button>
         </div>
       ) : (
-        <p className="status-error">No secret found in URL. Please use a valid PayLink.</p>
+        <p className="status-error">No secret found in URL. Please use a valid link.</p>
       )}
 
       {status === "success" && (

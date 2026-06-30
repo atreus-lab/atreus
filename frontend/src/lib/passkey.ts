@@ -1,5 +1,5 @@
 /**
- * ZK-PayLink Passkey Helpers
+ * Atreus Passkey Helpers
  */
 
 export const registerPasskey = async (username: string) => {

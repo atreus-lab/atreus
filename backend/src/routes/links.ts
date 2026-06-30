@@ -47,6 +47,6 @@ linkRoutes.post("/:hash/claim", async (req: Request, res: Response) => {
     return;
   }
 
-  // TODO: Verify proof via VerifierContract, claim via PayLinkContract
+  // TODO: Verify proof via VerifierContract, claim via AtreusContract
   res.json({ success: true, hash, recipient });
 });

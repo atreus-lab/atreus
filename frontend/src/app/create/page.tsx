@@ -13,7 +13,7 @@ export default function CreatePage() {
 
   return (
     <div className="card">
-      <h2 className="card-title">Create PayLink</h2>
+      <h2 className="card-title">Create Link</h2>
       <div className="card-flush">
         <label className="input-label">Amount (XLM)</label>
         <input
