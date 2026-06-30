@@ -46,8 +46,6 @@ This monorepo was assembled from three separate repos using `git subtree`:
 - [`atreus-backend`](https://github.com/atreus-lab/atreus-backend) → `backend/`
 - [`atreus-contracts`](https://github.com/atreus-lab/atreus-contracts) → `contracts/`
 
-The original repos are archived. All development now happens here.
-
 ## Docs
 
 All documentation lives in [`docs/`](./docs):
