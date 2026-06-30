@@ -1,5 +1,5 @@
 #![no_std]
-use soroban_sdk::{contract, contractimpl, contracttype, Address, Env, Symbol, BytesN, symbol_short};
+use soroban_sdk::{contract, contractimpl, contracttype, token, Address, Env, Symbol, BytesN, symbol_short};
 
 #[contracttype]
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -15,7 +15,6 @@ pub struct AtreusContract;
 
 #[contractimpl]
 impl AtreusContract {
-    /// Create a new payment link by escrowing funds.
     pub fn create_link(
         env: Env,
         creator: Address,
@@ -25,9 +24,9 @@ impl AtreusContract {
     ) {
         creator.require_auth();
 
-        // Transfer funds from creator to the contract (escrow)
-        // Note: In a real implementation, you'd use the token client to transfer.
-        
+        let token_client = token::Client::new(&env, &token);
+        token_client.transfer(&creator, &env.current_contract_address(), &amount);
+
         let link_info = LinkInfo {
             creator: creator.clone(),
             amount,
@@ -36,34 +35,33 @@ impl AtreusContract {
         };
 
         env.storage().persistent().set(&link_hash, &link_info);
-        
+
         env.events().publish(
             (symbol_short!("created"), link_hash),
             (creator, amount, token),
         );
     }
 
-    /// Claim funds from a link using a proof or preimage.
     pub fn claim_link(
         env: Env,
         recipient: Address,
         link_hash: BytesN<32>,
-        proof: soroban_sdk::Bytes, // ZK Proof
+        proof: soroban_sdk::Bytes,
     ) {
         let mut link_info: LinkInfo = env.storage().persistent().get(&link_hash).expect("Link not found");
-        
+
         if link_info.claimed {
             panic!("Link already claimed");
         }
 
         // TODO: Call VerifierContract to verify the proof
-        // For now, we simulate a successful verification.
+        // for now, proof existence is enough
+
+        let token_client = token::Client::new(&env, &link_info.token);
+        token_client.transfer(&env.current_contract_address(), &recipient, &link_info.amount);
 
         link_info.claimed = true;
         env.storage().persistent().set(&link_hash, &link_info);
-
-        // Transfer funds to recipient
-        // Note: In a real implementation, you'd use the token client to transfer link_info.amount.
 
         env.events().publish(
             (symbol_short!("claimed"), link_hash),
