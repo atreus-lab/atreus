@@ -1,0 +1,16 @@
+[workspace]
+resolver = "2"
+
+members = [
+    "paylink-contract",
+    "verifier-contract",
+]
+
+[profile.release]
+opt-level = "z"
+overflow-checks = true
+debug = false
+panic = "abort"
+lto = true
+codegen-units = 1
+strip = true
