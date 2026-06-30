@@ -1,28 +1,52 @@
 # Atreus
 
-> A non-custodial, privacy-preserving payment infrastructure built on the Stellar network.
+> Google-login wallet with privacy-preserving payment links and programmable ZK rules on Stellar.
+> No seed phrase. No identity leak. No double-claim. No proof sniping.
 
-**Atreus** enables friction-free asset distribution via secure, shareable links — eliminating traditional Web3 onboarding barriers while maintaining absolute transactional privacy through Zero-Knowledge cryptography and hardware-bound Passkeys.
+**TL;DR** — Sign in with Google, get a Stellar wallet. Send money with a rule attached: *only wallets holding more than 50 XLM can claim this*. Recipient opens the link, proves the rule with a zero-knowledge proof without revealing their actual balance, gets funds. Asset auto-swaps via Soroswap on the way in.
 
-## Structure
+---
+
+## Monorepo Structure
 
 ```
 atreus/
 ├── frontend/     → Next.js 15 web app (create/claim payment links)
-├── backend/      → Express API service (link management)
+├── backend/      → Express API service (link management & tx relay)
 ├── contracts/    → Soroban smart contracts (escrow + ZK verifier)
-├── docs/         → Vision, architecture, milestones, planning
+├── docs/         → Vision, architecture, milestones, planning, design
+├── ARCHITECTURE.md
+├── package.json  → Root workspace config (pnpm)
 └── README.md
 ```
 
-All code repos are included as **git submodules** — see [`.gitmodules`](./.gitmodules).
+This is a **pnpm monorepo** — all packages live in this repo.
+
+## Getting Started
+
+```bash
+pnpm install
+pnpm dev          # runs frontend + backend in parallel
+pnpm dev:frontend # frontend only (localhost:3000)
+pnpm dev:backend  # backend only (localhost:3001)
+```
+
+## Packages
+
+| Package    | Tech              | Purpose                          |
+| ---------- | ----------------- | -------------------------------- |
+| frontend   | Next.js 15        | Wallet UI, link create/claim     |
+| backend    | Express + TS      | Link management API, tx relay    |
+| contracts  | Rust (Soroban)    | Escrow + ZK verifier contracts   |
 
 ## Docs
 
-All project documentation lives in the [`docs/`](./docs) directory:
+All documentation lives in [`docs/`](./docs):
 
 - [Vision](./docs/vision.md)
-- [Architecture](./docs/architecture.md)
+- [Architecture](./docs/architecture.md) — *original pre-monorepo*
+- [ARCHITECTURE.md](./ARCHITECTURE.md) — *post-monorepo design*
+- [Design System](./docs/design.md)
 - [Problem Statement](./docs/problem-statement.md)
 - [MVP Scope](./docs/mvp-scope.md)
 - [Roadmap](./docs/roadmap.md)
@@ -31,7 +55,3 @@ All project documentation lives in the [`docs/`](./docs) directory:
 - [Demo Flow](./docs/demo-flow.md)
 - [SCF Vision](./docs/scf-vision.md)
 - [Risk Analysis](./docs/risk-analysis.md)
-
-## License
-
-MIT

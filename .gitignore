@@ -1,0 +1,9 @@
+node_modules/
+.next/
+dist/
+target/
+Cargo.lock
+.env*
+.DS_Store
+*.log
+Thumbs.db
