@@ -4,9 +4,9 @@ use soroban_sdk::{contract, contractimpl, contracttype, token, Address, Env, Sym
 #[contracttype]
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct LinkInfo {
-    pub creator: Address,
+    pub sender: Address,
     pub amount: i128,
-    pub token: Address,
+    pub asset: Address,
     pub claimed: bool,
 }
 
@@ -17,28 +17,31 @@ pub struct AtreusContract;
 impl AtreusContract {
     pub fn create_link(
         env: Env,
-        creator: Address,
-        token: Address,
+        id: BytesN<32>,
+        policy_type: u32,
+        policy_params: soroban_sdk::Bytes,
         amount: i128,
-        link_hash: BytesN<32>,
+        asset: Address,
+        expiry: u64,
+        sender: Address,
     ) {
-        creator.require_auth();
+        sender.require_auth();
 
-        let token_client = token::Client::new(&env, &token);
-        token_client.transfer(&creator, &env.current_contract_address(), &amount);
+        let token_client = token::Client::new(&env, &asset);
+        token_client.transfer(&sender, &env.current_contract_address(), &amount);
 
         let link_info = LinkInfo {
-            creator: creator.clone(),
+            sender: sender.clone(),
             amount,
-            token: token.clone(),
+            asset: asset.clone(),
             claimed: false,
         };
 
-        env.storage().persistent().set(&link_hash, &link_info);
+        env.storage().persistent().set(&id, &link_info);
 
         env.events().publish(
-            (symbol_short!("created"), link_hash),
-            (creator, amount, token),
+            (symbol_short!("created"), id),
+            (sender, amount, asset),
         );
     }
 
