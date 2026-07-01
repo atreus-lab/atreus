@@ -60,7 +60,7 @@ impl AtreusContract {
         // TODO: Call VerifierContract to verify the proof
         // for now, proof existence is enough
 
-        let token_client = token::Client::new(&env, &link_info.token);
+        let token_client = token::Client::new(&env, &link_info.asset);
         token_client.transfer(&env.current_contract_address(), &recipient, &link_info.amount);
 
         link_info.claimed = true;
