@@ -29,7 +29,7 @@ export default function CreatePage() {
       
       // Convert hash back to 32 bytes for the contract
       const hashHex = hashBigInt.toString(16).padStart(64, '0');
-      const hashBytes = new Uint8Array(Buffer.from(hashHex, 'hex'));
+      const hashBytes = new Uint8Array(hashHex.match(/.{1,2}/g)!.map(b => parseInt(b, 16)));
 
       await createEscrowTx(creator, amount, hashBytes);
 
