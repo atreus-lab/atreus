@@ -3,9 +3,14 @@ const nextConfig = {
   webpack: (config) => {
     config.resolve.fallback = {
       ...config.resolve.fallback,
-      buffer: false,
+      buffer: require.resolve("buffer/"),
       crypto: false,
     };
+    config.plugins.push(
+      new (require("webpack").ProvidePlugin)({
+        Buffer: ["buffer", "Buffer"],
+      })
+    );
     return config;
   },
 };

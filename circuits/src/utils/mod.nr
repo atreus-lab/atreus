@@ -1,0 +1,1 @@
+// utils module - hash utilities can be added here

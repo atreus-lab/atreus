@@ -1,0 +1,6 @@
+[package]
+name = "hash_tool"
+type = "bin"
+authors = [""]
+
+[dependencies]
