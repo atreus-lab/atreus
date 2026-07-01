@@ -1,4 +1,6 @@
 import { mkdirSync, writeFileSync } from "fs";
+import { tmpdir } from "os";
+import { join } from "path";
 import { compile, createFileManager } from "@noir-lang/noir_wasm";
 import { Noir } from "@noir-lang/noir_js";
 import initACVM from "@noir-lang/acvm_js";
@@ -13,7 +15,7 @@ fn main(x: Field, y: Field) -> pub Field {
 `;
 
 async function runNoir() {
-  const dir = "C:/Users/sayan/atreus/frontend/noir-test/" + Math.random().toString(36).slice(2);
+  const dir = join(tmpdir(), "atreus-noir-test-" + Math.random().toString(36).slice(2));
   mkdirSync(dir, { recursive: true });
   mkdirSync(dir + "/src", { recursive: true });
   writeFileSync(dir + "/Nargo.toml", `[package]\nname = "test"\ntype = "bin"\nversion = "0.1.0"\n`);
