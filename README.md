@@ -11,11 +11,10 @@
 
 ```
 atreus/
-├── frontend/     → Next.js 15 web app (create/claim payment links)
+├── frontend/     → Next.js 15 web app (wallet + link create/claim)
 ├── backend/      → Express API service (link management & tx relay)
 ├── contracts/    → Soroban smart contracts (escrow + ZK verifier)
-├── docs/         → Vision, architecture, milestones, planning, design
-├── ARCHITECTURE.md
+├── docs/         → Architecture, design system
 ├── package.json  → Root workspace config (pnpm)
 └── README.md
 ```
@@ -39,25 +38,7 @@ pnpm dev:backend  # backend only (localhost:3001)
 | backend    | Express + TS      | Link management API, tx relay    |
 | contracts  | Rust (Soroban)    | Escrow + ZK verifier contracts   |
 
-## Repo History
-
-This monorepo was assembled from three separate repos using `git subtree`:
-- [`atreus-frontend`](https://github.com/atreus-lab/atreus-frontend) → `frontend/`
-- [`atreus-backend`](https://github.com/atreus-lab/atreus-backend) → `backend/`
-- [`atreus-contracts`](https://github.com/atreus-lab/atreus-contracts) → `contracts/`
-
 ## Docs
 
-All documentation lives in [`docs/`](./docs):
-
-- [Vision](./docs/vision.md)
-- [Architecture](./docs/architecture.md)
-- [Design System](./docs/design.md)
-- [Problem Statement](./docs/problem-statement.md)
-- [MVP Scope](./docs/mvp-scope.md)
-- [Roadmap](./docs/roadmap.md)
-- [Milestones](./docs/milestones.md)
-- [ZK Design](./docs/zk-design.md)
-- [Demo Flow](./docs/demo-flow.md)
-- [SCF Vision](./docs/scf-vision.md)
-- [Risk Analysis](./docs/risk-analysis.md)
+- [Architecture](./docs/architecture.md) — Single source of truth for the entire system
+- [Design System](./docs/design.md) — UI/UX design tokens, components, and conventions
