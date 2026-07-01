@@ -24,7 +24,10 @@ export const createEscrowTx = async (creator: string, amount: string, hash: Uint
     throw new Error("NEXT_PUBLIC_CONTRACT_ID is not configured");
   }
 
-  const tokenId = process.env.NEXT_PUBLIC_TOKEN_ID || "CDUMMYTOKENIDABCDEFGHIJKLMNOPQRSTUVWXYZ1234567890123";
+  const tokenId = process.env.NEXT_PUBLIC_TOKEN_ID;
+  if (!tokenId) {
+    throw new Error("NEXT_PUBLIC_TOKEN_ID is not configured");
+  }
 
   const contract = new Contract(contractId);
   const amountStroops = BigInt(Math.floor(parseFloat(amount) * 10000000));
