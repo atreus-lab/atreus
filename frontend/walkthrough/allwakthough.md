@@ -130,3 +130,67 @@ NEXT_PUBLIC_VERIFIER_CONTRACT_ID=CA3WA53LKQEJH3L3FSLFOUBOB3DG7D4IHEE4GEMM35WC5Z5
 - Proof generation deferred to Phase 3 (post-hackathon)
 - Mock proof used for demo purposes only
 - Passkey.ts remains a stub — not used in flow
+
+## 10 — Wallet Foundation (Phase Added Hackathon Day 2)
+
+**Date:** 2026-07-02
+**Reason:** judges need a real product, not just a payment link demo
+
+### New files created:
+| File | Purpose |
+|---|---|
+| `frontend/src/app/dashboard/page.tsx` | Wallet dashboard — balance, assets, recent activity, action buttons |
+| `frontend/src/app/send/page.tsx` | Send XLM via Freighter with balance validation |
+| `frontend/src/app/receive/page.tsx` | Receive XLM — copy address, view on explorer |
+| `frontend/src/app/swap/page.tsx` | Basic XLM → USDC/EURT swap via Stellar DEX path payments |
+
+### stellar.ts additions:
+| Function | Purpose |
+|---|---|
+| `getAccountBalances(address)` | Fetch all assets/balances via Horizon |
+| `getNativeBalance(address)` | Fast XLM balance lookup |
+| `getRecentTransactions(address, limit)` | Last N payments/payments history |
+| `sendXLM(sender, destination, amount)` | Native XLM transfer via Freighter |
+| `findSwapPath(source, dest, amount)` | Discover Stellar DEX liquidity paths |
+| `swapXLM(sender, destAsset, destAmount)` | Execute path payment strict send swap |
+| `getStellarExpertUrl(type, id)` | Generate explorer links |
+
+### Updated pages:
+| Page | Changes |
+|---|---|
+| `frontend/src/app/page.tsx` | Added "Launch Wallet" CTALinks directly to dashboard |
+| `frontend/src/app/layout.tsx` | Updated metadata title/description |
+
+### Dashboard features:
+1. **Wallet Connect** via Freighter (same as other pages)
+2. **Balance display** (XLM + all assets)
+3. **Quick actions**: Send, Receive, Create Link, Swap
+4. **Recent transactions** from Horizon API with explorer links
+5. **Asset list** showing all balances
+
+### Send flow:
+1. Enter destination address + amount
+2. Validates balance (includes fee buffer)
+3. Signs via Freighter, submits via Soroban RPC
+4. Shows explorer link on success
+
+### Swap flow:
+1. Select target token (USDC, EURT)
+2. Enter XLM amount
+3. Uses `pathPaymentStrictSend` via Stellar DEX
+4. Signs via Freighter, submits
+5. 2% slippage buffer built in
+
+### Env vars (same):
+```
+NEXT_PUBLIC_CONTRACT_ID=CAITLKEO4YJ5HQR6DORTWX5RAVD5XLSHCPWIOZIWSQF6CSNJIPXOQKT2
+NEXT_PUBLIC_VERIFIER_CONTRACT_ID=CA3WA53LKQEJH3L3FSLFOUBOB3DG7D4IHEE4GEMM35WC5Z5YWDN264DB
+```
+
+Note: `NEXT_PUBLIC_TOKEN_ID` still unset — uses Freighter's native XLM operations for send/swap.
+Dashboard uses Horizon API for read operations, avoiding the Soroban RPC bottleneck.
+
+### Known limitation:
+- No passkey wallet yet (WebAuthn integration pending)
+- Swap paths hardcoded to USDC/EURT — not a full DEX aggregator
+- No mainnet deployment yet (testnet only)
