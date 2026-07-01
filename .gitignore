@@ -8,7 +8,7 @@ target/
 .DS_Store
 *.log
 Thumbs.db
-test_snapshots/
 *.tsbuildinfo
+test_snapshots/
 *.wasm.gz
 .opencode/
