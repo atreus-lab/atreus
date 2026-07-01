@@ -5,17 +5,21 @@ import { Copy, Check, Loader2 } from "lucide-react";
 import { connectWallet, createEscrowTx } from "@/lib/stellar";
 import { poseidon1 } from "poseidon-lite";
 
+type Status = "idle" | "connecting" | "signing" | "confirming";
+
 export default function CreatePage() {
   const [amount, setAmount] = useState("");
   const [link, setLink] = useState("");
-  const [isCreating, setIsCreating] = useState(false);
+  const [status, setStatus] = useState<Status>("idle");
   const [error, setError] = useState("");
   const [copied, setCopied] = useState(false);
 
+  const isCreating = status !== "idle";
+
   const handleCreate = async () => {
     try {
-      setIsCreating(true);
       setError("");
+      setStatus("connecting");
 
       const creator = await connectWallet();
 
@@ -26,11 +30,15 @@ export default function CreatePage() {
       // Hash the secret using Poseidon
       const secretBigInt = BigInt('0x' + secretHex);
       const hashBigInt = poseidon1([secretBigInt]);
-      
+
       // Convert hash back to 32 bytes for the contract
       const hashHex = hashBigInt.toString(16).padStart(64, '0');
       const hashBytes = new Uint8Array(Buffer.from(hashHex, 'hex'));
 
+      setStatus("signing");
+      // Note: createEscrowTx internally submits AND waits for on-chain confirmation,
+      // so this awaits through both the "signing" and "confirming" phases.
+      setStatus("confirming");
       await createEscrowTx(creator, amount, hashBytes);
 
       const url = new URL(window.location.origin);
@@ -41,14 +49,25 @@ export default function CreatePage() {
       console.error(err);
       setError(err.message || "Failed to create link");
     } finally {
-      setIsCreating(false);
+      setStatus("idle");
     }
   };
 
-  const copyToClipboard = () => {
-    navigator.clipboard.writeText(link);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
+  const copyToClipboard = async () => {
+    try {
+      await navigator.clipboard.writeText(link);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } catch {
+      setError("Couldn't copy automatically — please copy the link manually.");
+    }
+  };
+
+  const buttonLabel: Record<Status, string> = {
+    idle: "Generate Link",
+    connecting: "Connecting wallet...",
+    signing: "Waiting for signature...",
+    confirming: "Confirming on Stellar...",
   };
 
   return (
@@ -65,20 +84,20 @@ export default function CreatePage() {
           disabled={isCreating}
         />
       </div>
-      
+
       {error && (
         <div className="text-red-500 text-sm mt-2">{error}</div>
       )}
 
-      <button 
-        onClick={handleCreate} 
+      <button
+        onClick={handleCreate}
         className="btn-primary flex items-center justify-center gap-2 w-full mt-4"
         disabled={isCreating || !amount || parseFloat(amount) <= 0}
       >
         {isCreating ? (
           <>
             <Loader2 className="w-4 h-4 animate-spin" />
-            Generating...
+            {buttonLabel[status]}
           </>
         ) : (
           "Generate Link"
@@ -89,13 +108,13 @@ export default function CreatePage() {
         <div className="link-preview mt-4 p-4 bg-gray-50 rounded-lg border border-gray-100">
           <p className="input-label mb-2">Share this link:</p>
           <div className="flex items-center gap-2">
-            <input 
-              type="text" 
-              readOnly 
-              value={link} 
+            <input
+              type="text"
+              readOnly
+              value={link}
               className="input flex-1 bg-white text-sm"
             />
-            <button 
+            <button
               onClick={copyToClipboard}
               className="p-3 bg-gray-900 text-white rounded-xl hover:bg-gray-800 transition-colors"
               title="Copy to clipboard"
