@@ -2,7 +2,10 @@
 node_modules/
 .next/
 dist/
-.env*
+.env
+.env.local
+.env.development
+.env.production
 
 # OS
 .DS_Store

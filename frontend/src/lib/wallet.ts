@@ -117,29 +117,69 @@ export async function sendXLM(destination: string, amount: string): Promise<stri
   return result.hash;
 }
 
-export async function swapXLM(destCode: string, destIssuer: string, destAmount: string): Promise<string> {
+export async function hasTrustline(address: string, assetCode: string, assetIssuer: string): Promise<boolean> {
+  try {
+    const account = await server.loadAccount(address);
+    return account.balances.some(
+      (b: any) => b.asset_code === assetCode && b.asset_issuer === assetIssuer
+    );
+  } catch {
+    return false;
+  }
+}
+
+export async function addTrustline(assetCode: string, assetIssuer: string): Promise<string> {
   const kp = getKeypair();
   const source = kp.publicKey();
   const account = await server.loadAccount(source);
-  const xlmAmount = (parseFloat(destAmount) * 1.02).toFixed(7);
 
   const tx = new TransactionBuilder(account, {
     fee: BASE_FEE,
     networkPassphrase,
   })
-    .addOperation(Operation.pathPaymentStrictSend({
-      sendAsset: Asset.native(),
-      sendAmount: xlmAmount,
-      destination: source,
-      destAsset: new Asset(destCode, destIssuer),
-      destMin: destAmount,
-      path: [],
+    .addOperation(Operation.changeTrust({
+      asset: new Asset(assetCode, assetIssuer),
     }))
     .setTimeout(30)
     .build();
 
   tx.sign(kp);
   const result = await rpcServer.sendTransaction(tx as any);
+  if (result.status === "ERROR") throw new Error("Failed to add asset");
+  return result.hash;
+}
+
+export async function swapXLM(destCode: string, destIssuer: string, destAmount: string): Promise<string> {
+  const kp = getKeypair();
+  const source = kp.publicKey();
+  const account = await server.loadAccount(source);
+  const xlmAmount = (parseFloat(destAmount) * 1.02).toFixed(7);
+
+  const hasTrust = await hasTrustline(source, destCode, destIssuer);
+
+  const tx = new TransactionBuilder(account, {
+    fee: BASE_FEE,
+    networkPassphrase,
+  });
+
+  if (!hasTrust) {
+    tx.addOperation(Operation.changeTrust({
+      asset: new Asset(destCode, destIssuer),
+    }));
+  }
+
+  tx.addOperation(Operation.pathPaymentStrictSend({
+    sendAsset: Asset.native(),
+    sendAmount: xlmAmount,
+    destination: source,
+    destAsset: new Asset(destCode, destIssuer),
+    destMin: destAmount,
+    path: [],
+  }));
+
+  const builtTx = tx.setTimeout(30).build();
+  builtTx.sign(kp);
+  const result = await rpcServer.sendTransaction(builtTx as any);
   if (result.status === "ERROR") throw new Error("Swap failed");
   return result.hash;
 }

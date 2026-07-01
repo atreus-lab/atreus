@@ -26,30 +26,30 @@ export default function ReceivePage() {
 
   return (
     <div className="page">
-      <div className="w-full max-w-md space-y-6">
-        <Link href="/dashboard" className="flex items-center gap-2 text-sm text-[var(--foreground-secondary)] hover:text-[var(--foreground-primary)] transition">
-          <ArrowLeft className="w-4 h-4" /> Back to Wallet
+      <div className="content-area inner-space">
+        <Link href="/dashboard" className="back-link">
+          <ArrowLeft className="icon-sm" /> Back to Wallet
         </Link>
 
         <h1 className="card-title">Receive XLM</h1>
 
         {loading ? (
-          <div className="card text-centered"><Loader2 className="w-6 h-6 animate-spin mx-auto" /></div>
+          <div className="card text-centered"><Loader2 className="icon-md icon-spin" /></div>
         ) : !address ? (
-          <div className="card text-centered">
+          <div className="card text-centered inner-space">
             <p className="card-body">No wallet found.</p>
-            <Link href="/wallet" className="btn-primary mt-4 inline-block">Create Wallet</Link>
+            <Link href="/wallet" className="btn-primary inline-link">Create Wallet</Link>
           </div>
         ) : (
-          <div className="card space-y-6">
+          <div className="card inner-space">
             <p className="card-body">Share your Stellar address to receive funds:</p>
             <div className="status-badge">
-              <p className="text-xs break-all font-mono">{address}</p>
+              <p className="mono-text">{address}</p>
             </div>
-            <button onClick={copyAddress} className="btn-primary flex items-center justify-center gap-2">
-              {copied ? <><Check className="w-4 h-4" /> Copied!</> : <><Copy className="w-4 h-4" /> Copy Address</>}
+            <button onClick={copyAddress} className="btn-primary flex-center-row">
+              {copied ? <><Check className="icon-sm" /> Copied!</> : <><Copy className="icon-sm" /> Copy Address</>}
             </button>
-            <a href={getExplorerUrl("account", address)} target="_blank" rel="noopener noreferrer" className="flex items-center justify-center gap-2 text-sm text-[var(--foreground-secondary)] hover:text-[var(--foreground-primary)]">
+            <a href={getExplorerUrl("account", address)} target="_blank" rel="noopener noreferrer" className="link-primary flex-center-row">
               View on Stellar Expert
             </a>
           </div>

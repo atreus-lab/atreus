@@ -7,8 +7,8 @@ import { loadWallet, swapXLM, getBalance, getExplorerUrl } from "@/lib/wallet";
 import { Loader2, ArrowLeft, ExternalLink } from "lucide-react";
 
 const TOKENS = [
-  { code: "USDC", issuer: "GBBD47IF6LWK7P7MDEVSCWR7DPUWV3NY3DTQEVFL4NOZ4RYD6UJPAF3K" },
-  { code: "EURT", issuer: "GAP5LETOV6YIE62YAM56STDANPRDO7ZFDBGSNHJQIYGGKSMOZAHOOS2S" },
+  { code: "USDC", issuer: "GA2BYV7QJ75ZAZXQBEDX5CAYXIRMXELJYRK5O6IHF2RLCDKVQU2ZSKBU" },
+  { code: "EURT", issuer: "GBLETQF7AAB2DPWP3LU6DYXYF3CZX7RVH3PB6IHQWECTOKZL7EENGO2U" },
 ];
 
 export default function SwapPage() {
@@ -42,28 +42,30 @@ export default function SwapPage() {
 
   return (
     <div className="page">
-      <div className="w-full max-w-md space-y-6">
-        <Link href="/dashboard" className="flex items-center gap-2 text-sm text-[var(--foreground-secondary)] hover:text-[var(--foreground-primary)] transition">
-          <ArrowLeft className="w-4 h-4" /> Back to Wallet
+      <div className="content-area inner-space">
+        <Link href="/dashboard" className="back-link">
+          <ArrowLeft className="icon-sm" /> Back to Wallet
         </Link>
 
         <h1 className="card-title">Swap XLM</h1>
 
         {status === "success" ? (
-          <div className="card text-centered space-y-4">
-            <div className="text-[var(--success)] text-lg font-bold">Swapped!</div>
-            <p className="text-sm text-[var(--foreground-secondary)]">XLM to {token.code}</p>
-            <a href={getExplorerUrl("tx", txHash)} target="_blank" rel="noopener noreferrer" className="btn-secondary inline-flex items-center gap-2">
-              View on Explorer <ExternalLink className="w-4 h-4" />
+          <div className="card text-centered inner-space">
+            <p className="success-banner">Swapped!</p>
+            <p className="detail-text">XLM to {token.code}</p>
+            <a href={getExplorerUrl("tx", txHash)} target="_blank" rel="noopener noreferrer" className="btn-secondary flex-center-row">
+              View on Explorer <ExternalLink className="icon-sm" />
             </a>
-            <button onClick={() => router.push("/dashboard")} className="btn-primary mt-4">Back to Wallet</button>
+            <button onClick={() => router.push("/dashboard")} className="btn-primary">
+              Back to Wallet
+            </button>
           </div>
         ) : (
-          <div className="card space-y-4">
-            <div className="flex items-center justify-between p-4 rounded-lg bg-[var(--background-primary)]">
-              <span className="font-bold">XLM</span>
-              <ArrowLeft className="w-4 h-4 rotate-180 text-[var(--foreground-secondary)]" />
-              <select value={token.code} onChange={e => setToken(TOKENS.find(t => t.code === e.target.value)!)} className="bg-transparent font-bold outline-none">
+          <div className="card inner-space">
+            <div className="swap-pair">
+              <span className="card-title">XLM</span>
+              <ArrowLeft className="icon-sm swap-pair-arrow" />
+              <select value={token.code} onChange={e => setToken(TOKENS.find(t => t.code === e.target.value)!)} className="swap-select">
                 {TOKENS.map(t => <option key={t.code} value={t.code}>{t.code}</option>)}
               </select>
             </div>
@@ -73,12 +75,12 @@ export default function SwapPage() {
               <input value={amount} onChange={e => setAmount(e.target.value)} placeholder="0.0" type="number" step="0.01" className="input" />
             </div>
 
-            <p className="text-xs text-[var(--foreground-secondary)]">Swap via Stellar DEX. 2% slippage buffer.</p>
+            <p className="detail-text">Swap via Stellar DEX. 2% slippage buffer.</p>
 
-            {status === "error" && <div className="status-error text-sm">{errorMsg}</div>}
+            {status === "error" && <div className="status-error">{errorMsg}</div>}
 
-            <button onClick={handleSwap} disabled={status === "swapping"} className="btn-primary flex items-center justify-center gap-2">
-              {status === "swapping" ? <><Loader2 className="w-4 h-4 animate-spin" /> Swapping...</> : status === "error" ? "Try Again" : `Swap to ${token.code}`}
+            <button onClick={handleSwap} disabled={status === "swapping"} className="btn-primary flex-center-row">
+              {status === "swapping" ? <><Loader2 className="icon-sm icon-spin" /> Swapping...</> : `Swap to ${token.code}`}
             </button>
           </div>
         )}

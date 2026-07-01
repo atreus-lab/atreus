@@ -18,7 +18,6 @@ export default function CreatePage() {
 
       const creator = await connectWallet();
 
-      // Secret must be 32 bytes for BytesN<32>, hash it with SHA256 to get the link_hash
       const secretBytes = crypto.getRandomValues(new Uint8Array(32));
       const secretHex = Array.from(secretBytes).map(b => b.toString(16).padStart(2, '0')).join('');
 
@@ -62,40 +61,37 @@ export default function CreatePage() {
       </div>
       
       {error && (
-        <div className="text-red-500 text-sm mt-2">{error}</div>
+        <div className="status-error">{error}</div>
       )}
 
       <button 
         onClick={handleCreate} 
-        className="btn-primary flex items-center justify-center gap-2 w-full mt-4"
+        className="btn-primary flex-center-row"
         disabled={isCreating || !amount || parseFloat(amount) <= 0}
       >
         {isCreating ? (
-          <>
-            <Loader2 className="w-4 h-4 animate-spin" />
-            Generating...
-          </>
+          <><Loader2 className="icon-sm icon-spin" /> Generating...</>
         ) : (
           "Generate Link"
         )}
       </button>
 
       {link && (
-        <div className="link-preview mt-4 p-4 bg-gray-50 rounded-lg border border-gray-100">
-          <p className="input-label mb-2">Share this link:</p>
-          <div className="flex items-center gap-2">
+        <div className="link-preview">
+          <p className="input-label">Share this link:</p>
+          <div className="flex-row">
             <input 
               type="text" 
               readOnly 
               value={link} 
-              className="input flex-1 bg-white text-sm"
+              className="input"
             />
             <button 
               onClick={copyToClipboard}
-              className="p-3 bg-gray-900 text-white rounded-xl hover:bg-gray-800 transition-colors"
+              className="btn-secondary btn-icon-lg"
               title="Copy to clipboard"
             >
-              {copied ? <Check className="w-4 h-4" /> : <Copy className="w-4 h-4" />}
+              {copied ? <Check className="icon-sm" /> : <Copy className="icon-sm" />}
             </button>
           </div>
         </div>

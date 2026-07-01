@@ -46,17 +46,21 @@ secret = "42", recipient = "123"
 → nullifier = 0x0703a1b35910f85a0dbe265fcb79f0ff627b537b29fa711b13552226560eee68
 ```
 
-## 4 — MVP Status
+## 4 — Current Status
 
 **What works:**
 - Circuit compiles via Docker: `docker compose run --rm compile`
-- Tests pass via Docker: `docker compose run --rm test`
-- Witness generation via Docker: `docker compose run --rm execute`
+- Tests pass via Docker: `docker compose run --rm test` — 2/2 pass
+- Witness generation via Docker: `docker compose run --rm execute` → generates `target/secret.gz`
 - bb.js Pedersen matches Noir at hashIndex=0 (verified via `verify-pedersen.mjs`)
+- `nargo test` passes (circuit logic verified)
 
 **What's blocked:**
-- bb.js UltraHonk proof generation crashes on Windows Node 20 (`RuntimeError: unreachable` inside WASM)
+- bb.js UltraHonk proof generation crashes on ALL platforms (Windows + Docker/Linux) — native backend process crash, not a Windows-specific issue
+- Pedersen hash circuits are incompatible with current bb.js UltraHonk backend
 - No nargo Windows binary — all nargo commands via Docker
+
+**Architecture decision:** Proof generation deferred indefinitely. Mock 2144-byte proof used in frontend for demo. On-chain verification blocked until Soroban Protocol 25/26 BN254 precompiles.
 
 **Known issue:** `circuits/src/utils/mod.nr` declares `pub mod hash;` but `hash.nr` doesn't exist. Currently harmless (utils module not imported by main.nr) but needs fixing before use.
 
@@ -72,9 +76,11 @@ secret = "42", recipient = "123"
 | `execute` | `nargo execute --force` | Generate witness |
 | `prove` | `node scripts/prove-circuit.mjs` | Generate UltraHonk proof (crashes on Windows) |
 
-## Upgrade Path (Phase 2)
+## Upgrade Path (Phase 2/3)
 
-1. Generate UltraHonk proof in Docker/Linux (bb.js works there)
-2. Deploy VerifierContract with generated verification key
-3. Replace SHA-256 check in AtreusContract with `VerifierContract.verify_proof()`
-4. Circuit code stays the same — already uses Pedersen
+1. Wait for bb.js UltraHonk to support Pedersen hash circuits (or switch to SHA-256 circuit)
+2. Generate proof in Docker once bb.js is fixed
+3. Deploy VerifierContract with generated verification key
+4. Replace SHA-256 check in AtreusContract with `VerifierContract.verify_proof()`
+5. Circuit code stays the same — already uses Pedersen
+6. Wait for Soroban Protocol 25/26 BN254 precompiles for on-chain verification

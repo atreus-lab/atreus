@@ -8,10 +8,12 @@ export default function Home() {
         The easiest way to send and receive funds on Stellar.
         Secure, private, and no wallet required for the recipient.
       </p>
-      <div className="flex flex-col gap-4 items-center">
-        <Link href="/wallet" className="btn-primary text-center w-full max-w-xs">
-          Launch Wallet
-        </Link>
+      <div className="flex-col-center">
+        <div className="content-narrow">
+          <Link href="/wallet" className="btn-primary">
+            Launch Wallet
+          </Link>
+        </div>
         <div className="flex-gap-center">
           <Link href="/create" className="btn-ghost">
             Create Link

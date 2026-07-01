@@ -180,4 +180,157 @@
   .btn-claim:disabled {
     background: var(--background-elevated);
   }
+
+  .back-link {
+    @apply inline-flex items-center gap-1.5 text-sm;
+    color: var(--foreground-secondary);
+  }
+
+  .back-link:hover {
+    color: var(--foreground-primary);
+  }
+
+  .flex-row {
+    @apply flex items-center gap-3;
+  }
+
+  .flex-between {
+    @apply flex items-center justify-between;
+  }
+
+  .flex-center-row {
+    @apply flex items-center justify-center gap-2;
+  }
+
+  .action-grid {
+    @apply grid grid-cols-4 gap-3;
+  }
+
+  .action-item {
+    @apply flex flex-col items-center gap-2 p-4 rounded-xl transition;
+    background: var(--background-elevated);
+  }
+
+  .action-item:hover {
+    opacity: 0.8;
+  }
+
+  .action-item-icon {
+    @apply w-5 h-5;
+  }
+
+  .action-item-label {
+    @apply text-xs;
+    color: var(--foreground-secondary);
+  }
+
+  .balance-value {
+    @apply text-4xl font-bold;
+    font-family: ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, monospace;
+  }
+
+  .detail-text {
+    @apply text-xs;
+    color: var(--foreground-secondary);
+  }
+
+  .nav-row {
+    @apply flex gap-4 justify-center pt-4;
+  }
+
+  .success-banner {
+    @apply text-lg font-bold;
+    color: var(--success);
+  }
+
+  .tx-amount-sent {
+    color: var(--error);
+  }
+
+  .tx-amount-received {
+    color: var(--success);
+  }
+
+  .swap-pair {
+    @apply flex items-center justify-between p-4 rounded-lg;
+    background: var(--background-primary);
+  }
+
+  .swap-pair-arrow {
+    color: var(--foreground-secondary);
+  }
+
+  .swap-select {
+    @apply bg-transparent font-bold outline-none;
+  }
+
+  .icon-sm {
+    @apply w-4 h-4;
+  }
+
+  .icon-md {
+    @apply w-6 h-6;
+  }
+
+  .icon-lg {
+    @apply w-8 h-8;
+  }
+
+  .icon-spin {
+    @apply animate-spin;
+  }
+
+  .content-area {
+    @apply w-full max-w-md;
+  }
+
+  .content-wide {
+    @apply w-full max-w-xl;
+  }
+
+  .content-narrow {
+    @apply w-full max-w-xs;
+  }
+
+  .text-small {
+    font-size: 0.875rem;
+    line-height: 1.25rem;
+  }
+
+  .font-mono-text {
+    @apply font-mono;
+  }
+
+  .flex-col-center {
+    @apply flex flex-col items-center gap-4;
+  }
+
+  .inline-link {
+    @apply inline-block mt-4;
+  }
+
+  .inner-space {
+    @apply space-y-4;
+  }
+
+  .inner-space-sm {
+    @apply space-y-3;
+  }
+
+  .card-padding {
+    @apply py-3;
+  }
+
+  .divider {
+    @apply border-b last:border-0;
+    border-color: var(--border-default);
+  }
+
+  .btn-icon {
+    @apply p-2 flex items-center justify-center;
+  }
+
+  .btn-icon-lg {
+    @apply p-3 flex items-center justify-center;
+  }
 }

@@ -1,6 +1,31 @@
 # Frontend Walkthrough
 
-## 1 — Poseidon → SHA256 Pivot
+## 1 — Web-Based Wallet Architecture
+
+**Date:** 2026-07-02
+**MVP Strategy:** Full Stellar wallet with payment links, not just isolated link demo
+
+### Core Wallet Features:
+- **In-browser keypair generation** via `Keypair.random()` from `@stellar/stellar-sdk`
+- **localStorage persistence** — `atreus_wallet` key stores `{publicKey, secretKey}`
+- **Friendbot funding** — testnet XLM via `https://friendbot.stellar.org`
+- **No Freighter dependency** for wallet pages — direct keypair signing
+- **Freighter optional** for create/claim pages (backward compatible)
+
+### Pages:
+| Route | Purpose | Auth |
+|---|---|---|
+| `/` | Landing page | None |
+| `/wallet` | Create/manage wallet | localStorage |
+| `/dashboard` | Balance, assets, actions, tx history | localStorage |
+| `/send` | Send XLM | localStorage |
+| `/receive` | Copy address, explorer link | localStorage |
+| `/swap` | XLM → USDC/EURT via Stellar DEX | localStorage |
+| `/assets` | Manage trustlines (add USDC, EURT, custom) | localStorage |
+| `/create` | Create payment link (escrow) | Freighter |
+| `/claim` | Claim payment link (ZK proof + SHA-256 fallback) | Freighter |
+
+## 2 — Poseidon → SHA256 Pivot (Early Phase)
 
 **Problem:** `poseidon-lite` (JS) uses original Poseidon (circomlib parameters). Noir uses Poseidon2 (different round constants). Same inputs → different outputs → every proof fails.
 

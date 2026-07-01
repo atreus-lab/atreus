@@ -4,7 +4,7 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { loadWallet, sendXLM, getBalance, getExplorerUrl } from "@/lib/wallet";
-import { Loader2, ArrowLeft, ExternalLink } from "lucide-react";
+import { Loader2, ExternalLink, ArrowLeft } from "lucide-react";
 
 export default function SendPage() {
   const router = useRouter();
@@ -38,24 +38,26 @@ export default function SendPage() {
 
   return (
     <div className="page">
-      <div className="w-full max-w-md space-y-6">
-        <Link href="/dashboard" className="flex items-center gap-2 text-sm text-[var(--foreground-secondary)] hover:text-[var(--foreground-primary)] transition">
-          <ArrowLeft className="w-4 h-4" /> Back to Wallet
+      <div className="content-area inner-space">
+        <Link href="/dashboard" className="back-link">
+          <ArrowLeft className="icon-sm" /> Back to Wallet
         </Link>
 
         <h1 className="card-title">Send XLM</h1>
 
         {status === "success" ? (
-          <div className="card text-centered space-y-4">
-            <div className="text-[var(--success)] text-lg font-bold">Sent!</div>
-            <p className="text-sm text-[var(--foreground-secondary)]">{amount} XLM sent</p>
-            <a href={getExplorerUrl("tx", txHash)} target="_blank" rel="noopener noreferrer" className="btn-secondary inline-flex items-center gap-2">
-              View on Explorer <ExternalLink className="w-4 h-4" />
+          <div className="card text-centered inner-space">
+            <p className="success-banner">Sent!</p>
+            <p className="detail-text">{amount} XLM sent successfully</p>
+            <a href={getExplorerUrl("tx", txHash)} target="_blank" rel="noopener noreferrer" className="btn-secondary flex-center-row">
+              View on Explorer <ExternalLink className="icon-sm" />
             </a>
-            <button onClick={() => router.push("/dashboard")} className="btn-primary mt-4">Back to Wallet</button>
+            <button onClick={() => router.push("/dashboard")} className="btn-primary">
+              Back to Wallet
+            </button>
           </div>
         ) : (
-          <div className="card space-y-4">
+          <div className="card inner-space">
             <div>
               <label className="input-label">Destination Address</label>
               <input value={destination} onChange={e => setDestination(e.target.value)} placeholder="G..." className="input" />
@@ -64,9 +66,9 @@ export default function SendPage() {
               <label className="input-label">Amount (XLM)</label>
               <input value={amount} onChange={e => setAmount(e.target.value)} placeholder="0.0" type="number" step="0.0000001" className="input" />
             </div>
-            {status === "error" && <div className="status-error text-sm">{errorMsg}</div>}
-            <button onClick={handleSend} disabled={status === "sending"} className="btn-primary flex items-center justify-center gap-2">
-              {status === "sending" ? <><Loader2 className="w-4 h-4 animate-spin" /> Sending...</> : status === "error" ? "Try Again" : "Send"}
+            {status === "error" && <div className="status-error">{errorMsg}</div>}
+            <button onClick={handleSend} disabled={status === "sending"} className="btn-primary flex-center-row">
+              {status === "sending" ? <><Loader2 className="icon-sm icon-spin" /> Sending...</> : "Send"}
             </button>
           </div>
         )}
