@@ -1,9 +1,10 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { connectWallet, claimLinkTx } from "@/lib/stellar";
+import { connectWallet, claimLinkTx, submitProofTx } from "@/lib/stellar";
+import { MOCK_ULTRAHONK_PROOF, hexToBytes } from "@/lib/proof";
 
-type ClaimStatus = "idle" | "connecting" | "claiming" | "success" | "error";
+type ClaimStatus = "idle" | "connecting" | "submitting_proof" | "claiming" | "success" | "error";
 
 export default function ClaimPage() {
   const [secretHex, setSecretHex] = useState("");
@@ -30,6 +31,11 @@ export default function ClaimPage() {
         await crypto.subtle.digest("SHA-256", secretBytes)
       );
 
+      // Step 1: Submit ZK proof to VerifierContract
+      setStatus("submitting_proof");
+      await submitProofTx(recipient, hexToBytes(MOCK_ULTRAHONK_PROOF));
+
+      // Step 2: Claim funds from AtreusContract
       setStatus("claiming");
       await claimLinkTx(recipient, linkHash, secretBytes);
 
@@ -56,13 +62,14 @@ export default function ClaimPage() {
           )}
 
           <button
-            disabled={status === "claiming" || status === "connecting"}
+            disabled={status === "submitting_proof" || status === "claiming" || status === "connecting"}
             onClick={handleClaim}
             className="btn-claim"
           >
-            {status === "idle" && "Claim with Freighter"}
+            {status === "idle" && "Claim with ZK Proof"}
             {status === "connecting" && "Connecting Wallet..."}
-            {status === "claiming" && "Broadcasting to Stellar..."}
+            {status === "submitting_proof" && "Submitting ZK Proof..."}
+            {status === "claiming" && "Claiming Funds..."}
             {status === "success" && "Success!"}
             {status === "error" && "Try Again"}
           </button>

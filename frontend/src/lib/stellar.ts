@@ -112,3 +112,44 @@ export const claimLinkTx = async (recipient: string, linkHash: Uint8Array, secre
 
   return sendResult.hash;
 };
+
+export const submitProofTx = async (recipient: string, proofBytes: Uint8Array) => {
+  const contractId = process.env.NEXT_PUBLIC_VERIFIER_CONTRACT_ID;
+  if (!contractId) {
+    throw new Error("NEXT_PUBLIC_VERIFIER_CONTRACT_ID is not configured");
+  }
+
+  const contract = new Contract(contractId);
+
+  const op = contract.call(
+    "submit_proof",
+    new Address(recipient).toScVal(),
+    xdr.ScVal.scvBytes(Buffer.from(proofBytes)),
+  );
+
+  const account = await rpcServer.getAccount(recipient);
+
+  let tx = new TransactionBuilder(account, {
+    fee: "100000",
+    networkPassphrase,
+  })
+    .addOperation(op)
+    .setTimeout(120)
+    .build();
+
+  tx = await rpcServer.prepareTransaction(tx) as any;
+
+  const signedXdr = await signTransaction(tx.toXDR(), { networkPassphrase });
+  if (signedXdr.error) {
+    throw new Error(signedXdr.error);
+  }
+
+  const txToSubmit = TransactionBuilder.fromXDR(signedXdr.signedTxXdr as string, networkPassphrase);
+  const sendResult = await rpcServer.sendTransaction(txToSubmit as any);
+
+  if (sendResult.status === "ERROR") {
+    throw new Error(`Tx submission failed: ${(sendResult as any).errorResultXdr || (sendResult as any).errorResult}`);
+  }
+
+  return sendResult.hash;
+};
