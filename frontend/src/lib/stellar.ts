@@ -69,9 +69,10 @@ export const createEscrowTx = async (creator: string, amount: string, hash: Uint
     throw new Error("NEXT_PUBLIC_CONTRACT_ID is not configured");
   }
 
-  // Default to the native XLM Stellar Asset Contract rather than a placeholder,
-  // since amounts on this page are denominated in XLM.
-  const tokenId = process.env.NEXT_PUBLIC_TOKEN_ID || nativeAsset.contractId(networkPassphrase);
+  const tokenId = process.env.NEXT_PUBLIC_TOKEN_ID;
+  if (!tokenId) {
+    throw new Error("NEXT_PUBLIC_TOKEN_ID is not configured");
+  }
 
   const contract = new Contract(contractId);
   const amountStroops = xlmToStroops(amount);
@@ -79,12 +80,12 @@ export const createEscrowTx = async (creator: string, amount: string, hash: Uint
 
   const op = contract.call(
     "create_link",
-    xdr.ScVal.scvBytes(Buffer.from(hash)),
-    nativeToScVal(0, { type: "u32" }), // policy_type (e.g. 0 for Secret)
-    xdr.ScVal.scvBytes(Buffer.alloc(0)), // policy_params
-    nativeToScVal(amountStroops, { type: "i128" }),
+    xdr.ScVal.scvBytes(hash),
+    nativeToScVal(0, { type: 'u32' }),
+    xdr.ScVal.scvBytes(new Uint8Array(0)),
+    nativeToScVal(amountStroops, { type: 'i128' }),
     new Address(tokenId).toScVal(),
-    nativeToScVal(expiry, { type: "u64" }), // expiry
+    nativeToScVal(expiry, { type: 'u64' }),
     new Address(creator).toScVal()
   );
 
