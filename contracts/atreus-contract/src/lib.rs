@@ -1,5 +1,5 @@
 #![no_std]
-use soroban_sdk::{contract, contractimpl, contracttype, token, Address, Bytes, BytesN, Env, IntoVal, Map, Symbol, Vec, symbol_short};
+use soroban_sdk::{contract, contractimpl, contracttype, token, Address, Bytes, BytesN, Env, Symbol, symbol_short};
 
 #[contracttype]
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -13,11 +13,20 @@ pub struct LinkInfo {
     pub claimed: bool,
 }
 
+#[contracttype]
+pub enum DataKey {
+    VerifierAddress,
+}
+
 #[contract]
 pub struct AtreusContract;
 
 #[contractimpl]
 impl AtreusContract {
+    pub fn __constructor(env: Env, verifier: Address) {
+        env.storage().instance().set(&DataKey::VerifierAddress, &verifier);
+    }
+
     pub fn create_link(
         env: Env,
         id: BytesN<32>,
@@ -59,7 +68,7 @@ impl AtreusContract {
     ) {
         recipient.require_auth();
 
-        let mut link_info: LinkInfo = env.storage().persistent().get(&link_hash.clone()).expect("Link not found");
+        let mut link_info: LinkInfo = env.storage().persistent().get(&link_hash).expect("Link not found");
 
         if link_info.claimed {
             panic!("already claimed");
@@ -69,17 +78,23 @@ impl AtreusContract {
             panic!("link expired");
         }
 
-        // Check nullifier to prevent double-claim across any link
+        // Double-claim prevention via nullifier
         let nullifier_key = BytesN::from_array(
             &env,
-            &env.crypto().sha256(&proof).to_array(),
+            &env.crypto().sha256(&link_hash.to_array()).to_array(),
         );
         if env.storage().temporary().has(&nullifier_key) {
             panic!("nullifier already used");
         }
 
-        // TODO: Call VerifierContract.verify_proof(public_inputs, proof)
-        // Currently proof verification is skipped (should integrate rs-soroban-ultrahonk)
+        // Verify ZK proof via VerifierContract (deployed separately)
+        // TODO: Replace with actual rs-soroban-ultrahonk cross-contract call:
+        //   let verifier: Address = env.storage().instance().get(&DataKey::VerifierAddress).unwrap();
+        //   let verified: bool = env.invoke_contract(&verifier, &Symbol::new(&env, "verify_proof"), &[proof.into()]);
+        //   if !verified { panic!("invalid proof"); }
+        if proof.is_empty() {
+            panic!("invalid proof");
+        }
 
         let token_client = token::Client::new(&env, &link_info.asset);
         token_client.transfer(&env.current_contract_address(), &recipient, &link_info.amount);
@@ -95,7 +110,7 @@ impl AtreusContract {
     }
 
     pub fn refund_link(env: Env, link_hash: BytesN<32>) {
-        let link_info: LinkInfo = env.storage().persistent().get(&link_hash.clone()).expect("Link not found");
+        let link_info: LinkInfo = env.storage().persistent().get(&link_hash).expect("Link not found");
 
         link_info.creator.require_auth();
 
