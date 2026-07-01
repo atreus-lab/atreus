@@ -1,50 +1,70 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { connectWallet, claimLinkTx } from "@/lib/stellar";
 
-type ClaimStatus = "idle" | "proving" | "claiming" | "success";
+type ClaimStatus = "idle" | "connecting" | "claiming" | "success" | "error";
 
 export default function ClaimPage() {
-  const [secret, setSecret] = useState("");
+  const [secretHex, setSecretHex] = useState("");
   const [status, setStatus] = useState<ClaimStatus>("idle");
+  const [errorMsg, setErrorMsg] = useState("");
 
   useEffect(() => {
     const hash = window.location.hash.substring(1);
-    if (hash) setSecret(hash);
+    if (hash) setSecretHex(hash);
   }, []);
 
   const handleClaim = async () => {
-    setStatus("proving");
-    setTimeout(() => {
+    try {
+      setStatus("connecting");
+      setErrorMsg("");
+
+      const recipient = await connectWallet();
+
+      const secretBytes = new Uint8Array(
+        secretHex.match(/.{1,2}/g)!.map(b => parseInt(b, 16))
+      );
+
+      const linkHash = new Uint8Array(
+        await crypto.subtle.digest("SHA-256", secretBytes)
+      );
+
       setStatus("claiming");
-      setTimeout(() => {
-        setStatus("success");
-      }, 2000);
-    }, 2000);
+      await claimLinkTx(recipient, linkHash, secretBytes);
+
+      setStatus("success");
+    } catch (err: any) {
+      console.error(err);
+      setErrorMsg(err.message || "Claim failed");
+      setStatus("error");
+    }
   };
 
   return (
     <div className="card text-centered">
       <h2 className="card-title">Claim Link</h2>
 
-      {secret ? (
+      {secretHex ? (
         <div className="card-flush">
           <p className="card-body">
             A payment has been found! Verify your identity to claim it.
           </p>
-          <div className="status-badge">
-            Link Secret: {secret}
-          </div>
+
+          {status === "error" && (
+            <div className="status-error mb-4">{errorMsg}</div>
+          )}
 
           <button
-            disabled={status !== "idle"}
+            disabled={status === "claiming" || status === "connecting"}
             onClick={handleClaim}
             className="btn-claim"
           >
-            {status === "idle" && "Claim with Passkey"}
-            {status === "proving" && "Generating ZK Proof..."}
+            {status === "idle" && "Claim with Freighter"}
+            {status === "connecting" && "Connecting Wallet..."}
             {status === "claiming" && "Broadcasting to Stellar..."}
             {status === "success" && "Success!"}
+            {status === "error" && "Try Again"}
           </button>
         </div>
       ) : (

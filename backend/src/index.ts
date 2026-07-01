@@ -11,7 +11,7 @@ const logger = pino({
   },
 });
 
-const app = express();
+const app: express.Application = express();
 const PORT = process.env.PORT || 3001;
 
 app.use(helmet());

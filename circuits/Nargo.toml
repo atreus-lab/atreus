@@ -1,0 +1,4 @@
+[package]
+name = "secret"
+type = "bin"
+version = "0.1.0"

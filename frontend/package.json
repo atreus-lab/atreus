@@ -10,13 +10,17 @@
   },
   "dependencies": {
     "@aztec/bb.js": "^4.4.0",
+    "@noir-lang/acvm_js": "1.0.0-beta.22",
     "@noir-lang/barretenberg": "^2.19.0",
+    "@noir-lang/noir_js": "1.0.0-beta.22",
+    "@noir-lang/noir_wasm": "1.0.0-beta.22",
+    "@noir-lang/noirc_abi": "1.0.0-beta.22",
     "@stellar/freighter-api": "^6.0.1",
     "@stellar/stellar-sdk": "^16.0.1",
+    "buffer": "^6.0.3",
     "clsx": "^2.1.1",
     "lucide-react": "^0.453.0",
     "next": "^15.5.19",
-    "poseidon-lite": "^0.3.0",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
     "tailwind-merge": "^2.5.4"
