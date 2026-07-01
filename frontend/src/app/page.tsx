@@ -9,7 +9,7 @@ export default function Home() {
         Secure, private, and no wallet required for the recipient.
       </p>
       <div className="flex flex-col gap-4 items-center">
-        <Link href="/dashboard" className="btn-primary text-center w-full max-w-xs">
+        <Link href="/wallet" className="btn-primary text-center w-full max-w-xs">
           Launch Wallet
         </Link>
         <div className="flex-gap-center">

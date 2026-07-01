@@ -1,29 +1,19 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { connectWallet, getStellarExpertUrl } from "@/lib/stellar";
-import { Loader2, Copy, Check, ArrowLeft, ExternalLink } from "lucide-react";
 import Link from "next/link";
+import { loadWallet, getExplorerUrl } from "@/lib/wallet";
+import { ArrowLeft, Copy, Check, Loader2 } from "lucide-react";
 
 export default function ReceivePage() {
   const [address, setAddress] = useState("");
   const [loading, setLoading] = useState(true);
   const [copied, setCopied] = useState(false);
-  const [error, setError] = useState("");
 
   useEffect(() => {
-    const load = async () => {
-      try {
-        setLoading(true);
-        const addr = await connectWallet();
-        setAddress(addr);
-      } catch (err: any) {
-        setError(err.message || "Failed to connect");
-      } finally {
-        setLoading(false);
-      }
-    };
-    load();
+    const wallet = loadWallet();
+    if (wallet) setAddress(wallet.publicKey);
+    setLoading(false);
   }, []);
 
   const copyAddress = async () => {
@@ -44,37 +34,23 @@ export default function ReceivePage() {
         <h1 className="card-title">Receive XLM</h1>
 
         {loading ? (
+          <div className="card text-centered"><Loader2 className="w-6 h-6 animate-spin mx-auto" /></div>
+        ) : !address ? (
           <div className="card text-centered">
-            <Loader2 className="w-6 h-6 animate-spin mx-auto" />
-          </div>
-        ) : error ? (
-          <div className="card text-centered">
-            <p className="status-error">{error}</p>
-            <button onClick={() => window.location.reload()} className="btn-primary mt-4">
-              Retry
-            </button>
+            <p className="card-body">No wallet found.</p>
+            <Link href="/wallet" className="btn-primary mt-4 inline-block">Create Wallet</Link>
           </div>
         ) : (
           <div className="card space-y-6">
-            <p className="card-body">
-              Share your Stellar address to receive XLM and tokens:
-            </p>
-
+            <p className="card-body">Share your Stellar address to receive funds:</p>
             <div className="status-badge">
               <p className="text-xs break-all font-mono">{address}</p>
             </div>
-
             <button onClick={copyAddress} className="btn-primary flex items-center justify-center gap-2">
               {copied ? <><Check className="w-4 h-4" /> Copied!</> : <><Copy className="w-4 h-4" /> Copy Address</>}
             </button>
-
-            <a
-              href={getStellarExpertUrl("account", address)}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="flex items-center justify-center gap-2 text-sm text-[var(--foreground-secondary)] hover:text-[var(--foreground-primary)]"
-            >
-              View on Stellar Expert <ExternalLink className="w-4 h-4" />
+            <a href={getExplorerUrl("account", address)} target="_blank" rel="noopener noreferrer" className="flex items-center justify-center gap-2 text-sm text-[var(--foreground-secondary)] hover:text-[var(--foreground-primary)]">
+              View on Stellar Expert
             </a>
           </div>
         )}
