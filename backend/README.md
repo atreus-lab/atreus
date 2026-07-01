@@ -1,63 +1,62 @@
 # Atreus Backend
 
-API service for the Atreus protocol on Stellar — manages payment link creation, state, and Soroban contract interaction.
+Express API service for the Atreus protocol. **Currently a stub** — cut from MVP scope. Frontend calls Soroban directly via Freighter.
 
-## Features
+## What's Implemented
 
-- **REST API** — Create, query, and claim payment links
-- **Soroban Integration** — Submit transactions to Stellar smart contracts
-- **ZK Proof Relay** — Accept and forward zero-knowledge proofs for verification
-- **Logging** — Structured logging with Pino
+| Endpoint | Status | What it does |
+|----------|--------|-------------|
+| `GET /health` | ✅ Working | Returns `{ status: "ok", timestamp }` |
+| `POST /api/links` | ⏳ Stub | Generates fake link object with UUID, returns 201 |
+| `GET /api/links/:hash` | ⏳ Stub | Returns hardcoded mock data |
+| `POST /api/links/:hash/claim` | ⏳ Stub | Validates recipient+proof present, returns `{ success: true }` |
+
+**No actual Soroban contract interaction** — all endpoints return mock/placeholder data.
+
+## Why It Was Cut
+
+The MVP frontend calls Soroban directly via Freighter wallet (no backend relay needed). The Express server exists as a foundation for:
+- Link history and analytics
+- Transaction relay for non-Freighter users
+- Server-side proof generation (Phase 2)
+- Rate limiting and abuse prevention
 
 ## Tech Stack
 
 | Layer | Choice |
 |-------|--------|
 | Runtime | Node.js |
-| Framework | Express |
+| Framework | Express 4 |
 | Language | TypeScript |
-| Blockchain | Stellar / Soroban |
-| SDK | `@stellar/stellar-sdk` |
-| Logging | Pino |
+| Blockchain SDK | `@stellar/stellar-sdk` ^12.1.0 |
+| Logging | Pino + pino-pretty |
+| Testing | Vitest |
 
 ## Getting Started
 
 ```bash
 pnpm install
-pnpm dev
+pnpm dev        # localhost:3001
+pnpm build      # tsc compilation
+pnpm lint       # tsc --noEmit (type checking)
 ```
-
-Server runs on [http://localhost:3001](http://localhost:3001).
-
-## API Endpoints
-
-| Method | Path | Description |
-|--------|------|-------------|
-| `GET` | `/health` | Health check |
-| `POST` | `/api/links` | Create a new payment link |
-| `GET` | `/api/links/:hash` | Get link details |
-| `POST` | `/api/links/:hash/claim` | Claim funds from a link |
 
 ## Project Structure
 
 ```
 src/
-├── index.ts          # Express server entry
+├── index.ts          # Express server entry (31 lines)
 ├── routes/
-│   └── links.ts      # Payment link CRUD routes
+│   └── links.ts      # Link CRUD routes — all stubs (52 lines)
 └── lib/
-    └── stellar.ts    # Stellar SDK configuration
+    └── stellar.ts    # Stellar SDK config (6 lines)
 ```
 
 ## Environment
 
-Copy `.env.example` to `.env` and configure:
-
-```
+```env
 PORT=3001
 HORIZON_URL=https://horizon-testnet.stellar.org
-STELLAR_NETWORK=testnet
-CONTRACT_ID=...
 ```
 
 ## License
