@@ -74,6 +74,9 @@ importers:
       '@stellar/stellar-sdk':
         specifier: ^16.0.1
         version: 16.0.1
+      bip39:
+        specifier: ^3.1.0
+        version: 3.1.0
       buffer:
         specifier: ^6.0.3
         version: 6.0.3
@@ -679,6 +682,10 @@ packages:
   '@noble/ed25519@3.1.0':
     resolution: {integrity: sha512-pfcObRY3CtvwfaG9Mt5XqZdKmAQppl37tHUeuBhDUbiwJBCVY4/A4lbMvb1xKhMDx96AqAqZpMWuBX1HulhX4g==}
 
+  '@noble/hashes@1.8.0':
+    resolution: {integrity: sha512-jCs9ldd7NwzpgXDIf6P3+NrHh9/sD6CQdxHyjQI+h/6rDNo88ypBxxz45UDuZHz9r3tNz7N/VInSVoVdtXEI4A==}
+    engines: {node: ^14.21.3 || >=16}
+
   '@noble/hashes@2.2.0':
     resolution: {integrity: sha512-IYqDGiTXab6FniAgnSdZwgWbomxpy9FtYvLKs7wCUs2a8RkITG+DFGO1DM9cr+E3/RgADRpFjrKVaJ1z6sjtEg==}
     engines: {node: '>= 20.19.0'}
@@ -1077,6 +1084,9 @@ packages:
   binary-extensions@2.3.0:
     resolution: {integrity: sha512-Ceh+7ox5qe7LJuLHoY0feh3pHuUDHAcRUeyL2VYghZwfpkNIy/+8Ocg0a3UuSoYzavmylwuLWQOf3hl0jjMMIw==}
     engines: {node: '>=8'}
+
+  bip39@3.1.0:
+    resolution: {integrity: sha512-c9kiwdk45Do5GL0vJMe7tS95VjCii65mYAH7DfWl3uW8AVzXKQVUm64i3hzVybBDMp9r7j9iNxR85+ul8MdN/A==}
 
   body-parser@1.20.5:
     resolution: {integrity: sha512-3grm+/2tUOvu2cjJkvsIxrv/wVpfXQW4PsQHYm7yk4vfpu7Ekl6nEsYBoJUL6qDwZUx8wUhQ8tR2qz+ad9c9OA==}
@@ -2588,6 +2598,8 @@ snapshots:
 
   '@noble/ed25519@3.1.0': {}
 
+  '@noble/hashes@1.8.0': {}
+
   '@noble/hashes@2.2.0': {}
 
   '@nodelib/fs.scandir@2.1.5':
@@ -2994,6 +3006,10 @@ snapshots:
   bignumber.js@9.3.1: {}
 
   binary-extensions@2.3.0: {}
+
+  bip39@3.1.0:
+    dependencies:
+      '@noble/hashes': 1.8.0
 
   body-parser@1.20.5:
     dependencies:

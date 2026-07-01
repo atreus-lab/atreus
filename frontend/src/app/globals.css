@@ -333,4 +333,22 @@
   .btn-icon-lg {
     @apply p-3 flex items-center justify-center;
   }
+
+  .mnemonic-grid {
+    @apply grid grid-cols-2 gap-2 p-4 rounded-lg;
+    background: var(--background-primary);
+  }
+
+  .mnemonic-word {
+    @apply font-mono text-xs;
+    color: var(--foreground-primary);
+  }
+
+  .mnemonic-index {
+    color: var(--foreground-secondary);
+  }
+
+  textarea.input {
+    @apply resize-none;
+  }
 }

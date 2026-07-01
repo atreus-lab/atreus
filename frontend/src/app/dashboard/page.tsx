@@ -3,11 +3,12 @@
 import { useEffect, useState, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { loadWallet, getBalance, getBalances, getTransactions, getExplorerUrl } from "@/lib/wallet";
+import { loadWallet, getBalance, getBalances, getTransactions, getExplorerUrl, type StoredWallet } from "@/lib/wallet";
 import { Loader2, Wallet, Send, ArrowDownToLine, RefreshCw, ExternalLink, Link2, LogOut, PlusCircle } from "lucide-react";
 
 export default function DashboardPage() {
   const router = useRouter();
+  const [storedWallet, setStoredWallet] = useState<StoredWallet | null>(null);
   const [address, setAddress] = useState("");
   const [balance, setBalance] = useState("0");
   const [balances, setBalances] = useState<any[]>([]);
@@ -40,6 +41,7 @@ export default function DashboardPage() {
       router.push("/wallet");
       return;
     }
+    setStoredWallet(wallet);
     const pk = wallet.publicKey;
     setAddress(pk);
     setLoading(true);
@@ -93,6 +95,7 @@ export default function DashboardPage() {
       <div className="content-wide inner-space">
         {/* Balance */}
         <div className="card">
+          {storedWallet?.email && <p className="input-label">Signed in as {storedWallet.email}</p>}
           <p className="input-label">Total Balance</p>
           <p className="balance-value">{parseFloat(balance).toFixed(7)} XLM</p>
           <div className="status-badge flex-row">

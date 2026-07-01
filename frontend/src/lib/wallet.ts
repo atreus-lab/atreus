@@ -1,4 +1,5 @@
 import { Keypair, TransactionBuilder, Networks, BASE_FEE, Operation, Asset, Horizon, rpc } from "@stellar/stellar-sdk";
+import * as bip39 from "bip39";
 
 const STORAGE_KEY = "atreus_wallet";
 const HORIZON_URL = "https://horizon-testnet.stellar.org";
@@ -10,6 +11,8 @@ const networkPassphrase = Networks.TESTNET;
 export interface StoredWallet {
   publicKey: string;
   secretKey: string;
+  mnemonic: string;
+  email?: string;
 }
 
 export function loadWallet(): StoredWallet | null {
@@ -31,11 +34,25 @@ export function clearWallet() {
   localStorage.removeItem(STORAGE_KEY);
 }
 
-export function generateWallet(): StoredWallet {
-  const kp = Keypair.random();
-  const wallet = { publicKey: kp.publicKey(), secretKey: kp.secret() };
+export async function generateWallet(email?: string): Promise<StoredWallet> {
+  const mnemonic = bip39.generateMnemonic(256);
+  const seed = await bip39.mnemonicToSeed(mnemonic);
+  const kp = Keypair.fromRawEd25519Seed(seed.slice(0, 32));
+  const wallet = { publicKey: kp.publicKey(), secretKey: kp.secret(), mnemonic, email };
   saveWallet(wallet);
   return wallet;
+}
+
+export async function restoreFromMnemonic(mnemonic: string): Promise<StoredWallet> {
+  const seed = await bip39.mnemonicToSeed(mnemonic);
+  const kp = Keypair.fromRawEd25519Seed(seed.slice(0, 32));
+  const wallet = { publicKey: kp.publicKey(), secretKey: kp.secret(), mnemonic };
+  saveWallet(wallet);
+  return wallet;
+}
+
+export function validateMnemonic(mnemonic: string): boolean {
+  return bip39.validateMnemonic(mnemonic);
 }
 
 export async function fundWallet(publicKey: string): Promise<boolean> {
