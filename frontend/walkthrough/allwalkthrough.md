@@ -219,3 +219,46 @@ Dashboard uses Horizon API for read operations, avoiding the Soroban RPC bottlen
 - No passkey wallet yet (WebAuthn integration pending)
 - Swap paths hardcoded to USDC/EURT — not a full DEX aggregator
 - No mainnet deployment yet (testnet only)
+
+---
+
+## Appendix: Historical Entries
+
+### Issue #6 — Wire Create Link page to real Stellar/Soroban
+
+**Date:** 2026-07-01
+**Author:** temycodes
+
+**Files touched:**
+- `frontend/src/app/create/page.tsx`
+- `frontend/src/lib/stellar.ts`
+
+#### What changed
+
+The `/create` page previously generated a mock link with a random secret and never touched the network. It now performs the full real flow:
+
+1. Connects the user's wallet via Freighter (`connectWallet()`)
+2. Generates a 31-byte random secret client-side and hashes it with SHA-256 (originally Poseidon, later replaced — see Section 1)
+3. Builds and submits a `create_link()` call via `@stellar/stellar-sdk`
+4. Polls Soroban RPC for the final transaction result via `waitForTransaction()`
+5. Derives the recipient-facing `/claim#<secret>` URL
+
+#### Key implementation details
+
+**Transaction confirmation polling.** `rpcServer.sendTransaction()` only confirms a transaction was accepted into the mempool (status `PENDING`). Added `waitForTransaction()` in `stellar.ts` which polls `rpcServer.getTransaction(hash)` until `SUCCESS`/`FAILED` (30s timeout).
+
+**Stroop conversion.** String/BigInt-based `xlmToStroops()` helper avoids floating point precision bugs.
+
+**Error handling.** Wrapped all Soroban RPC calls in try/catch with human-readable messages.
+
+#### Testing status
+
+Manually tested against Freighter on testnet. Wallet connection, config validation, and ts compilation verified end-to-end once contracts were deployed.
+
+#### Known limitations / blockers
+
+Originally blocked on contract deployment to testnet. Resolved in Phase 2 — contracts deployed, env vars documented in `.env.example`.
+
+#### Next steps
+
+Re-test create → claim flow end-to-end with a funded testnet account and confirm both transactions succeed on Stellar Expert explorer.
