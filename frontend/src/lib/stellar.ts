@@ -19,18 +19,26 @@ export const connectWallet = async (): Promise<string> => {
 };
 
 export const createEscrowTx = async (creator: string, amount: string, hash: Uint8Array) => {
-  const contractId = process.env.NEXT_PUBLIC_CONTRACT_ID || "CDUMMYCONTRACTIDABCDEFGHIJKLMNOPQRSTUVWXYZ1234567890";
+  const contractId = process.env.NEXT_PUBLIC_CONTRACT_ID;
+  if (!contractId) {
+    throw new Error("NEXT_PUBLIC_CONTRACT_ID is not configured");
+  }
+
   const tokenId = process.env.NEXT_PUBLIC_TOKEN_ID || "CDUMMYTOKENIDABCDEFGHIJKLMNOPQRSTUVWXYZ1234567890123";
 
   const contract = new Contract(contractId);
   const amountStroops = BigInt(Math.floor(parseFloat(amount) * 10000000));
+  const expiry = Math.floor(Date.now() / 1000) + 7 * 24 * 60 * 60; // 7 days
 
   const op = contract.call(
     "create_link",
-    new Address(creator).toScVal(),
-    new Address(tokenId).toScVal(),
+    xdr.ScVal.scvBytes(Buffer.from(hash)),
+    nativeToScVal(0, { type: 'u32' }), // policy_type (e.g. 0 for Secret)
+    xdr.ScVal.scvBytes(Buffer.alloc(0)), // policy_params
     nativeToScVal(amountStroops, { type: 'i128' }),
-    xdr.ScVal.scvBytes(Buffer.from(hash))
+    new Address(tokenId).toScVal(),
+    nativeToScVal(expiry, { type: 'u64' }), // expiry
+    new Address(creator).toScVal()
   );
 
   const account = await rpcServer.getAccount(creator);
