@@ -3,7 +3,6 @@
 import { useState } from "react";
 import { Copy, Check, Loader2 } from "lucide-react";
 import { connectWallet, createEscrowTx } from "@/lib/stellar";
-import { poseidon1 } from "poseidon-lite";
 
 type Status = "idle" | "connecting" | "signing" | "confirming";
 
@@ -23,8 +22,8 @@ export default function CreatePage() {
 
       const creator = await connectWallet();
 
-      // Poseidon over BN254 requires inputs to fit in the field, using 31 random bytes
-      const secretBytes = crypto.getRandomValues(new Uint8Array(31));
+      // Secret must be 32 bytes for BytesN<32>, hash it with SHA256 to get the link_hash
+      const secretBytes = crypto.getRandomValues(new Uint8Array(32));
       const secretHex = Array.from(secretBytes).map(b => b.toString(16).padStart(2, '0')).join('');
 
       // Hash the secret using Poseidon

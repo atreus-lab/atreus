@@ -80,9 +80,9 @@ export const createEscrowTx = async (creator: string, amount: string, hash: Uint
 
   const op = contract.call(
     "create_link",
-    xdr.ScVal.scvBytes(hash),
+    xdr.ScVal.scvBytes(Buffer.from(hash)),
     nativeToScVal(0, { type: 'u32' }),
-    xdr.ScVal.scvBytes(new Uint8Array(0)),
+    xdr.ScVal.scvBytes(Buffer.from(new Uint8Array(0))),
     nativeToScVal(amountStroops, { type: 'i128' }),
     new Address(tokenId).toScVal(),
     nativeToScVal(expiry, { type: 'u64' }),

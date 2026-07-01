@@ -9,3 +9,6 @@ target/
 *.log
 Thumbs.db
 *.tsbuildinfo
+test_snapshots/
+*.wasm.gz
+.opencode/

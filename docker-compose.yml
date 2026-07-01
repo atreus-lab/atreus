@@ -1,0 +1,35 @@
+services:
+  dev:
+    build: .
+    image: atreus-dev
+    entrypoint: bash
+    stdin_open: true
+    tty: true
+    volumes:
+      - ./circuits:/app/circuits
+      - ./frontend:/app/frontend
+
+  compile:
+    image: atreus-dev
+    entrypoint: sh -c "cd /app/circuits && nargo compile --force"
+    volumes:
+      - ./circuits:/app/circuits
+
+  test:
+    image: atreus-dev
+    entrypoint: sh -c "cd /app/circuits && nargo test --show-output"
+    volumes:
+      - ./circuits:/app/circuits
+
+  execute:
+    image: atreus-dev
+    entrypoint: sh -c "cd /app/circuits && nargo execute --force"
+    volumes:
+      - ./circuits:/app/circuits
+
+  prove:
+    image: atreus-dev
+    entrypoint: sh -c "cd /app/frontend && node scripts/prove-circuit.mjs"
+    volumes:
+      - ./circuits:/app/circuits
+      - ./frontend:/app/frontend

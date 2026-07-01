@@ -53,15 +53,30 @@ importers:
       '@aztec/bb.js':
         specifier: ^4.4.0
         version: 4.4.0
+      '@noir-lang/acvm_js':
+        specifier: 1.0.0-beta.22
+        version: 1.0.0-beta.22
       '@noir-lang/barretenberg':
         specifier: ^2.19.0
         version: 2.19.0
+      '@noir-lang/noir_js':
+        specifier: 1.0.0-beta.22
+        version: 1.0.0-beta.22
+      '@noir-lang/noir_wasm':
+        specifier: 1.0.0-beta.22
+        version: 1.0.0-beta.22
+      '@noir-lang/noirc_abi':
+        specifier: 1.0.0-beta.22
+        version: 1.0.0-beta.22
       '@stellar/freighter-api':
         specifier: ^6.0.1
         version: 6.0.1
       '@stellar/stellar-sdk':
         specifier: ^16.0.1
         version: 16.0.1
+      buffer:
+        specifier: ^6.0.3
+        version: 6.0.3
       clsx:
         specifier: ^2.1.1
         version: 2.1.1
@@ -71,9 +86,6 @@ importers:
       next:
         specifier: ^15.5.19
         version: 15.5.19(react-dom@18.3.1(react@18.3.1))(react@18.3.1)
-      poseidon-lite:
-        specifier: ^0.3.0
-        version: 0.3.0
       react:
         specifier: ^18.3.1
         version: 18.3.1
@@ -683,6 +695,9 @@ packages:
     resolution: {integrity: sha512-oGB+UxlgWcgQkgwo8GcEGwemoTFt3FIO9ababBmaGwXIoBKZ+GTy0pP185beGg7Llih/NSHSV2XAs1lnznocSg==}
     engines: {node: '>= 8'}
 
+  '@noir-lang/acvm_js@1.0.0-beta.22':
+    resolution: {integrity: sha512-2xXfSKrnskUNmPiG/Kj6yvWi1E6wJBl/1ZsmzVaHEEyJsUBf15xaSRBZR7X1361whUR2vqyG80ck2huLZPb5bA==}
+
   '@noir-lang/aztec_backend@0.11.0':
     resolution: {integrity: sha512-gJIdSOeUClJGGt7j1cTD0skd3UjO4eeg1OSjQyj36NNf9A68PDnvCen/uT2aQncCVanREUUXxP586voxElWRYA==}
     deprecated: Package no longer supported. Contact Support at https://www.npmjs.com/support for more info.
@@ -690,6 +705,18 @@ packages:
   '@noir-lang/barretenberg@2.19.0':
     resolution: {integrity: sha512-AnqebO0HRk6kEFyhTh47VQqUTE+PrG5UuIATjAoCSSkpcoLIX58esouuYoLZbJ+89PCLTXeprJUp+vrlnmyRzQ==}
     deprecated: Package no longer supported. Contact Support at https://www.npmjs.com/support for more info.
+
+  '@noir-lang/noir_js@1.0.0-beta.22':
+    resolution: {integrity: sha512-Ts+QI2fN2PsrVjx38CszFSR0TyWpip9TgJ6HM17DIK05Jku4TSKtHMIjrE6lRii4Y+JV0rn70v+TrunJmt/X4w==}
+
+  '@noir-lang/noir_wasm@1.0.0-beta.22':
+    resolution: {integrity: sha512-1lbj5mr8R4yTPgFW3mkrMo8u8wSaWc41Ja6nAGcPqNW4k9M/Rf/gUD6q3txM1Kvb+DIpy5I5+Zsu8ddRv4pJJg==}
+
+  '@noir-lang/noirc_abi@1.0.0-beta.22':
+    resolution: {integrity: sha512-vpZtWb946eb4ZxERxY32I4Fv62SAAjhAyJpb2YzWYvnDVTyFVIvr/MSVunrM1osUP35nnRPRGuXVTWy4sBQkIg==}
+
+  '@noir-lang/types@1.0.0-beta.22':
+    resolution: {integrity: sha512-PXD8cmvMT4wybDe1pUPwv2Uz1FYh9B/hdXrY5eOMf1elNVxomj2tHDDYoKI/zNDrJ1JzTL0xhbAX1vBTMMFvBw==}
 
   '@pinojs/redact@0.4.0':
     resolution: {integrity: sha512-k2ENnmBugE/rzQfEcdWHcCY+/FM3VLzH9cYEsbdsoqrvzAKRhUZeRNhAZvB8OitQJ1TBed3yqWtdjzS6wJKBwg==}
@@ -1767,9 +1794,6 @@ packages:
     resolution: {integrity: sha512-TfySrs/5nm8fQJDcBDuUng3VOUKsd7S+zqvbOTiGXHfxX4wK31ard+hoNuvkicM/2YFzlpDgABOevKSsB4G/FA==}
     engines: {node: '>= 6'}
 
-  poseidon-lite@0.3.0:
-    resolution: {integrity: sha512-ilJj4MIve4uBEG7SrtPqUUNkvpJ/pLVbndxa0WvebcQqeIhe+h72JR4g0EvwchUzm9sOQDlOjiDNmRAgxNZl4A==}
-
   possible-typed-array-names@1.1.0:
     resolution: {integrity: sha512-/+5VFTchJDoVj3bhoqi6UeymcD00DAwb1nJwamzPvHEszJ4FpF6SNNbUbOS8yI56qHzdV8eK0qEfOSiodkTdxg==}
     engines: {node: '>= 0.4'}
@@ -2578,6 +2602,8 @@ snapshots:
       '@nodelib/fs.scandir': 2.1.5
       fastq: 1.20.1
 
+  '@noir-lang/acvm_js@1.0.0-beta.22': {}
+
   '@noir-lang/aztec_backend@0.11.0': {}
 
   '@noir-lang/barretenberg@2.19.0':
@@ -2599,6 +2625,24 @@ snapshots:
       tslib: 2.8.1
     transitivePeerDependencies:
       - supports-color
+
+  '@noir-lang/noir_js@1.0.0-beta.22':
+    dependencies:
+      '@noir-lang/acvm_js': 1.0.0-beta.22
+      '@noir-lang/noirc_abi': 1.0.0-beta.22
+      '@noir-lang/types': 1.0.0-beta.22
+      pako: 2.2.0
+
+  '@noir-lang/noir_wasm@1.0.0-beta.22':
+    dependencies:
+      '@noir-lang/types': 1.0.0-beta.22
+      pako: 2.2.0
+
+  '@noir-lang/noirc_abi@1.0.0-beta.22':
+    dependencies:
+      '@noir-lang/types': 1.0.0-beta.22
+
+  '@noir-lang/types@1.0.0-beta.22': {}
 
   '@pinojs/redact@0.4.0': {}
 
@@ -3675,8 +3719,6 @@ snapshots:
       thread-stream: 3.2.0
 
   pirates@4.0.7: {}
-
-  poseidon-lite@0.3.0: {}
 
   possible-typed-array-names@1.1.0: {}
 

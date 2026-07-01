@@ -1,6 +1,6 @@
 import { Router, Request, Response } from "express";
 
-export const linkRoutes = Router();
+export const linkRoutes: Router = Router();
 
 // POST /api/links - Create a new payment link
 linkRoutes.post("/", async (req: Request, res: Response) => {

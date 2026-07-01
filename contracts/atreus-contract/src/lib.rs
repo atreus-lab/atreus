@@ -1,5 +1,5 @@
 #![no_std]
-use soroban_sdk::{contract, contractimpl, contracttype, token, Address, Bytes, BytesN, Env, Symbol, symbol_short};
+use soroban_sdk::{contract, contractimpl, contracttype, token, Address, Bytes, BytesN, Env, symbol_short};
 
 #[contracttype]
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -64,9 +64,17 @@ impl AtreusContract {
         env: Env,
         link_hash: BytesN<32>,
         recipient: Address,
-        proof: Bytes,
+        secret: BytesN<32>,
     ) {
         recipient.require_auth();
+
+        // Verify secret: sha256(secret) must equal the stored link_hash.
+        // In Phase 2, this is replaced with ZK proof verification via VerifierContract.
+        let secret_bytes = Bytes::from_array(&env, &secret.to_array());
+        let computed = env.crypto().sha256(&secret_bytes);
+        if BytesN::from_array(&env, &computed.to_array()) != link_hash {
+            panic!("invalid secret");
+        }
 
         let mut link_info: LinkInfo = env.storage().persistent().get(&link_hash).expect("Link not found");
 
@@ -79,21 +87,13 @@ impl AtreusContract {
         }
 
         // Double-claim prevention via nullifier
+        let link_hash_bytes = Bytes::from_array(&env, &link_hash.to_array());
         let nullifier_key = BytesN::from_array(
             &env,
-            &env.crypto().sha256(&link_hash.to_array()).to_array(),
+            &env.crypto().sha256(&link_hash_bytes).to_array(),
         );
         if env.storage().temporary().has(&nullifier_key) {
             panic!("nullifier already used");
-        }
-
-        // Verify ZK proof via VerifierContract (deployed separately)
-        // TODO: Replace with actual rs-soroban-ultrahonk cross-contract call:
-        //   let verifier: Address = env.storage().instance().get(&DataKey::VerifierAddress).unwrap();
-        //   let verified: bool = env.invoke_contract(&verifier, &Symbol::new(&env, "verify_proof"), &[proof.into()]);
-        //   if !verified { panic!("invalid proof"); }
-        if proof.is_empty() {
-            panic!("invalid proof");
         }
 
         let token_client = token::Client::new(&env, &link_info.asset);
