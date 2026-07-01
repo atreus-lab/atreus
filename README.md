@@ -151,7 +151,7 @@ NEXT_PUBLIC_TOKEN_ID=CDLZFC3SYJYDZT7K67VZ75HPJVIEUVNIXF47ZG2FB2RMQQVU2HHGCYSC
 ## Docs
 
 - Walkthrough files in each package's `walkthrough/` directory
-- [Frontend Walkthrough](./frontend/walkthrough/allwakthough.md)
+- [Frontend Walkthrough](./frontend/walkthrough/allwalkthrough.md)
 - [Contracts Walkthrough](./contracts/walkthrough/allwalkthrough.md)
 - [Circuits Walkthrough](./circuits/walkthrough/allwalkthrough.md)
 

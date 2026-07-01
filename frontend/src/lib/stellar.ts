@@ -1,5 +1,5 @@
 import { Horizon, Networks, TransactionBuilder, Asset, Contract, Address, nativeToScVal, xdr, rpc, Keypair, BASE_FEE, Operation, Memo } from "@stellar/stellar-sdk";
-import { signTransaction, requestAccess, isAllowed } from "@stellar/freighter-api";
+import { signTransaction, requestAccess } from "@stellar/freighter-api";
 
 export const HORIZON_URL = "https://horizon-testnet.stellar.org";
 export const SOROBAN_RPC_URL = "https://soroban-testnet.stellar.org";
@@ -29,28 +29,45 @@ export interface Transaction {
 }
 
 export const connectWallet = async (): Promise<string> => {
-  if (!(await isAllowed())) {
-    await requestAccess();
-  }
   const { address } = await requestAccess();
   if (!address) throw new Error("Wallet not connected");
   return address;
 };
 
+export const xlmToStroops = (amount: string): bigint => {
+  const trimmed = amount.trim();
+  if (!/^\d+(\.\d{1,7})?$/.test(trimmed)) {
+    throw new Error("Invalid amount: use up to 7 decimal places");
+  }
+  const [whole, frac = ""] = trimmed.split(".");
+  const paddedFrac = frac.padEnd(7, "0");
+  return BigInt(whole) * BigInt(10000000) + BigInt(paddedFrac || "0");
+};
+
+export const waitForTransaction = async (
+  hash: string,
+  { timeoutMs = 30_000, intervalMs = 1500 }: { timeoutMs?: number; intervalMs?: number } = {}
+) => {
+  const start = Date.now();
+  while (Date.now() - start < timeoutMs) {
+    const result = await rpcServer.getTransaction(hash);
+    if (result.status === rpc.Api.GetTransactionStatus.SUCCESS) return result;
+    if (result.status === rpc.Api.GetTransactionStatus.FAILED) throw new Error(`Transaction failed on-chain (hash: ${hash})`);
+    await new Promise((resolve) => setTimeout(resolve, intervalMs));
+  }
+  throw new Error(`Timed out waiting for transaction (hash: ${hash})`);
+};
+
 export const createEscrowTx = async (creator: string, amount: string, hash: Uint8Array) => {
   const contractId = process.env.NEXT_PUBLIC_CONTRACT_ID;
-  if (!contractId) {
-    throw new Error("NEXT_PUBLIC_CONTRACT_ID is not configured");
-  }
+  if (!contractId) throw new Error("NEXT_PUBLIC_CONTRACT_ID is not configured");
 
   const tokenId = process.env.NEXT_PUBLIC_TOKEN_ID;
-  if (!tokenId) {
-    throw new Error("NEXT_PUBLIC_TOKEN_ID is not configured");
-  }
+  if (!tokenId) throw new Error("NEXT_PUBLIC_TOKEN_ID is not configured");
 
   const contract = new Contract(contractId);
-  const amountStroops = BigInt(Math.floor(parseFloat(amount) * 10000000));
-  const expiry = Math.floor(Date.now() / 1000) + 7 * 24 * 60 * 60; // 7 days
+  const amountStroops = xlmToStroops(amount);
+  const expiry = Math.floor(Date.now() / 1000) + 7 * 24 * 60 * 60;
 
   const op = contract.call(
     "create_link",
@@ -63,7 +80,12 @@ export const createEscrowTx = async (creator: string, amount: string, hash: Uint
     new Address(creator).toScVal()
   );
 
-  const account = await rpcServer.getAccount(creator);
+  let account;
+  try {
+    account = await rpcServer.getAccount(creator);
+  } catch {
+    throw new Error("Could not load your account. Make sure it's funded on testnet.");
+  }
 
   let tx = new TransactionBuilder(account, {
     fee: "100000",
@@ -73,28 +95,35 @@ export const createEscrowTx = async (creator: string, amount: string, hash: Uint
     .setTimeout(120)
     .build();
 
-  tx = await rpcServer.prepareTransaction(tx) as any;
+  try {
+    tx = (await rpcServer.prepareTransaction(tx)) as any;
+  } catch (err: any) {
+    throw new Error(`Failed to simulate transaction: ${err?.message || err}`);
+  }
 
   const signedXdr = await signTransaction(tx.toXDR(), { networkPassphrase });
-  if (signedXdr.error) {
-    throw new Error(signedXdr.error);
-  }
+  if (signedXdr.error) throw new Error(signedXdr.error);
 
   const txToSubmit = TransactionBuilder.fromXDR(signedXdr.signedTxXdr as string, networkPassphrase);
-  const sendResult = await rpcServer.sendTransaction(txToSubmit as any);
 
-  if (sendResult.status === "ERROR") {
-    throw new Error(`Tx submission failed: ${(sendResult as any).errorResultXdr || (sendResult as any).errorResult}`);
+  let sendResult;
+  try {
+    sendResult = await rpcServer.sendTransaction(txToSubmit as any);
+  } catch (err: any) {
+    throw new Error(`Could not reach the Stellar network: ${err?.message || err}`);
   }
 
+  if (sendResult.status === "ERROR") {
+    throw new Error(`Transaction rejected: ${(sendResult as any).errorResultXdr || (sendResult as any).errorResult}`);
+  }
+
+  await waitForTransaction(sendResult.hash);
   return sendResult.hash;
 };
 
 export const claimLinkTx = async (recipient: string, linkHash: Uint8Array, secret: Uint8Array) => {
   const contractId = process.env.NEXT_PUBLIC_CONTRACT_ID;
-  if (!contractId) {
-    throw new Error("NEXT_PUBLIC_CONTRACT_ID is not configured");
-  }
+  if (!contractId) throw new Error("NEXT_PUBLIC_CONTRACT_ID is not configured");
 
   const contract = new Contract(contractId);
 
@@ -106,21 +135,13 @@ export const claimLinkTx = async (recipient: string, linkHash: Uint8Array, secre
   );
 
   const account = await rpcServer.getAccount(recipient);
-
-  let tx = new TransactionBuilder(account, {
-    fee: "100000",
-    networkPassphrase,
-  })
-    .addOperation(op)
-    .setTimeout(120)
-    .build();
+  let tx = new TransactionBuilder(account, { fee: "100000", networkPassphrase })
+    .addOperation(op).setTimeout(120).build();
 
   tx = await rpcServer.prepareTransaction(tx) as any;
 
   const signedXdr = await signTransaction(tx.toXDR(), { networkPassphrase });
-  if (signedXdr.error) {
-    throw new Error(signedXdr.error);
-  }
+  if (signedXdr.error) throw new Error(signedXdr.error);
 
   const txToSubmit = TransactionBuilder.fromXDR(signedXdr.signedTxXdr as string, networkPassphrase);
   const sendResult = await rpcServer.sendTransaction(txToSubmit as any);
@@ -128,15 +149,12 @@ export const claimLinkTx = async (recipient: string, linkHash: Uint8Array, secre
   if (sendResult.status === "ERROR") {
     throw new Error(`Tx submission failed: ${(sendResult as any).errorResultXdr || (sendResult as any).errorResult}`);
   }
-
   return sendResult.hash;
 };
 
 export const submitProofTx = async (recipient: string, proofBytes: Uint8Array) => {
   const contractId = process.env.NEXT_PUBLIC_VERIFIER_CONTRACT_ID;
-  if (!contractId) {
-    throw new Error("NEXT_PUBLIC_VERIFIER_CONTRACT_ID is not configured");
-  }
+  if (!contractId) throw new Error("NEXT_PUBLIC_VERIFIER_CONTRACT_ID is not configured");
 
   const contract = new Contract(contractId);
 
@@ -147,21 +165,13 @@ export const submitProofTx = async (recipient: string, proofBytes: Uint8Array) =
   );
 
   const account = await rpcServer.getAccount(recipient);
-
-  let tx = new TransactionBuilder(account, {
-    fee: "100000",
-    networkPassphrase,
-  })
-    .addOperation(op)
-    .setTimeout(120)
-    .build();
+  let tx = new TransactionBuilder(account, { fee: "100000", networkPassphrase })
+    .addOperation(op).setTimeout(120).build();
 
   tx = await rpcServer.prepareTransaction(tx) as any;
 
   const signedXdr = await signTransaction(tx.toXDR(), { networkPassphrase });
-  if (signedXdr.error) {
-    throw new Error(signedXdr.error);
-  }
+  if (signedXdr.error) throw new Error(signedXdr.error);
 
   const txToSubmit = TransactionBuilder.fromXDR(signedXdr.signedTxXdr as string, networkPassphrase);
   const sendResult = await rpcServer.sendTransaction(txToSubmit as any);
@@ -169,7 +179,6 @@ export const submitProofTx = async (recipient: string, proofBytes: Uint8Array) =
   if (sendResult.status === "ERROR") {
     throw new Error(`Tx submission failed: ${(sendResult as any).errorResultXdr || (sendResult as any).errorResult}`);
   }
-
   return sendResult.hash;
 };
 
@@ -200,28 +209,17 @@ export const getRecentTransactions = async (address: string, limit = 10): Promis
 
 export const sendXLM = async (sender: string, destination: string, amount: string): Promise<string> => {
   const account = await server.loadAccount(sender);
-
-  let tx = new TransactionBuilder(account, {
-    fee: BASE_FEE,
-    networkPassphrase,
-  })
-    .addOperation(Operation.payment({
-      destination,
-      asset: Asset.native(),
-      amount: amount,
-    }))
-    .setTimeout(30)
-    .build();
+  let tx = new TransactionBuilder(account, { fee: BASE_FEE, networkPassphrase })
+    .addOperation(Operation.payment({ destination, asset: Asset.native(), amount }))
+    .setTimeout(30).build();
 
   tx = await rpcServer.prepareTransaction(tx) as any;
-
   const signedXdr = await signTransaction(tx.toXDR(), { networkPassphrase });
   if (signedXdr.error) throw new Error(signedXdr.error);
 
   const txToSubmit = TransactionBuilder.fromXDR(signedXdr.signedTxXdr as string, networkPassphrase);
   const result = await rpcServer.sendTransaction(txToSubmit as any);
   if (result.status === "ERROR") throw new Error("Transaction failed");
-
   return result.hash;
 };
 
@@ -250,22 +248,14 @@ export const findSwapPath = async (sourceAsset: Asset, destAsset: Asset, amount:
 
 export const swapXLM = async (sender: string, destAsset: Asset, destAmount: string): Promise<string> => {
   const account = await server.loadAccount(sender);
-  const xlmAmount = (parseFloat(destAmount) * 1.02).toFixed(7); // 2% slippage buffer
+  const xlmAmount = (parseFloat(destAmount) * 1.02).toFixed(7);
 
-  let tx = new TransactionBuilder(account, {
-    fee: BASE_FEE,
-    networkPassphrase,
-  })
+  let tx = new TransactionBuilder(account, { fee: BASE_FEE, networkPassphrase })
     .addOperation(Operation.pathPaymentStrictSend({
-      sendAsset: Asset.native(),
-      sendAmount: xlmAmount,
-      destination: sender,
-      destAsset,
-      destMin: destAmount,
-      path: [],
+      sendAsset: Asset.native(), sendAmount: xlmAmount,
+      destination: sender, destAsset, destMin: destAmount, path: [],
     }))
-    .setTimeout(30)
-    .build();
+    .setTimeout(30).build();
 
   const simResult = await rpcServer.simulateTransaction(tx as any);
   if ((simResult as any).error) throw new Error("Swap simulation failed");
@@ -277,6 +267,5 @@ export const swapXLM = async (sender: string, destAsset: Asset, destAmount: stri
   const txToSubmit = TransactionBuilder.fromXDR(signedXdr.signedTxXdr as string, networkPassphrase);
   const result = await rpcServer.sendTransaction(txToSubmit as any);
   if (result.status === "ERROR") throw new Error("Swap failed");
-
   return result.hash;
 };
