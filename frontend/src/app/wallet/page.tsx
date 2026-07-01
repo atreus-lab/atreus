@@ -2,8 +2,9 @@
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
+import { useGoogleLogin } from "@react-oauth/google";
 import { generateWallet, fundWallet, loadWallet, clearWallet, restoreFromMnemonic, validateMnemonic, getBalance, getExplorerUrl, type StoredWallet } from "@/lib/wallet";
-import { Loader2, ExternalLink, Plus, Trash2, Eye, EyeOff, LogIn, Copy, Check } from "lucide-react";
+import { Loader2, ExternalLink, Plus, Trash2, Eye, EyeOff, LogIn, Copy, Check, ChromeIcon } from "lucide-react";
 
 type WalletView = "create" | "restore" | "ready";
 
@@ -29,23 +30,47 @@ export default function WalletPage() {
     setLoading(false);
   }, []);
 
-  const handleCreate = async () => {
+  const finishWallet = async (w: StoredWallet) => {
+    setWallet(w);
+    setView("ready");
+    const funded = await fundWallet(w.publicKey);
+    if (!funded) setError("Wallet created but funding failed. You may need to fund it manually.");
+    const bal = await getBalance(w.publicKey);
+    setBalance(bal);
+  };
+
+  const handleCreate = async (email?: string) => {
     try {
       setCreating(true);
       setError("");
-      const newWallet = await generateWallet();
-      setWallet(newWallet);
-      setView("ready");
-      const funded = await fundWallet(newWallet.publicKey);
-      if (!funded) setError("Wallet created but funding failed. You may need to fund it manually.");
-      const bal = await getBalance(newWallet.publicKey);
-      setBalance(bal);
+      const w = await generateWallet(email);
+      await finishWallet(w);
     } catch (err: any) {
       setError(err.message || "Failed to create wallet");
     } finally {
       setCreating(false);
     }
   };
+
+  const handleGoogleLogin = useGoogleLogin({
+    onSuccess: async (tokenResponse) => {
+      try {
+        setCreating(true);
+        setError("");
+        const res = await fetch("https://www.googleapis.com/oauth2/v3/userinfo", {
+          headers: { Authorization: `Bearer ${tokenResponse.access_token}` },
+        });
+        const user = await res.json();
+        const w = await generateWallet(user.email);
+        await finishWallet(w);
+      } catch (err: any) {
+        setError(err.message || "Google sign-in failed");
+      } finally {
+        setCreating(false);
+      }
+    },
+    onError: () => setError("Google sign-in failed"),
+  });
 
   const handleRestore = async () => {
     try {
@@ -55,10 +80,7 @@ export default function WalletPage() {
         return;
       }
       const restored = await restoreFromMnemonic(mnemonicInput.trim());
-      setWallet(restored);
-      setView("ready");
-      const bal = await getBalance(restored.publicKey);
-      setBalance(bal);
+      await finishWallet(restored);
     } catch (err: any) {
       setError(err.message || "Failed to restore wallet");
     }
@@ -93,13 +115,13 @@ export default function WalletPage() {
         <div className="card">
           <div className="flex-between">
             <h2 className="card-title">Wallet Ready</h2>
-            <button onClick={handleDelete} className="btn-secondary btn-icon">
+            <button onClick={handleDelete} className="btn-secondary btn-icon" title="Remove wallet">
               <Trash2 className="icon-sm" />
             </button>
           </div>
 
-          <div className="status-badge">
-            <p className="mono-text">{wallet.publicKey}</p>
+          <div className="status-badge flex-row">
+            <span className="mono-text">{wallet.publicKey.slice(0, 12)}...{wallet.publicKey.slice(-8)}</span>
             <a href={getExplorerUrl("account", wallet.publicKey)} target="_blank" rel="noopener noreferrer" className="link-primary">
               <ExternalLink className="icon-sm" />
             </a>
@@ -112,10 +134,10 @@ export default function WalletPage() {
             <p className="balance-value">{parseFloat(balance).toFixed(7)} XLM</p>
           </div>
 
-          <div className="card">
+          <div className="card-flush">
             <p className="input-label">Recovery Phrase</p>
             <p className="detail-text">
-              Save these 24 words somewhere safe. You need them to restore your wallet.
+              Save these 24 words somewhere safe. You need them to restore your wallet if you lose access.
             </p>
             <div className="mnemonic-grid">
               {wallet.mnemonic.split(" ").map((word, i) => (
@@ -134,11 +156,9 @@ export default function WalletPage() {
             </div>
           </div>
 
-          <div className="flex-row">
-            <button onClick={() => router.push("/dashboard")} className="btn-primary">
-              Go to Dashboard
-            </button>
-          </div>
+          <button onClick={() => router.push("/dashboard")} className="btn-primary">
+            Go to Dashboard
+          </button>
 
           {error && <p className="status-error">{error}</p>}
         </div>
@@ -146,28 +166,41 @@ export default function WalletPage() {
         <div className="card">
           <h2 className="card-title">Atreus Wallet</h2>
           <p className="card-body">
-            No wallet found. Create a new one or restore from a seed phrase.
+            No wallet found. Sign in with Google or create a new wallet.
           </p>
 
-          <div className="flex-row">
-            <button
-              onClick={handleCreate}
-              disabled={creating}
-              className="btn-primary"
-            >
-              {creating ? (
-                <><Loader2 className="icon-sm icon-spin" /> Creating...</>
-              ) : (
-                <><Plus className="icon-sm" /> New Wallet</>
-              )}
-            </button>
-            <button
-              onClick={() => setView("restore")}
-              className="btn-secondary"
-            >
-              <><LogIn className="icon-sm" /> Restore</>
-            </button>
+          <button
+            onClick={() => handleGoogleLogin()}
+            disabled={creating}
+            className="btn-primary flex-center-row"
+          >
+            {creating ? (
+              <><Loader2 className="icon-sm icon-spin" /> Signing in...</>
+            ) : (
+              <><ChromeIcon className="icon-sm" /> Sign in with Google</>
+            )}
+          </button>
+
+          <div className="divider-hr">
+            <span className="divider-line"></span>
+            <span className="detail-text">or</span>
+            <span className="divider-line"></span>
           </div>
+
+          <button
+            onClick={() => handleCreate()}
+            disabled={creating}
+            className="btn-secondary flex-center-row"
+          >
+            <><Plus className="icon-sm" /> Create Anonymous Wallet</>
+          </button>
+
+          <button
+            onClick={() => setView("restore")}
+            className="btn-secondary flex-center-row"
+          >
+            <><LogIn className="icon-sm" /> Restore from Seed Phrase</>
+          </button>
 
           {error && <p className="status-error">{error}</p>}
 
