@@ -1,5 +1,5 @@
-import { Horizon, Networks, TransactionBuilder, Asset, Contract, Address, nativeToScVal, xdr, rpc, Keypair, BASE_FEE, Operation, Memo } from "@stellar/stellar-sdk";
-import { signTransaction, requestAccess } from "@stellar/freighter-api";
+import { Horizon, Networks, TransactionBuilder, Asset, Contract, Address, nativeToScVal, xdr, rpc, Keypair, BASE_FEE, Operation } from "@stellar/stellar-sdk";
+import { getKeypair, loadWallet } from "./wallet";
 
 export const HORIZON_URL = "https://horizon-testnet.stellar.org";
 export const SOROBAN_RPC_URL = "https://soroban-testnet.stellar.org";
@@ -29,9 +29,9 @@ export interface Transaction {
 }
 
 export const connectWallet = async (): Promise<string> => {
-  const { address } = await requestAccess();
-  if (!address) throw new Error("Wallet not connected");
-  return address;
+  const wallet = loadWallet();
+  if (!wallet) throw new Error("No wallet found. Create one on the wallet page.");
+  return wallet.publicKey;
 };
 
 export const xlmToStroops = (amount: string): bigint => {
@@ -101,14 +101,12 @@ export const createEscrowTx = async (creator: string, amount: string, hash: Uint
     throw new Error(`Failed to simulate transaction: ${err?.message || err}`);
   }
 
-  const signedXdr = await signTransaction(tx.toXDR(), { networkPassphrase });
-  if (signedXdr.error) throw new Error(signedXdr.error);
-
-  const txToSubmit = TransactionBuilder.fromXDR(signedXdr.signedTxXdr as string, networkPassphrase);
+  const kp = getKeypair();
+  tx.sign(kp);
 
   let sendResult;
   try {
-    sendResult = await rpcServer.sendTransaction(txToSubmit as any);
+    sendResult = await rpcServer.sendTransaction(tx as any);
   } catch (err: any) {
     throw new Error(`Could not reach the Stellar network: ${err?.message || err}`);
   }
@@ -140,11 +138,10 @@ export const claimLinkTx = async (recipient: string, linkHash: Uint8Array, secre
 
   tx = await rpcServer.prepareTransaction(tx) as any;
 
-  const signedXdr = await signTransaction(tx.toXDR(), { networkPassphrase });
-  if (signedXdr.error) throw new Error(signedXdr.error);
+  const kp = getKeypair();
+  tx.sign(kp);
 
-  const txToSubmit = TransactionBuilder.fromXDR(signedXdr.signedTxXdr as string, networkPassphrase);
-  const sendResult = await rpcServer.sendTransaction(txToSubmit as any);
+  const sendResult = await rpcServer.sendTransaction(tx as any);
 
   if (sendResult.status === "ERROR") {
     throw new Error(`Tx submission failed: ${(sendResult as any).errorResultXdr || (sendResult as any).errorResult}`);
@@ -170,11 +167,10 @@ export const submitProofTx = async (recipient: string, proofBytes: Uint8Array) =
 
   tx = await rpcServer.prepareTransaction(tx) as any;
 
-  const signedXdr = await signTransaction(tx.toXDR(), { networkPassphrase });
-  if (signedXdr.error) throw new Error(signedXdr.error);
+  const kp = getKeypair();
+  tx.sign(kp);
 
-  const txToSubmit = TransactionBuilder.fromXDR(signedXdr.signedTxXdr as string, networkPassphrase);
-  const sendResult = await rpcServer.sendTransaction(txToSubmit as any);
+  const sendResult = await rpcServer.sendTransaction(tx as any);
 
   if (sendResult.status === "ERROR") {
     throw new Error(`Tx submission failed: ${(sendResult as any).errorResultXdr || (sendResult as any).errorResult}`);
@@ -214,11 +210,11 @@ export const sendXLM = async (sender: string, destination: string, amount: strin
     .setTimeout(30).build();
 
   tx = await rpcServer.prepareTransaction(tx) as any;
-  const signedXdr = await signTransaction(tx.toXDR(), { networkPassphrase });
-  if (signedXdr.error) throw new Error(signedXdr.error);
 
-  const txToSubmit = TransactionBuilder.fromXDR(signedXdr.signedTxXdr as string, networkPassphrase);
-  const result = await rpcServer.sendTransaction(txToSubmit as any);
+  const kp = getKeypair();
+  tx.sign(kp);
+
+  const result = await rpcServer.sendTransaction(tx as any);
   if (result.status === "ERROR") throw new Error("Transaction failed");
   return result.hash;
 };
@@ -261,11 +257,11 @@ export const swapXLM = async (sender: string, destAsset: Asset, destAmount: stri
   if ((simResult as any).error) throw new Error("Swap simulation failed");
 
   tx = await rpcServer.prepareTransaction(tx) as any;
-  const signedXdr = await signTransaction(tx.toXDR(), { networkPassphrase });
-  if (signedXdr.error) throw new Error(signedXdr.error);
 
-  const txToSubmit = TransactionBuilder.fromXDR(signedXdr.signedTxXdr as string, networkPassphrase);
-  const result = await rpcServer.sendTransaction(txToSubmit as any);
+  const kp = getKeypair();
+  tx.sign(kp);
+
+  const result = await rpcServer.sendTransaction(tx as any);
   if (result.status === "ERROR") throw new Error("Swap failed");
   return result.hash;
 };
