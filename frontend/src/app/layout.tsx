@@ -13,8 +13,8 @@ const manrope = Manrope({
 });
 
 export const metadata: Metadata = {
-  title: "Atreus",
-  description: "Private, walletless payments on Stellar",
+  title: "Atreus Wallet",
+  description: "Wallet with ZK-ready payment links on Stellar. Send, receive, swap, and create private payment links.",
 };
 
 export default function RootLayout({

@@ -50,11 +50,17 @@ pub struct LinkInfo {
 
 Helper `make_secret(env, val)` creates `(secret: BytesN<32>, link_hash: BytesN<32>)` using `sha256`.
 
-## 4 — VerifierContract (Placeholder)
+## 4 — VerifierContract (Proof Receipt Service)
 
-**File:** `contracts/verifier-contract/src/lib.rs` (34 lines)
+**File:** `contracts/verifier-contract/src/lib.rs` (57 lines)
 
-Stores verification key. `verify_proof()` returns `true` for any non-empty proof — actual BN254 verification is a TODO for Phase 2.
+**Functions:**
+- `__constructor(verification_key)` — stores VK for future verification
+- `submit_proof(recipient, proof)` — validates 2144-byte proof length, emits `("proof", recipient)` event
+- `verify_proof(public_inputs, proof)` — placeholder, returns `!proof.is_empty()`
+- `verification_key()` — returns stored VK
+
+**See Section 6 below** for the architecture decision behind the proof receipt service pattern.
 
 ## 5 — Docker Dev Environment
 
@@ -88,19 +94,27 @@ Known issue: `prove` service (bb.js UltraHonk) crashes on Windows with `RuntimeE
 ## 7 — Testnet Deployment
 
 **Date:** 2026-07-02
+**Status:** ✅ Both contracts deployed and responsive via Soroban RPC
 
 | Contract | ID | 
 |---|---|
 | VerifierContract | `CA3WA53LKQEJH3L3FSLFOUBOB3DG7D4IHEE4GEMM35WC5Z5YWDN264DB` |
 | AtreusContract | `CAITLKEO4YJ5HQR6DORTWX5RAVD5XLSHCPWIOZIWSQF6CSNJIPXOQKT2` |
 
-**Deployer key:** `atreus-deployer` (testnet, funded via friendbot)
-
 **Constructor args:** AtreusContract receives `verifier: CA3WA53L...` — cross-contract call architecture is wired.
+
+**Env vars in frontend:**
+```env
+NEXT_PUBLIC_CONTRACT_ID=CAITLKEO4YJ5HQR6DORTWX5RAVD5XLSHCPWIOZIWSQF6CSNJIPXOQKT2
+NEXT_PUBLIC_VERIFIER_CONTRACT_ID=CA3WA53LKQEJH3L3FSLFOUBOB3DG7D4IHEE4GEMM35WC5Z5YWDN264DB
+NEXT_PUBLIC_TOKEN_ID=CDLZFC3SYJYDZT7K67VZ75HPJVIEUVNIXF47ZG2FB2RMQQVU2HHGCYSC
+```
+
+**Deployer key:** `atreus-deployer` (testnet, funded via friendbot)
 
 ## 8 — Known Limitations
 
-- `bb.js` UltraHonk `generateProof()` crashes on Windows Node 20 (`RuntimeError: unreachable` in WASM). Also crashes in Docker/Linux with Pedersen hash circuits.
+- `bb.js` UltraHonk `generateProof()` crashes on ALL platforms (Windows + Docker/Linux) with Pedersen hash circuits — not just a Windows issue
 - Mock proof (2144 random bytes) used in frontend instead of real proof. `nargo test` passes (circuit logic correct).
-- Sorobon Protocol 25/26 BN254 precompiles not yet available — on-chain verification deferred.
-- Docker `prove` service fails due to native backend process crash in bb.js.
+- Soroban SDK 22.0.0 lacks BN254 precompiles (ecAdd, ecMul, ecPairing) — on-chain UltraHonk verification impossible until Protocol 25/26
+- Docker `prove` service fails due to native backend process crash in bb.js

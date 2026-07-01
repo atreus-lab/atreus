@@ -31,11 +31,9 @@ export default function ClaimPage() {
         await crypto.subtle.digest("SHA-256", secretBytes)
       );
 
-      // Step 1: Submit ZK proof to VerifierContract
       setStatus("submitting_proof");
       await submitProofTx(recipient, hexToBytes(MOCK_ULTRAHONK_PROOF));
 
-      // Step 2: Claim funds from AtreusContract
       setStatus("claiming");
       await claimLinkTx(recipient, linkHash, secretBytes);
 
@@ -58,7 +56,7 @@ export default function ClaimPage() {
           </p>
 
           {status === "error" && (
-            <div className="status-error mb-4">{errorMsg}</div>
+            <div className="status-error">{errorMsg}</div>
           )}
 
           <button

@@ -1,45 +1,46 @@
 # Atreus
 
-> Privacy-preserving payment links on Stellar. No seed phrase required for recipients.
+> Privacy-preserving payment links + full-featured Stellar wallet. Built for [Stellar Hacks: Real-World ZK](https://dorahacks.io/hackathon/stellar-hacks-zk/detail).
 
-**TL;DR** — Sender creates a payment link with a secret. Recipient opens the link, proves knowledge of the secret, and receives funds. The secret never appears on-chain.
+## What It Does
 
-Built for [Stellar Hacks: Real-World ZK](https://dorahacks.io/hackathon/stellar-hacks-zk/detail).
+- **Wallet Dashboard** — View balance, all assets, recent transactions. Create wallet instantly (no extension needed).
+- **Send / Receive** — Send XLM to any Stellar address. Receive with copy-address + explorer link.
+- **Swap** — XLM → USDC/EURT via Stellar DEX path payments. Auto-adds trustlines.
+- **Payment Links** — Create escrow links with SHA-256 secret. Recipient claims with ZK proof architecture demo.
+- **Manage Assets** — Add trustlines for any Stellar asset (USDC, EURT, custom).
 
-## Current State (MVP)
-
-The MVP uses **SHA-256** for secret verification (no ZK proofs yet). The ZK circuit (Noir/Pedersen) compiles and tests pass, but proof generation is blocked on Windows (`bb.js` WASM crash). Phase 2 will swap SHA-256 verification for UltraHonk proof verification.
+## Current State
 
 | Component | Status | Notes |
 |-----------|--------|-------|
-| Contract: `create_link` | ✅ Working | Escrows tokens with SHA-256 link_hash |
-| Contract: `claim_link` | ✅ Working | Verifies `sha256(secret) == link_hash` |
-| Contract: `refund_link` | ✅ Working | Creator reclaims after expiry |
-| Contract tests | ✅ 5/5 pass | `cargo test -p atreus-contract` |
-| Noir circuit | ✅ Compiles + tests pass | Pedersen-based, ready for Phase 2 |
-| Frontend: Create page | ✅ Working | Web Crypto SHA-256, Freighter signing |
-| Frontend: Claim page | ✅ Working | Real Soroban tx via Freighter |
-| Frontend build | ✅ Passes | `next build` succeeds |
-| Backend API | ⏳ Stubs | Express server with mock endpoints |
-| ZK proof generation | ❌ Blocked | bb.js WASM crashes on Windows Node 20 |
-| VerifierContract | ⏳ Placeholder | Stores VK, `verify_proof()` is stub |
+| Wallet dashboard | ✅ Working | localStorage keypair, Horizon API |
+| Send XLM | ✅ Working | Web wallet signing via stellar-sdk |
+| Receive | ✅ Working | Copy address, explorer link |
+| Swap (XLM → USDC/EURT) | ✅ Working | DEX path payment, auto-trustline |
+| Manage Assets (trustlines) | ✅ Working | Add USDC, EURT, or custom assets |
+| Create payment link | ✅ Working | Freighter + Soroban contract call |
+| Claim payment link | ✅ Working | ZK proof receipt + SHA-256 fallback |
+| VerifierContract | ✅ Deployed | Proof receipt service (testnet) |
+| AtreusContract | ✅ Deployed | Escrow + claim (testnet) |
+| Noir circuit | ⏳ Compiles + tests pass | Pedersen hash — proof gen blocked |
+| bb.js UltraHonk proof | ❌ Blocked | Crashes on ALL platforms with Pedersen |
+| Backend API | ❌ Cut from MVP | Frontend calls Soroban directly |
 
 ## Monorepo Structure
 
 ```
 atreus/
-├── frontend/          Next.js 15 web app (link create/claim)
-├── backend/           Express API (stub — cut from MVP scope)
+├── frontend/          Next.js 15 web app (wallet + payment links)
+├── backend/           Express API (cut from MVP scope)
 ├── contracts/         Soroban smart contracts (Rust)
 ├── circuits/          Noir ZK circuits (Pedersen hash)
-├── docs/              Architecture + design system
+├── docs/              Architecture + design system (stale)
 ├── Dockerfile         Node 20 + nargo 1.0.0-beta.22
 ├── docker-compose.yml Docker services for nargo commands
 ├── package.json       Root pnpm workspace config
 └── pnpm-workspace.yaml
 ```
-
-**pnpm workspace** includes `frontend` and `backend` only. `contracts` and `circuits` are standalone (Rust/Noir).
 
 ## Getting Started
 
@@ -47,17 +48,27 @@ atreus/
 
 - Node.js >= 18
 - [Rust + Cargo](https://rustup.rs/) (for contracts)
-- [Docker](https://docker.com/) (for circuits — no Windows binary for nargo)
-- [Freighter wallet](https://freighter.browser.com/) browser extension
+- [Docker](https://docker.com/) (for circuits — no Windows nargo binary)
+- [Freighter wallet](https://freighter.browser.com/) (optional — only for create/claim pages)
 
-### Install & Run
+### Quick Start
 
 ```bash
-# Frontend + backend
-pnpm install
-pnpm dev                 # runs both in parallel
-pnpm dev:frontend        # frontend only (localhost:3000)
-pnpm dev:backend         # backend only (localhost:3001)
+# Frontend only
+cd frontend
+npm install
+cp .env.example .env.local   # edit with your values
+npm run dev                   # http://localhost:3000
+```
+
+### All Commands
+
+```bash
+# Frontend
+cd frontend
+npm install
+npm run dev            # dev server on :3000
+npm run build          # production build
 
 # Contracts (Rust)
 cd contracts
@@ -72,58 +83,77 @@ docker compose run --rm execute    # nargo execute (generates witness)
 
 ### Environment Variables
 
-Copy `.env.example` to `.env.local` (frontend) or `.env` (backend):
-
 ```env
-NEXT_PUBLIC_CONTRACT_ID=    # Soroban contract address (after deploy)
-NEXT_PUBLIC_TOKEN_ID=       # XLM Stellar Asset Contract address on testnet
+NEXT_PUBLIC_CONTRACT_ID=CAITLKEO4YJ5HQR6DORTWX5RAVD5XLSHCPWIOZIWSQF6CSNJIPXOQKT2
+NEXT_PUBLIC_VERIFIER_CONTRACT_ID=CA3WA53LKQEJH3L3FSLFOUBOB3DG7D4IHEE4GEMM35WC5Z5YWDN264DB
+NEXT_PUBLIC_TOKEN_ID=CDLZFC3SYJYDZT7K67VZ75HPJVIEUVNIXF47ZG2FB2RMQQVU2HHGCYSC
 ```
+
+## Pages
+
+| Route | Feature | Auth |
+|-------|---------|------|
+| `/` | Landing page | None |
+| `/wallet` | Create/manage wallet | localStorage |
+| `/dashboard` | Balance, assets, actions, tx history | localStorage |
+| `/send` | Send XLM | localStorage |
+| `/receive` | Receive — copy address | localStorage |
+| `/swap` | XLM → token via Stellar DEX | localStorage |
+| `/assets` | Add trustlines (USDC, EURT, custom) | localStorage |
+| `/create` | Create payment link (Freighter) | Freighter |
+| `/claim` | Claim payment link (Freighter) | Freighter |
+
+## Architecture
+
+### Web Wallet (No Extension Needed)
+
+- `wallet.ts`: `Keypair.random()` → localStorage → `tx.sign(kp)` → `rpcServer.sendTransaction()`
+- Friendbot funding via `https://friendbot.stellar.org`
+- All wallet pages (dashboard, send, receive, swap, assets) work without Freighter
+
+### Payment Links
+
+1. **Sender**: Generates 32-byte secret → SHA-256 → `create_link(id, 0, empty, amount, asset, expiry, sender)` → contract escrows tokens
+2. **Recipient**: Opens URL with `#secretHex` → submits mock ZK proof to VerifierContract → calls `claim_link(linkHash, recipient, secret)` → SHA-256 verified → tokens released
+
+### ZK Architecture (Demo)
+
+- Noir circuit compiles + tests pass (`nargo test`)
+- bb.js UltraHonk proof generation BLOCKED on ALL platforms (native backend crash with Pedersen)
+- VerifierContract deployed as proof receipt service: `submit_proof()` validates 2144-byte format, emits event
+- SHA-256 fallback releases funds in current MVP
+- Architecture ready for Soroban Protocol 25/26 BN254 precompiles
+
+## Deployed Contracts (Testnet)
+
+| Contract | ID |
+|----------|-----|
+| VerifierContract | `CA3WA53LKQEJH3L3FSLFOUBOB3DG7D4IHEE4GEMM35WC5Z5YWDN264DB` |
+| AtreusContract | `CAITLKEO4YJ5HQR6DORTWX5RAVD5XLSHCPWIOZIWSQF6CSNJIPXOQKT2` |
 
 ## Packages
 
 | Package | Tech | What it does |
 |---------|------|-------------|
-| `frontend/` | Next.js 15, React 18, Tailwind CSS | Link create/claim UI, Freighter wallet integration |
-| `backend/` | Express, TypeScript | REST API stubs (cut from MVP — frontend calls Soroban directly) |
-| `contracts/` | Rust, Soroban SDK 22.0.0 | Escrow contract + VerifierContract placeholder |
-| `circuits/` | Noir 1.0.0-beta.22 | Pedersen-based ZK proof circuit (Phase 2) |
+| `frontend/` | Next.js 15, React 19, Tailwind CSS | Wallet + payment links UI |
+| `backend/` | Express, TypeScript | REST API stubs (cut from MVP) |
+| `contracts/` | Rust, Soroban SDK 22.0.0 | Escrow contract + VerifierContract |
+| `circuits/` | Noir 1.0.0-beta.22 | Pedersen-based ZK proof circuit |
 
-## Contract API
+## Known Issues
 
-```rust
-// AtreusContract
-create_link(id, policy_type, policy_params, amount, asset, expiry, sender)
-claim_link(link_hash, recipient, secret)    // Phase 2: secret → proof
-refund_link(link_hash)
-
-// VerifierContract (placeholder)
-verify_proof(public_inputs, proof) -> bool
-verification_key() -> Bytes
-```
-
-## Claim Flow (Current MVP)
-
-```
-Sender                              Recipient
-  │                                    │
-  ├─ Generate 32-byte secret           │
-  ├─ SHA-256(secret) → link_hash       │
-  ├─ create_link(link_hash, amount)    │
-  ├─ Share URL: /claim#<secret_hex>    │
-  │                                    ├─ Open link
-  │                                    ├─ Read #secretHex
-  │                                    ├─ SHA-256(secret) → link_hash
-  │                                    ├─ claim_link(link_hash, recipient, secret)
-  │                                    └─ Funds transferred
-```
-
-**Phase 2 (ZK):** Secret stays private. Recipient generates UltraHonk proof that they know the secret without revealing it. Contract verifies proof via VerifierContract.
+- bb.js UltraHonk crashes on ALL platforms (Windows + Docker/Linux) — proof gen deferred
+- Soroban SDK 22.0.0 lacks BN254 precompiles — on-chain UltraHonk verification impossible
+- `/docs/architecture.md` and `/docs/design.md` are stale
+- Testnet has limited DEX liquidity — swap may fail for some token pairs
+- Create/claim pages require Freighter (wallet pages don't)
 
 ## Docs
 
-- [Architecture](./docs/architecture.md) — System design, security model, roadmap
-- [Design System](./docs/design.md) — UI tokens, colors, typography
 - Walkthrough files in each package's `walkthrough/` directory
+- [Frontend Walkthrough](./frontend/walkthrough/allwalkthrough.md)
+- [Contracts Walkthrough](./contracts/walkthrough/allwalkthrough.md)
+- [Circuits Walkthrough](./circuits/walkthrough/allwalkthrough.md)
 
 ## License
 
