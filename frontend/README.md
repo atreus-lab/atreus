@@ -1,6 +1,6 @@
 # Atreus Frontend
 
-Next.js 15 web app for creating and claiming Stellar payment links.
+Next.js 15 web app for creating and claiming Stellar payment links with real ZK proofs.
 
 ## What's Implemented
 
@@ -8,29 +8,38 @@ Next.js 15 web app for creating and claiming Stellar payment links.
 
 | Route | File | What it does |
 |-------|------|-------------|
-| `/` | `src/app/page.tsx` | Landing page with "Create Link" and "Claim Funds" buttons |
-| `/create` | `src/app/create/page.tsx` | Create payment link: Freighter connect → enter amount → generate secret → SHA-256 → submit Soroban tx → display shareable URL |
-| `/claim` | `src/app/claim/page.tsx` | Claim funds: parse secret from URL hash → Freighter connect → SHA-256 → submit claim tx |
+| `/` | `src/app/page.tsx` | Landing page |
+| `/wallet` | `src/app/wallet/page.tsx` | Create / restore wallet (Google OAuth, anonymous, seed phrase) |
+| `/dashboard` | `src/app/dashboard/page.tsx` | Balance, assets, tx history, quick actions |
+| `/send` | `src/app/send/page.tsx` | Send XLM to any Stellar address |
+| `/receive` | `src/app/receive/page.tsx` | Copy address + explorer link |
+| `/swap` | `src/app/swap/page.tsx` | XLM → USDC/EURT via Stellar DEX |
+| `/assets` | `src/app/assets/page.tsx` | Add trustlines (USDC, EURT, custom) |
+| `/create` | `src/app/create/page.tsx` | Create escrow payment link |
+| `/claim` | `src/app/claim/page.tsx` | Claim funds via real ZK proof flow |
 
 ### Libraries
 
 | File | What it does |
 |------|-------------|
-| `src/lib/stellar.ts` | `connectWallet()`, `createEscrowTx()`, `claimLinkTx()` — Soroban tx building + Freighter signing |
-| `src/lib/passkey.ts` | Stub — `registerPasskey()` and `signWithPasskey()` log to console, return mock data |
+| `src/lib/stellar.ts` | `connectWallet()`, `createEscrowTx()` (with balance check), `claimLinkTx()` (with funded-account check), Soroban tx building + signing |
+| `src/lib/zk.ts` | **New** — client-side ZK proof generation: `generateClaimProof()`, `requestAttestation()` |
+| `src/lib/proof.ts` | `hexToBytes()`, `bytesToHex()` utilities |
+| `src/lib/wallet.ts` | BIP39 mnemonic wallet: create, restore, store, sign |
 
 ### Scripts
 
 | File | What it does |
 |------|-------------|
-| `scripts/compile-circuit.mjs` | Compiles Noir circuit via `@noir-lang/noir_wasm` |
-| `scripts/prove-circuit.mjs` | Generates UltraHonk proof via `@aztec/bb.js` (crashes on Windows) |
-| `scripts/verify-pedersen.mjs` | Verifies bb.js Pedersen hash matches Noir `pedersen_hash` (confirmed: hashIndex=0) |
-| `scripts/verify-poseidon.mjs` | Tests Poseidon compatibility (poseidon-lite ≠ Noir Poseidon2 — different outputs) |
+| `scripts/prove-circuit-test.mjs` | Generates UltraHonk proof from static witness (confirmed: 14,656 bytes, verified: true) |
+| `scripts/prove-circuit.mjs` | Generates proof + exports VK |
+| `scripts/verify-pedersen.mjs` | Verified: bb.js `hashIndex=0` matches Noir `pedersen_hash` |
+| `scripts/verify-poseidon.mjs` | Poseidon compatibility test |
+| `scripts/compile-circuit.mjs` | Noir circuit compiler via `@noir-lang/noir_wasm` |
 
 ### Design
 
-Dark theme with slate color palette. CSS custom properties in `globals.css`. Typography: Manrope (headings), Inter (body). Tailwind CSS for utility classes + semantic component classes (`.card`, `.btn-primary`, `.btn-claim`, etc.).
+Dark theme with slate color palette. CSS custom properties in `globals.css`. Typography: Manrope (headings), Inter (body). **Semantic CSS classes only** — no raw Tailwind utilities in components. See `docs/design.md`.
 
 ## Tech Stack
 
@@ -38,59 +47,88 @@ Dark theme with slate color palette. CSS custom properties in `globals.css`. Typ
 |-------|--------|
 | Framework | Next.js 15 (App Router) |
 | Language | TypeScript |
-| Styling | Tailwind CSS |
+| Styling | Tailwind CSS (semantic classes only) |
 | Blockchain | Stellar / Soroban |
-| SDK | `@stellar/stellar-sdk` ^16.0.1 |
-| Wallet | `@stellar/freighter-api` ^6.0.1 |
+| SDK | `@stellar/stellar-sdk@^16.0.1` |
+| ZK proving | `@aztec/bb.js@5.0.0-nightly.20260522` (exact) + `@noir-lang/noir_js@1.0.0-beta.22` |
 | Icons | lucide-react |
 
 ## Getting Started
 
 ```bash
-pnpm install
-pnpm dev        # localhost:3000
-pnpm build      # production build
+# From repo root (pnpm workspace)
+pnpm --filter atreus-frontend install
+
+cp frontend/.env.example frontend/.env.local
+# Edit .env.local — fill in your Google Client ID
+
+# Also start the backend for the claim flow:
+npx tsx --env-file=backend/.env backend/src/index.ts  # :3001
+
+pnpm --filter atreus-frontend dev    # localhost:3000
 ```
 
-## Environment
-
-Copy `../.env.example` to `.env.local`:
+## Environment Variables
 
 ```env
-NEXT_PUBLIC_CONTRACT_ID=    # Soroban contract address (after deploy)
-NEXT_PUBLIC_TOKEN_ID=       # XLM Stellar Asset Contract address on testnet
+# Required
+NEXT_PUBLIC_CONTRACT_ID=CCZSFPZ6XPZBUPBGQ5FRP5BMW5HKZIZNCWPLJAHNOWP4ZI7BZSMJDTCD
+NEXT_PUBLIC_VERIFIER_CONTRACT_ID=CB3GJLFAGH2WQTQHSMAB7GABK4NC5Q74XDV2U7MWAYEKQV7YMBV2O7KD
+NEXT_PUBLIC_TOKEN_ID=CDLZFC3SYJYDZT7K67VZ75HPJVIEUVNIXF47ZG2FB2RMQQVU2HHGCYSC
+NEXT_PUBLIC_GOOGLE_CLIENT_ID=your-client-id.apps.googleusercontent.com
+
+# Required for claim flow (backend attestation-oracle)
+NEXT_PUBLIC_BACKEND_URL=http://localhost:3001
 ```
+
+## Claim Flow (Real ZK)
+
+`/claim#<secretHex>` triggers the full ZK attestation-oracle flow:
+
+1. **`generating_proof`** — `generateClaimProof(secretBytes, recipient)`:
+   - Loads `circuits/secret.json` from `/circuits/secret.json` (in `public/`)
+   - Computes field-domain values: `secretField`, `recipientField` via `BigInt % FR_ORDER`
+   - Runs Pedersen hash (bb.js `hashIndex=0`) for `link_hash` and `nullifier`
+   - Executes Noir circuit via `Noir.execute(inputs)` → witness
+   - Generates real 14,656-byte UltraHonk proof via `UltraHonkBackend.generateProof(witness)`
+
+2. **`attesting`** — `requestAttestation(linkHashHex, secretHex, proofHex, recipient)`:
+   - POSTs `{ recipient, secret, proof }` to `NEXT_PUBLIC_BACKEND_URL/api/links/:hash/attest`
+   - Backend independently recomputes expected public inputs, verifies proof, submits on-chain attestation
+
+3. **`claiming`** — `claimLinkTx(recipient, linkHash, secretBytes)`:
+   - Calls `AtreusContract.claim_link()` — now gated on `VerifierContract.is_attested()` being true
+   - SHA-256 secret check + attestation check both pass → funds released
 
 ## Project Structure
 
 ```
-src/
-├── app/
-│   ├── globals.css       # Tailwind + CSS custom properties
-│   ├── layout.tsx        # Root layout (Inter + Manrope fonts)
-│   ├── page.tsx          # Landing page
-│   ├── create/
-│   │   └── page.tsx      # Create link page
-│   └── claim/
-│       └── page.tsx      # Claim link page
-├── lib/
-│   ├── stellar.ts        # Soroban tx building + Freighter signing
-│   └── passkey.ts        # Passkey stub (not used in MVP)
-scripts/
-├── compile-circuit.mjs   # Noir circuit compiler
-├── prove-circuit.mjs     # UltraHonk proof generator
-├── verify-pedersen.mjs   # Pedersen hash verification
-└── verify-poseidon.mjs   # Poseidon compatibility test
+frontend/
+├── .env.local              # Gitignored — real config
+├── .env.example            # Template (no secrets)
+├── public/
+│   └── circuits/
+│       └── secret.json     # Compiled Noir circuit (fetched by browser for proof gen)
+├── scripts/                # Node.js ZK tooling scripts
+└── src/
+    ├── app/
+    │   ├── globals.css     # Tailwind + CSS custom properties + semantic classes
+    │   ├── layout.tsx      # Root layout (fonts, GoogleOAuthProvider)
+    │   ├── page.tsx        # Landing
+    │   ├── wallet/         # Wallet creation/restore
+    │   ├── dashboard/      # Balance, tx history
+    │   ├── send/           # XLM send
+    │   ├── receive/        # Address display
+    │   ├── swap/           # DEX swap
+    │   ├── assets/         # Trustlines
+    │   ├── create/         # Create payment link
+    │   └── claim/          # Claim link — real ZK proof flow
+    └── lib/
+        ├── stellar.ts      # Soroban tx building, signing, balance checks
+        ├── zk.ts           # Client-side ZK proof generation + attestation POST
+        ├── proof.ts        # hexToBytes / bytesToHex utilities
+        └── wallet.ts       # BIP39 mnemonic wallet
 ```
-
-**Note:** `components/`, `hooks/`, `services/`, `types/`, `zk/` directories do not exist yet. All UI is inline in page components.
-
-## Key Dependencies
-
-- `@aztec/bb.js` ^4.4.0 — Barretenberg (UltraHonk proof generation, Pedersen hash)
-- `@noir-lang/noir_wasm` 1.0.0-beta.22 — Noir compiler for browser/Node
-- `@noir-lang/noir_js` 1.0.0-beta.22 — Noir JS runtime
-- `buffer` ^6.0.3 — Buffer polyfill for `@stellar/stellar-sdk` in browser
 
 ## License
 

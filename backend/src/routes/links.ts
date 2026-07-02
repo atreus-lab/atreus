@@ -1,4 +1,13 @@
 import { Router, Request, Response } from "express";
+import { readFileSync } from "fs";
+import { resolve, dirname } from "path";
+import { fileURLToPath } from "url";
+import { sha256Hex, verifyClaimProof } from "../lib/zk.js";
+import { submitAttestation } from "../lib/stellar.js";
+
+const __dirname = dirname(fileURLToPath(import.meta.url));
+const circuitPath = resolve(__dirname, "../../../circuits/target/secret.json");
+const circuit = JSON.parse(readFileSync(circuitPath, "utf-8"));
 
 export const linkRoutes: Router = Router();
 
@@ -37,16 +46,41 @@ linkRoutes.get("/:hash", async (req: Request, res: Response) => {
   });
 });
 
-// POST /api/links/:hash/claim - Claim funds from a link
-linkRoutes.post("/:hash/claim", async (req: Request, res: Response) => {
-  const { hash } = req.params;
-  const { recipient, proof } = req.body;
+// POST /api/links/:hash/attest - ZK attestation-oracle endpoint.
+// Verifies a real UltraHonk proof off-chain against public inputs the backend recomputes
+// itself (not client-supplied ones), and if valid, submits a signed on-chain attestation
+// that claim_link requires before releasing funds. See contracts/README.md.
+linkRoutes.post("/:hash/attest", async (req: Request, res: Response) => {
+  const hash = String(req.params.hash);
+  const { recipient, secret, proof } = req.body;
 
-  if (!recipient || !proof) {
-    res.status(400).json({ error: "Missing recipient or proof" });
+  if (!recipient || !secret || !proof) {
+    res.status(400).json({ error: "Missing recipient, secret, or proof" });
     return;
   }
 
-  // TODO: Verify proof via VerifierContract, claim via AtreusContract
-  res.json({ success: true, hash, recipient });
+  try {
+    const secretBytes = Uint8Array.from(Buffer.from(secret, "hex"));
+    const proofBytes = Uint8Array.from(Buffer.from(proof, "hex"));
+
+    const computedHash = sha256Hex(secretBytes);
+    if (computedHash.toLowerCase() !== hash.toLowerCase()) {
+      res.status(400).json({ error: "secret does not match link_hash" });
+      return;
+    }
+
+    const isValid = await verifyClaimProof(circuit.bytecode, proofBytes, secretBytes, recipient);
+    if (!isValid) {
+      res.status(400).json({ error: "ZK proof verification failed" });
+      return;
+    }
+
+    const linkHashBytes = Uint8Array.from(Buffer.from(hash, "hex"));
+    const txHash = await submitAttestation(linkHashBytes, recipient);
+
+    res.json({ success: true, hash, recipient, attestationTx: txHash });
+  } catch (err: any) {
+    console.error(err);
+    res.status(500).json({ error: err?.message || "Attestation failed" });
+  }
 });

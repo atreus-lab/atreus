@@ -9,7 +9,7 @@
     "lint": "next lint"
   },
   "dependencies": {
-    "@aztec/bb.js": "^4.4.0",
+    "@aztec/bb.js": "5.0.0-nightly.20260522",
     "@noir-lang/acvm_js": "1.0.0-beta.22",
     "@noir-lang/barretenberg": "^2.19.0",
     "@noir-lang/noir_js": "1.0.0-beta.22",
