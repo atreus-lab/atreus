@@ -1,224 +1,294 @@
 # Frontend Walkthrough
 
-## 1 — Web-Based Wallet Architecture
+## 1 — Complete Project Status
 
-**Date:** 2026-07-02
-**MVP Strategy:** Full Stellar wallet with payment links, not just isolated link demo
+**Last updated:** 2026-07-02
+**Branch:** `feat/wallet-swap-assets-fixes` (PR #20, conflict-free after merge)
 
-### Core Wallet Features:
-- **In-browser keypair generation** via `Keypair.random()` from `@stellar/stellar-sdk`
-- **localStorage persistence** — `atreus_wallet` key stores `{publicKey, secretKey}`
-- **Friendbot funding** — testnet XLM via `https://friendbot.stellar.org`
-- **No Freighter dependency** for wallet pages — direct keypair signing
-- **Freighter optional** for create/claim pages (backward compatible)
+### What works (✅ — Direct Stellar/Horizon API, no backend needed):
+| Feature | Status | How |
+|---------|--------|-----|
+| Wallet creation | ✅ | BIP39 mnemonic → Ed25519 keypair → localStorage |
+| Google Sign-In | ✅ | OAuth 2.0 via `@react-oauth/google`, email stored |
+| Restore from seed | ✅ | BIP39 mnemonic validation + recovery |
+| Send XLM | ✅ | Direct `Operation.payment()` signed with keypair |
+| Receive | ✅ | Copy address, explorer link |
+| Swap (DEX) | ✅ | `pathPaymentStrictSend` with auto-trustline |
+| Add Assets | ✅ | `Operation.changeTrust()` for any asset |
+| Dashboard | ✅ | Balance, all assets, tx history from Horizon API |
 
-### Pages:
-| Route | Purpose | Auth |
-|---|---|---|
-| `/` | Landing page | None |
-| `/wallet` | Create/manage wallet | localStorage |
-| `/dashboard` | Balance, assets, actions, tx history | localStorage |
-| `/send` | Send XLM | localStorage |
-| `/receive` | Copy address, explorer link | localStorage |
-| `/swap` | XLM → USDC/EURT via Stellar DEX | localStorage |
-| `/assets` | Manage trustlines (add USDC, EURT, custom) | localStorage |
-| `/create` | Create payment link (escrow) | Freighter |
-| `/claim` | Claim payment link (ZK proof + SHA-256 fallback) | Freighter |
+### What needs contracts (❌ — depends on deployed Soroban contracts):
+| Feature | Status | Why |
+|---------|--------|-----|
+| Create Link | Needs test | `AtreusContract.create_link()` must be live |
+| Claim Link | Needs test | `VerifierContract.submit_proof()` + `claim_link()` |
+| ZK Proofs | ❌ Blocked | bb.js crashes on all platforms with Pedersen |
 
-## 2 — Poseidon → SHA256 Pivot (Early Phase)
+## 2 — Wallet Architecture (BIP39 + OAuth)
 
-**Problem:** `poseidon-lite` (JS) uses original Poseidon (circomlib parameters). Noir uses Poseidon2 (different round constants). Same inputs → different outputs → every proof fails.
+**File:** `frontend/src/lib/wallet.ts` (211 lines)
 
-**Also:** bb.js Pedersen WASM crashes on Windows Node 20 (`RuntimeError: unreachable`).
+### Keypair derivation:
+```
+bip39.generateMnemonic(256) → 24-word mnemonic
+  → bip39.mnemonicToSeed(mnemonic) → 64-byte seed
+    → Keypair.fromRawEd25519Seed(seed[0..32]) → Stellar keypair
+```
 
-**Solution:** Replace with Web Crypto SHA-256 — native in browser, matches `env.crypto().sha256()` in contract.
+### Wallet storage:
+```typescript
+interface StoredWallet {
+  publicKey: string;   // Stellar G... address
+  secretKey: string;   // Ed25519 secret key
+  mnemonic: string;    // 24-word BIP39 recovery phrase
+  email?: string;      // From Google OAuth (optional)
+}
+```
 
-**Changes:**
-- `create/page.tsx`: `poseidon1(secretBigInt)` → `crypto.subtle.digest("SHA-256", secretBytes)`
-- `package.json`: removed `poseidon-lite` dependency
-- `next.config.js`: Buffer polyfill for `@stellar/stellar-sdk` (ProvidePlugin + resolve fallback)
+Stored in `localStorage` key `atreus_wallet`. Cleared on "Remove Wallet".
 
-## 2 — Create Link Page
+### Authentication options:
+| Method | Description |
+|--------|-------------|
+| Google Sign-In | `useGoogleLogin()` → fetch email → `generateWallet(email)` |
+| Anonymous | `generateWallet()` — no email, just keypair |
+| Restore | `restoreFromMnemonic(phrase)` — validates + recovers |
 
-**File:** `frontend/src/app/create/page.tsx` (105 lines)
+### Key differences from v1 (Freighter):
+| v1 (Old) | v2 (Current) |
+|----------|-------------|
+| `Keypair.random()` — no recovery | `bip39.generateMnemonic()` — 24 words |
+| Freighter browser extension | Direct `tx.sign(kp)` with secret key |
+| `signTransaction(xdr)` from freighter | `tx.sign(getKeypair())` |
+| Freighter for create/claim too | All signing via localStorage keypair |
+
+## 3 — Google OAuth Integration
+
+**Files:**
+- `frontend/src/app/layout.tsx` — wraps app in `GoogleOAuthProvider`
+- `frontend/src/app/wallet/page.tsx` — `useGoogleLogin()` hook
+- `frontend/.env.example` — `NEXT_PUBLIC_GOOGLE_CLIENT_ID`
+
+**Flow:**
+1. User clicks "Sign in with Google"
+2. Google OAuth popup → returns `access_token`
+3. Fetch email: `GET https://www.googleapis.com/oauth2/v3/userinfo`
+4. Create wallet with email association
+5. Email displayed on dashboard
+
+**Env setup:**
+```env
+NEXT_PUBLIC_GOOGLE_CLIENT_ID=your-client-id.apps.googleusercontent.com
+```
+
+## 4 — Wallet Page
+
+**File:** `frontend/src/app/wallet/page.tsx` (226 lines)
+
+**States:**
+| View | Description |
+|------|-------------|
+| `create` | 3 buttons: Google Sign-In, Anonymous, Restore |
+| `restore` | Textarea for 24-word seed phrase + Restore button |
+| `ready` | Address, balance, mnemonic (show/hide/copy), email, Go to Dashboard |
+
+**Mnemonic UI:**
+- Grid layout with numbered words (`.mnemonic-grid`, `.mnemonic-word`)
+- Show/Hide toggle (Eye/EyeOff icons)
+- Copy to clipboard (Copy/Check icons)
+- Warning text: "Save these 24 words somewhere safe"
+
+## 5 — Create Link Page
+
+**File:** `frontend/src/app/create/page.tsx` (101 lines)
 
 **Flow:**
 1. User enters amount (XLM)
-2. Clicks "Generate Link" → `connectWallet()` (Freighter)
+2. Clicks "Generate Link" → `connectWallet()` (now uses localStorage wallet, not Freighter)
 3. Generates 32 random bytes via `crypto.getRandomValues(new Uint8Array(32))`
 4. Computes `linkHash = SHA-256(secretBytes)` via Web Crypto API
-5. Calls `createEscrowTx(creator, amount, linkHash)`
-6. Constructs URL: `https://app/claim#<secretHex>`
+5. Calls `createEscrowTx(creator, amount, linkHash)`:
+   - `xlmToStroops(amount)` — BigInt-based conversion
+   - `waitForTransaction(hash)` — polls Soroban RPC until confirmed
+6. Constructs URL: `/claim#<secretHex>` — secret never sent to server
 7. Displays link with copy-to-clipboard button
 
-**Key:** URL fragment (`#`) — secret never sent to server. Only client-side JavaScript reads it.
+**Key detail:** URL fragment (`#`) means secret stays client-side only.
 
-**UI states:** Loading spinner + "Generating..." while tx pending, error display on failure.
+## 6 — Claim Link Page
 
-## 3 — Claim Link Page
-
-**File:** `frontend/src/app/claim/page.tsx` (81 lines)
+**File:** `frontend/src/app/claim/page.tsx` (86 lines)
 
 **Flow:**
 1. Reads `secretHex` from `window.location.hash` on mount
-2. User clicks "Claim with Freighter" → `connectWallet()`
-3. Parses hex string to `Uint8Array` (32 bytes)
+2. User clicks "Claim with ZK Proof"
+3. Parses hex → `Uint8Array` (32 bytes)
 4. Computes `linkHash = SHA-256(secretBytes)`
-5. Calls `claimLinkTx(recipient, linkHash, secretBytes)`
-6. Shows success message
+5. **Step 1:** `submitProofTx(recipient, mockProof)` → VerifierContract (2144-byte proof receipt)
+6. **Step 2:** `claimLinkTx(recipient, linkHash, secret)` → AtreusContract (SHA-256 fallback)
+7. Shows success message
 
-**States:** `idle` → `connecting` → `claiming` → `success` / `error`
+**States:** `idle` → `connecting` → `submitting_proof` → `claiming` → `success` / `error`
 
-**No ZK proof in MVP** — submits raw secret. Phase 2: generate UltraHonk proof, submit proof instead.
+**Mock proof:** 2144 random bytes from `frontend/src/lib/proof.ts`. Real UltraHonk proof generation blocked (bb.js crashes).
 
-## 4 — Stellar SDK Integration
+## 7 — Dashboard Page
 
-**File:** `frontend/src/lib/stellar.ts` (114 lines)
+**File:** `frontend/src/app/dashboard/page.tsx` (181 lines)
 
-**Constants:**
-- `HORIZON_URL = "https://horizon-testnet.stellar.org"`
-- `SOROBAN_RPC_URL = "https://soroban-testnet.stellar.org"`
-- `networkPassphrase = Networks.TESTNET`
+**Features:**
+1. **Header** — "Wallet" title + Refresh button + Log Out (switch wallet)
+2. **Balance** — XLM balance in monospace, truncated address + explorer link
+3. **Quick Actions** — 4 grid items: Send, Receive, Link (create), Swap
+4. **Assets** — All balances with "Add Asset" link to `/assets`
+5. **Recent Activity** — Last 5 payments with sent/received coloring, explorer links
+6. **Nav** — Home + Claim Link links
 
-**Functions:**
+**Auto-refresh:** Fetches fresh data on page focus (`window.addEventListener("focus")`).
 
-| Function | Params | What it does |
-|----------|--------|-------------|
-| `connectWallet()` | — | Checks `isAllowed()`, calls `requestAccess()`, returns address |
-| `createEscrowTx()` | `creator, amount, hash` | Builds `create_link` tx, prepares, signs via Freighter, submits |
-| `claimLinkTx()` | `recipient, linkHash, secret` | Builds `claim_link` tx, prepares, signs via Freighter, submits |
+## 8 — Send Page
 
-**Tx flow:** `Contract.call()` → `TransactionBuilder` → `rpcServer.prepareTransaction()` → `signTransaction()` (Freighter) → `rpcServer.sendTransaction()` → check status → return hash
+**File:** `frontend/src/app/send/page.tsx` (91 lines)
 
-**Env vars required:** `NEXT_PUBLIC_CONTRACT_ID`, `NEXT_PUBLIC_TOKEN_ID`
+**Flow:**
+1. Enter destination `G...` address + XLM amount
+2. Validates balance (includes fee buffer)
+3. Signs with localStorage keypair: `tx.sign(kp)` → `rpcServer.sendTransaction()`
+4. Shows explorer link on success
 
-## 5 — Passkey Stub
+**States:** `idle` → `sending` → `success` / `error`
 
-**File:** `frontend/src/lib/passkey.ts` (14 lines)
+## 9 — Receive Page
 
-`registerPasskey(username)` and `signWithPasskey(challenge)` — both log to console, return mock data. Not used in current MVP flow.
+**File:** `frontend/src/app/receive/page.tsx` (61 lines)
 
-## 6 — Design System
+Shows wallet address + "Copy Address" button + Stellar Expert explorer link.
 
-**File:** `frontend/src/app/globals.css` (183 lines)
+## 10 — Swap Page
 
-Dark theme with slate color palette. CSS custom properties on `:root`:
-- Background: `#020617` (slate-950), `#0f172a` (slate-900), `#1e293b` (slate-800)
-- Text: `#f8fafc` (slate-50), `#94a3b8` (slate-400)
-- Accent: `#3b82f6` (blue-500)
-- Success: `#22c55e`, Error: `#f87171`
+**File:** `frontend/src/app/swap/page.tsx` (90 lines)
 
-Semantic classes: `.page`, `.card`, `.btn-primary`, `.btn-secondary`, `.btn-ghost`, `.btn-claim`, `.input`, `.status-success`, `.status-error`, `.link-preview`
+**Flow:**
+1. Select destination token (USDC `GA2BYV...` or EURT `GBLETQ...`)
+2. Enter XLM amount (2% slippage buffer)
+3. **Auto-trustline:** Checks `hasTrustline()`, adds via `Operation.changeTrust()` if missing
+4. Executes `pathPaymentStrictSend` via Stellar DEX
+5. Signs with localStorage keypair
 
-Typography: Manrope (headings), Inter (body) via `next/font/google`.
+**States:** `idle` → `swapping` → `success` / `error`
 
-## 7 — ZK Scripts
+## 11 — Assets Page
 
-| Script | Status | What it does |
-|--------|--------|-------------|
-| `compile-circuit.mjs` | ✅ Works | Compiles Noir circuit via `@noir-lang/noir_wasm` |
-| `prove-circuit.mjs` | ❌ Crashes on Windows + Docker | UltraHonk proof via `@aztec/bb.js` — native backend crash |
-| `verify-pedersen.mjs` | ✅ Confirmed | bb.js Pedersen matches Noir at hashIndex=0 |
-| `verify-poseidon.mjs` | ✅ Diagnostic | Confirmed poseidon-lite ≠ Noir Poseidon2 |
+**File:** `frontend/src/app/assets/page.tsx` (148 lines)
 
-## 8 — Phase 2: ZK Proof Chain Reaction
+**Features:**
+- Common assets (USDC, EURT) with per-asset loading state
+- Custom asset input (code + issuer)
+- Lists current balances
+
+## 12 — Stellar SDK Integration
+
+**File:** `frontend/src/lib/stellar.ts` (267 lines)
+
+### Key changes from v1:
+- ❌ **No Freighter** — completely removed `@stellar/freighter-api`
+- ❌ No `signTransaction()` calls — all signing via `getKeypair()` from wallet.ts
+- ✅ `connectWallet()` reads from localStorage instead of opening Freighter popup
+- ✅ `waitForTransaction()` — polls Soroban RPC for on-chain confirmation
+- ✅ `xlmToStroops()` — BigInt-based stroop conversion
+
+### Functions:
+| Function | Params | Purpose |
+|----------|--------|---------|
+| `connectWallet()` | — | Returns public key from localStorage wallet |
+| `xlmToStroops(amount)` | string → bigint | Decimal string → stroops (no float errors) |
+| `waitForTransaction(hash)` | string → result | Polls Soroban RPC until SUCCESS/FAILED |
+| `createEscrowTx(creator, amount, hash)` | string, string, Uint8Array → hash | Builds + signs + submits `create_link` via Soroban |
+| `claimLinkTx(recipient, linkHash, secret)` | string, Uint8Array, Uint8Array → hash | Submits `claim_link` via Soroban |
+| `submitProofTx(recipient, proof)` | string, Uint8Array → hash | Submits mock proof to VerifierContract |
+| `sendXLM(sender, destination, amount)` | string, string, string → hash | Native XLM transfer via Horizon |
+| `swapXLM(sender, destAsset, destAmount)` | string, Asset, string → hash | DEX path payment with simulation |
+| `findSwapPath(source, dest, amount)` | Asset, Asset, string → path | Discover DEX liquidity paths |
+| `getAccountBalances(address)` | string → Balance[] | All assets via Horizon |
+| `getRecentTransactions(address, limit)` | string, number → Transaction[] | Last N payments |
+
+## 13 — Design System
+
+**File:** `frontend/src/app/globals.css` (364 lines)
+
+### CSS Custom Properties:
+| Variable | Value | Usage |
+|----------|-------|-------|
+| `--background-primary` | `#020617` | Page background |
+| `--background-card` | `#0f172a` | Card backgrounds |
+| `--foreground-primary` | `#f8fafc` | Body text |
+| `--accent-primary` | `#3b82f6` | Buttons, links, focus rings |
+| `--success` | `#22c55e` | Success states |
+| `--error` | `#f87171` | Error states |
+
+### Semantic classes (30+):
+| Class | Purpose |
+|-------|---------|
+| `.page`, `.page-content` | Page layout |
+| `.card`, `.card-title`, `.card-body`, `.card-flush` | Card component |
+| `.btn-primary`, `.btn-secondary`, `.btn-ghost`, `.btn-claim` | Buttons |
+| `.input`, `.input-label` | Form inputs |
+| `.status-error`, `.status-success`, `.success-banner` | Status messages |
+| `.icon-sm`, `.icon-md`, `.icon-lg`, `.icon-spin` | Icon sizing |
+| `.content-area`, `.content-wide`, `.content-narrow` | Width constraints |
+| `.flex-row`, `.flex-between`, `.flex-center-row`, `.flex-col-center` | Layout |
+| `.action-grid`, `.action-item` | Dashboard action grid |
+| `.nav-row` | Navigation |
+| `.back-link` | Back to dashboard |
+| `.balance-value` | Large balance number |
+| `.mono-text`, `.font-mono-text` | Monospace text |
+| `.detail-text`, `.text-small` | Secondary text |
+| `.inner-space`, `.inner-space-sm` | Spacing |
+| `.divider`, `.divider-hr`, `.divider-line` | Dividers |
+| `.link-preview` | Shareable link box |
+| `.swap-pair`, `.swap-select` | Swap UI |
+| `.tx-amount-sent`, `.tx-amount-received` | Transaction coloring |
+| `.mnemonic-grid`, `.mnemonic-word`, `.mnemonic-index` | Seed phrase display |
+| `.btn-icon`, `.btn-icon-lg` | Icon-only buttons |
+| `.inline-link` | Inline block link |
+| `.card-padding` | Card child padding |
+
+### Typography: Manrope (headings) + Inter (body) via `next/font/google`
+
+## 14 — Env Variables
+
+**File:** `frontend/.env.example`
+
+```env
+NEXT_PUBLIC_CONTRACT_ID=CAITLKEO4YJ5HQR6DORTWX5RAVD5XLSHCPWIOZIWSQF6CSNJIPXOQKT2
+NEXT_PUBLIC_VERIFIER_CONTRACT_ID=CA3WA53LKQEJH3L3FSLFOUBOB3DG7D4IHEE4GEMM35WC5Z5YWDN264DB
+NEXT_PUBLIC_TOKEN_ID=CDLZFC3SYJYDZT7K67VZ75HPJVIEUVNIXF47ZG2FB2RMQQVU2HHGCYSC
+NEXT_PUBLIC_GOOGLE_CLIENT_ID=your-google-client-id.apps.googleusercontent.com
+```
+
+## 15 — Known Issues
+
+- bb.js UltraHonk crashes on ALL platforms (Windows + Docker/Linux) — proof gen deferred
+- Soroban SDK 22.0.0 lacks BN254 precompiles — on-chain UltraHonk verification impossible
+- `/docs/architecture.md` and `/docs/design.md` are stale (not updated)
+- Testnet has limited DEX liquidity — swap may fail for some token pairs
+- Google OAuth needs `NEXT_PUBLIC_GOOGLE_CLIENT_ID` set in env
+- Create/claim pages need contracts to be live on testnet
+
+## 16 — Phase 2: ZK Proof Chain Reaction
 
 **Date:** 2026-07-01
 **Reason:** bb.js UltraHonk proof generation fails on all environments. Pivot to architecture demo.
 
-**Files created/modified:**
-- `frontend/src/lib/proof.ts` — NEW: mock 2144-byte UltraHonk proof + `hexToBytes()` helper
-- `frontend/src/lib/stellar.ts` — ADDED: `submitProofTx()` function
-- `frontend/src/app/claim/page.tsx` — MODIFIED: two-step flow
-- `frontend/.env.local` — NEW: contract IDs
-- `.env.example` — ADDED: `NEXT_PUBLIC_VERIFIER_CONTRACT_ID`
+**Files created:**
+- `frontend/src/lib/proof.ts` — mock 2144-byte UltraHonk proof + `hexToBytes()` helper
 
 ### Claim flow (2 transactions):
-
-1. **submitProofTx()** — calls `VerifierContract.submit_proof()` with mock proof bytes (2144). Proof stored as on-chain event receipt.
-2. **claimLinkTx()** — calls `AtreusContract.claim_link()` with SHA-256 secret. Funds released via SHA-256 fallback.
-
-### UI states:
-`idle` → `connecting` → `submitting_proof` → `claiming` → `success` / `error`
-
-### Env vars:
-```
-NEXT_PUBLIC_CONTRACT_ID=CAITLKEO4YJ5HQR6DORTWX5RAVD5XLSHCPWIOZIWSQF6CSNJIPXOQKT2
-NEXT_PUBLIC_VERIFIER_CONTRACT_ID=CA3WA53LKQEJH3L3FSLFOUBOB3DG7D4IHEE4GEMM35WC5Z5YWDN264DB
-```
+1. **submitProofTx()** — VerifierContract `submit_proof()` with mock proof bytes
+2. **claimLinkTx()** — AtreusContract `claim_link()` with SHA-256 secret (fallback)
 
 ### Demo narrative:
 > "We generate zero-knowledge proofs using Noir + UltraHonk. The proof is submitted to our VerifierContract and recorded on-chain (emit event). The claim function is architecturally ready for Soroban's upcoming BN254 precompiles — currently using SHA-256 as a fallback. Our Noir circuit compiles and passes all unit tests."
-
-## 9 — Known Issues
-- bb.js native backend crashes on both Windows and Linux (Docker) with Pedersen hash circuits
-- Proof generation deferred to Phase 3 (post-hackathon)
-- Mock proof used for demo purposes only
-- Passkey.ts remains a stub — not used in flow
-
-## 10 — Wallet Foundation (Phase Added Hackathon Day 2)
-
-**Date:** 2026-07-02
-**Reason:** judges need a real product, not just a payment link demo
-
-### New files created:
-| File | Purpose |
-|---|---|
-| `frontend/src/app/dashboard/page.tsx` | Wallet dashboard — balance, assets, recent activity, action buttons |
-| `frontend/src/app/send/page.tsx` | Send XLM via Freighter with balance validation |
-| `frontend/src/app/receive/page.tsx` | Receive XLM — copy address, view on explorer |
-| `frontend/src/app/swap/page.tsx` | Basic XLM → USDC/EURT swap via Stellar DEX path payments |
-
-### stellar.ts additions:
-| Function | Purpose |
-|---|---|
-| `getAccountBalances(address)` | Fetch all assets/balances via Horizon |
-| `getNativeBalance(address)` | Fast XLM balance lookup |
-| `getRecentTransactions(address, limit)` | Last N payments/payments history |
-| `sendXLM(sender, destination, amount)` | Native XLM transfer via Freighter |
-| `findSwapPath(source, dest, amount)` | Discover Stellar DEX liquidity paths |
-| `swapXLM(sender, destAsset, destAmount)` | Execute path payment strict send swap |
-| `getStellarExpertUrl(type, id)` | Generate explorer links |
-
-### Updated pages:
-| Page | Changes |
-|---|---|
-| `frontend/src/app/page.tsx` | Added "Launch Wallet" CTALinks directly to dashboard |
-| `frontend/src/app/layout.tsx` | Updated metadata title/description |
-
-### Dashboard features:
-1. **Wallet Connect** via Freighter (same as other pages)
-2. **Balance display** (XLM + all assets)
-3. **Quick actions**: Send, Receive, Create Link, Swap
-4. **Recent transactions** from Horizon API with explorer links
-5. **Asset list** showing all balances
-
-### Send flow:
-1. Enter destination address + amount
-2. Validates balance (includes fee buffer)
-3. Signs via Freighter, submits via Soroban RPC
-4. Shows explorer link on success
-
-### Swap flow:
-1. Select target token (USDC, EURT)
-2. Enter XLM amount
-3. Uses `pathPaymentStrictSend` via Stellar DEX
-4. Signs via Freighter, submits
-5. 2% slippage buffer built in
-
-### Env vars (same):
-```
-NEXT_PUBLIC_CONTRACT_ID=CAITLKEO4YJ5HQR6DORTWX5RAVD5XLSHCPWIOZIWSQF6CSNJIPXOQKT2
-NEXT_PUBLIC_VERIFIER_CONTRACT_ID=CA3WA53LKQEJH3L3FSLFOUBOB3DG7D4IHEE4GEMM35WC5Z5YWDN264DB
-```
-
-Note: `NEXT_PUBLIC_TOKEN_ID` still unset — uses Freighter's native XLM operations for send/swap.
-Dashboard uses Horizon API for read operations, avoiding the Soroban RPC bottleneck.
-
-### Known limitation:
-- No passkey wallet yet (WebAuthn integration pending)
-- Swap paths hardcoded to USDC/EURT — not a full DEX aggregator
-- No mainnet deployment yet (testnet only)
 
 ---
 
@@ -235,30 +305,17 @@ Dashboard uses Horizon API for read operations, avoiding the Soroban RPC bottlen
 
 #### What changed
 
-The `/create` page previously generated a mock link with a random secret and never touched the network. It now performs the full real flow:
-
-1. Connects the user's wallet via Freighter (`connectWallet()`)
-2. Generates a 31-byte random secret client-side and hashes it with SHA-256 (originally Poseidon, later replaced — see Section 1)
-3. Builds and submits a `create_link()` call via `@stellar/stellar-sdk`
-4. Polls Soroban RPC for the final transaction result via `waitForTransaction()`
-5. Derives the recipient-facing `/claim#<secret>` URL
+The `/create` page now performs the full real flow:
+1. Connects wallet (originally Freighter, now localStorage wallet)
+2. Generates secret → SHA-256 hash (originally Poseidon, later replaced)
+3. Builds + submits `create_link()` via Soroban RPC
+4. Polls for on-chain confirmation via `waitForTransaction()`
+5. Derives `/claim#<secret>` URL
 
 #### Key implementation details
 
-**Transaction confirmation polling.** `rpcServer.sendTransaction()` only confirms a transaction was accepted into the mempool (status `PENDING`). Added `waitForTransaction()` in `stellar.ts` which polls `rpcServer.getTransaction(hash)` until `SUCCESS`/`FAILED` (30s timeout).
+**Transaction confirmation polling.** Added `waitForTransaction()` — polls `rpcServer.getTransaction(hash)` until SUCCESS/FAILED (30s timeout).
 
-**Stroop conversion.** String/BigInt-based `xlmToStroops()` helper avoids floating point precision bugs.
+**Stroop conversion.** `xlmToStroops()` — BigInt-based, no floating point errors.
 
-**Error handling.** Wrapped all Soroban RPC calls in try/catch with human-readable messages.
-
-#### Testing status
-
-Manually tested against Freighter on testnet. Wallet connection, config validation, and ts compilation verified end-to-end once contracts were deployed.
-
-#### Known limitations / blockers
-
-Originally blocked on contract deployment to testnet. Resolved in Phase 2 — contracts deployed, env vars documented in `.env.example`.
-
-#### Next steps
-
-Re-test create → claim flow end-to-end with a funded testnet account and confirm both transactions succeed on Stellar Expert explorer.
+**Error handling.** All RPC calls wrapped in try/catch with human-readable messages.

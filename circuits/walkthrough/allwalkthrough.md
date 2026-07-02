@@ -74,7 +74,7 @@ secret = "42", recipient = "123"
 | `compile` | `nargo compile --force` | Compile circuits |
 | `test` | `nargo test --show-output` | Run tests |
 | `execute` | `nargo execute --force` | Generate witness |
-| `prove` | `node scripts/prove-circuit.mjs` | Generate UltraHonk proof (crashes on Windows) |
+| `prove` | `node scripts/prove-circuit.mjs` | Generate UltraHonk proof (crashes on all platforms) |
 
 ## Upgrade Path (Phase 2/3)
 
