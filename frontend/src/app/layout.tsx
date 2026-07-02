@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import { Inter, Manrope } from "next/font/google";
-import { GoogleOAuthProvider } from "@react-oauth/google";
+import { Providers } from "@/components/providers";
 import "./globals.css";
 
 const inter = Inter({
@@ -28,9 +28,9 @@ export default function RootLayout({
   return (
     <html lang="en" className={`${inter.variable} ${manrope.variable}`}>
       <body className="antialiased">
-        <GoogleOAuthProvider clientId={clientId}>
-          <main className="page">{children}</main>
-        </GoogleOAuthProvider>
+        <Providers clientId={clientId}>
+          <main className="w-full min-h-screen flex flex-col">{children}</main>
+        </Providers>
       </body>
     </html>
   );
