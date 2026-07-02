@@ -268,27 +268,113 @@ NEXT_PUBLIC_GOOGLE_CLIENT_ID=your-google-client-id.apps.googleusercontent.com
 
 ## 15 — Known Issues
 
-- bb.js UltraHonk crashes on ALL platforms (Windows + Docker/Linux) — proof gen deferred
-- Soroban SDK 22.0.0 lacks BN254 precompiles — on-chain UltraHonk verification impossible
+- ~~bb.js UltraHonk crashes on ALL platforms~~ — **FIXED**: was a version-pin bug (`^4.4.0` instead of exact `5.0.0-nightly.20260522`). Real proof gen now works.
+- Soroban has no BN254 host functions (CAP-0074 proposed) — on-chain UltraHonk verification still not possible; attestation-oracle pattern used instead
 - `/docs/architecture.md` and `/docs/design.md` are stale (not updated)
 - Testnet has limited DEX liquidity — swap may fail for some token pairs
 - Google OAuth needs `NEXT_PUBLIC_GOOGLE_CLIENT_ID` set in env
-- Create/claim pages need contracts to be live on testnet
+- Browser-side proof generation uses WASM — first load takes ~5–10s on cold start
 
-## 16 — Phase 2: ZK Proof Chain Reaction
+## 16 — Phase 2: ZK Proof Chain Reaction (historical)
 
 **Date:** 2026-07-01
-**Reason:** bb.js UltraHonk proof generation fails on all environments. Pivot to architecture demo.
+**Reason:** bb.js UltraHonk proof generation believed to fail on all environments. Pivot to architecture demo.
 
 **Files created:**
 - `frontend/src/lib/proof.ts` — mock 2144-byte UltraHonk proof + `hexToBytes()` helper
 
-### Claim flow (2 transactions):
+### Claim flow (2 transactions, old):
 1. **submitProofTx()** — VerifierContract `submit_proof()` with mock proof bytes
 2. **claimLinkTx()** — AtreusContract `claim_link()` with SHA-256 secret (fallback)
 
-### Demo narrative:
-> "We generate zero-knowledge proofs using Noir + UltraHonk. The proof is submitted to our VerifierContract and recorded on-chain (emit event). The claim function is architecturally ready for Soroban's upcoming BN254 precompiles — currently using SHA-256 as a fallback. Our Noir circuit compiles and passes all unit tests."
+> This phase was superseded by Part 17. The "crash" was a version-pin bug, not a platform issue.
+
+---
+
+## 17 — Real ZK Claim Flow (B7, 2026-07-02)
+
+**What changed:** The claim page now generates a real UltraHonk ZK proof client-side,
+sends it to the backend attester for off-chain verification + on-chain attestation, and
+then calls `claim_link` — which is now gated on that attestation existing on-chain.
+
+### Root cause of the "bb.js crash" resolved
+
+The previous "crashes on all platforms" belief was wrong. The real issue: `frontend/package.json`
+had `@aztec/bb.js@^4.4.0`, but the Noir circuit was compiled with `1.0.0-beta.22`, whose own
+`install_bb.sh` pins Barretenberg to **`5.0.0-nightly.20260522`**. Pinning to the exact version
+fixes it — real 14,656-byte UltraHonk proofs are generated and verified. See
+`contracts/walkthrough/allwalkthrough.md` Part 9 for the discovery details.
+
+### Files created/modified
+
+#### `frontend/src/lib/zk.ts` (new)
+
+Client-side ZK proof generation module:
+
+| Export | What it does |
+|--------|-------------|
+| `generateClaimProof(secretBytes, recipient)` | Full proof generation pipeline — returns `{ proof: Uint8Array, linkHashHex: string }` |
+| `requestAttestation(linkHashHex, secretHex, proofHex, recipient)` | POSTs to backend, returns `attestationTx` hash |
+
+**Proof generation pipeline inside `generateClaimProof`:**
+1. `secretToField(secretBytes)` — `BigInt('0x'+hex) % FR_ORDER`
+2. `addressToField(recipient)` — `BigInt('0x'+hex(rawPubkey)) % FR_ORDER`  
+3. `BarretenbergSync.pedersenHash(hashIndex=0)` for `link_hash` and `nullifier`
+4. `Noir.execute({ secret, recipient, link_hash, nullifier })` → witness (404 bytes)
+5. `UltraHonkBackend.generateProof(witness)` → 14,656-byte proof
+6. SHA-256 of secretBytes via `crypto.subtle.digest` → `linkHashHex`
+
+Dynamic imports used for `@aztec/bb.js` and `@noir-lang/noir_js` (large WASM — only loaded when needed).
+
+**BigInt literals:** Uses `BigInt()` constructor instead of `n` suffix (frontend tsconfig `target: ES2017`
+doesn't allow BigInt literals syntactically, though runtime supports BigInt in all modern browsers).
+
+#### `frontend/public/circuits/secret.json` (new)
+
+Copy of `circuits/target/secret.json` so the browser can fetch it via `/circuits/secret.json`.
+The Node.js scripts can read from the monorepo path; the browser cannot.
+
+#### `frontend/src/app/claim/page.tsx` (rewritten)
+
+New statuses and flow:
+
+| Status | UI text | What's happening |
+|--------|---------|-----------------|
+| `idle` | "Claim with ZK Proof" | Ready |
+| `connecting` | "Connecting Wallet..." | `connectWallet()` |
+| `generating_proof` | "Generating ZK Proof..." | `generateClaimProof()` — real WASM proof gen |
+| `attesting` | "Verifying Proof & Attesting..." | `requestAttestation()` → backend → on-chain |
+| `claiming` | "Claiming Funds..." | `claimLinkTx()` — contract gated on attestation |
+| `success` | "Claimed!" | Shows TX hash + navigation buttons |
+| `error` | "Try Again" | Shows error message |
+
+Success state shows "Create Another Link" and "Back to Dashboard" buttons (`.btn-secondary` class).
+
+Removed: `submitProofTx` call, `MOCK_ULTRAHONK_PROOF` import.
+
+#### `frontend/src/lib/proof.ts` (updated)
+
+Removed `MOCK_ULTRAHONK_PROOF` constant (was 2144 bytes of static hex).
+Kept `hexToBytes()` utility, added `bytesToHex()` (used to encode proof for HTTP POST).
+
+#### `frontend/src/lib/stellar.ts` (updated)
+
+- `createEscrowTx`: Added balance check before submission. `getNativeBalance()` already existed — added comparison against `amount + 0.01 XLM` (estimated fee), throws friendly error if insufficient.
+- `claimLinkTx`: Wrapped `rpcServer.getAccount(recipient)` in try/catch — throws "Recipient account isn't funded on testnet" instead of opaque RPC failure.
+- `submitProofTx`: Removed (replaced by attestation-oracle pattern). Left a comment explaining why.
+
+#### `frontend/.env.local` + `frontend/.env.example` (updated)
+
+Added `NEXT_PUBLIC_BACKEND_URL=http://localhost:3001` — new required variable for the
+attestation POST endpoint. (The `.env.example`'s `GOOGLE_CLIENT_SECRET` placeholder line was not touched.)
+
+### Build verification
+
+`npx next build` in `frontend/` — clean pass, all 12 routes, no TS errors.
+
+Fixes applied during build:
+1. `BigInt literal not available below ES2020` — replaced `n` suffix with `BigInt()` constructor
+2. `Uint8Array not assignable to BufferSource` — cast `new Uint8Array(secretBytes) as unknown as ArrayBuffer`
 
 ---
 

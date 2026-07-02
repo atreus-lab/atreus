@@ -65,6 +65,16 @@ export const createEscrowTx = async (creator: string, amount: string, hash: Uint
   const tokenId = process.env.NEXT_PUBLIC_TOKEN_ID;
   if (!tokenId) throw new Error("NEXT_PUBLIC_TOKEN_ID is not configured");
 
+  // Balance check — friendly error if insufficient funds
+  const balance = await getNativeBalance(creator);
+  const amountNum = parseFloat(amount);
+  const estimatedFee = 0.01; // 100,000 stroops
+  if (parseFloat(balance) < amountNum + estimatedFee) {
+    throw new Error(
+      `Insufficient balance: you have ${balance} XLM but need at least ${(amountNum + estimatedFee).toFixed(7)} XLM (${amount} + fees)`
+    );
+  }
+
   const contract = new Contract(contractId);
   const amountStroops = xlmToStroops(amount);
   const expiry = Math.floor(Date.now() / 1000) + 7 * 24 * 60 * 60;
@@ -123,6 +133,14 @@ export const claimLinkTx = async (recipient: string, linkHash: Uint8Array, secre
   const contractId = process.env.NEXT_PUBLIC_CONTRACT_ID;
   if (!contractId) throw new Error("NEXT_PUBLIC_CONTRACT_ID is not configured");
 
+  // Check recipient is funded on testnet — clear error instead of opaque RPC failure
+  let account;
+  try {
+    account = await rpcServer.getAccount(recipient);
+  } catch {
+    throw new Error("Recipient account isn't funded on testnet — fund it first via friendbot.");
+  }
+
   const contract = new Contract(contractId);
 
   const op = contract.call(
@@ -132,7 +150,6 @@ export const claimLinkTx = async (recipient: string, linkHash: Uint8Array, secre
     xdr.ScVal.scvBytes(Buffer.from(secret)),
   );
 
-  const account = await rpcServer.getAccount(recipient);
   let tx = new TransactionBuilder(account, { fee: "100000", networkPassphrase })
     .addOperation(op).setTimeout(120).build();
 
@@ -149,34 +166,9 @@ export const claimLinkTx = async (recipient: string, linkHash: Uint8Array, secre
   return sendResult.hash;
 };
 
-export const submitProofTx = async (recipient: string, proofBytes: Uint8Array) => {
-  const contractId = process.env.NEXT_PUBLIC_VERIFIER_CONTRACT_ID;
-  if (!contractId) throw new Error("NEXT_PUBLIC_VERIFIER_CONTRACT_ID is not configured");
-
-  const contract = new Contract(contractId);
-
-  const op = contract.call(
-    "submit_proof",
-    new Address(recipient).toScVal(),
-    xdr.ScVal.scvBytes(Buffer.from(proofBytes)),
-  );
-
-  const account = await rpcServer.getAccount(recipient);
-  let tx = new TransactionBuilder(account, { fee: "100000", networkPassphrase })
-    .addOperation(op).setTimeout(120).build();
-
-  tx = await rpcServer.prepareTransaction(tx) as any;
-
-  const kp = getKeypair();
-  tx.sign(kp);
-
-  const sendResult = await rpcServer.sendTransaction(tx as any);
-
-  if (sendResult.status === "ERROR") {
-    throw new Error(`Tx submission failed: ${(sendResult as any).errorResultXdr || (sendResult as any).errorResult}`);
-  }
-  return sendResult.hash;
-};
+// submitProofTx removed — replaced by the attestation-oracle pattern.
+// Real ZK proofs are now verified off-chain by the backend attester, which submits
+// a signed attestation to the VerifierContract. See frontend/src/lib/zk.ts.
 
 export const getAccountBalances = async (address: string): Promise<Balance[]> => {
   const account = await server.loadAccount(address);
