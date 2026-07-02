@@ -94,16 +94,18 @@ export async function getBalances(address: string): Promise<any[]> {
 
 export async function getTransactions(address: string, limit = 10): Promise<any[]> {
   const payments = await server.payments().forAccount(address).limit(limit).order("desc").call();
-  return payments.records.map(p => ({
-    id: p.transaction_hash,
-    type: p.type,
-    amount: (p as any).amount || "0",
-    asset_code: (p as any).asset_code || "XLM",
-    from: (p as any).from || "",
-    to: (p as any).to || "",
-    created_at: p.created_at,
-    successful: p.transaction_successful ?? true,
-  }));
+  return payments.records
+    .filter((p: any) => p.type === "payment" || p.type === "path_payment" || p.type === "create_account")
+    .map(p => ({
+      id: p.transaction_hash,
+      type: p.type,
+      amount: (p as any).amount || "0",
+      asset_code: (p as any).asset_code || "XLM",
+      from: (p as any).from || "",
+      to: (p as any).to || "",
+      created_at: p.created_at,
+      successful: p.transaction_successful ?? true,
+    }));
 }
 
 export async function sendXLM(destination: string, amount: string): Promise<string> {

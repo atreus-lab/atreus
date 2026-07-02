@@ -5,20 +5,26 @@ import { useRouter } from "next/navigation";
 import Image from "next/image";
 import Link from "next/link";
 import { loadWallet, getBalance, getBalances, getTransactions, getExplorerUrl, type StoredWallet } from "@/lib/wallet";
+import { getStoredLinks, refreshLinkStatuses, type StoredLink } from "@/lib/links";
 import { 
  LayoutDashboard, Wallet, Link2, ArrowRightLeft, BarChart3, Activity, Shield, 
  Settings, Search, Bell, ChevronDown, Send, ArrowDownToLine, RefreshCw, 
  ExternalLink, ArrowUpRight, ArrowDownLeft, Lock, PlusCircle, CheckCircle2,
- ChevronRight, Eye, ArrowRight
+ ChevronRight, Eye, ArrowRight, X, Copy, Check
 } from "lucide-react";
 import logo from "../../media/ateruslogo.jpeg";
 import shieldImg from "../../media/Shield1.png";
 import stellarlogo from "../../media/stellarlogo.webp";
 
+const scrollToLinks = () => {
+ const el = document.getElementById("my-links-section");
+ if (el) el.scrollIntoView({ behavior: "smooth" });
+};
+
 const navItems = [
  { icon: LayoutDashboard, label: "Overview", active: true, href: "/dashboard" },
  { icon: Wallet, label: "Wallet", href: "/wallet" },
- { icon: Link2, label: "Payment Links" },
+ { icon: Link2, label: "Payment Links", onClick: scrollToLinks },
  { icon: ArrowRightLeft, label: "Swap" },
  { icon: BarChart3, label: "Analytics" },
  { icon: Activity, label: "Activity" },
@@ -34,6 +40,10 @@ export default function DashboardPage() {
  const [balances, setBalances] = useState<any[]>([]);
  const [transactions, setTransactions] = useState<any[]>([]);
  const [loading, setLoading] = useState(true);
+ const [claimLinkInput, setClaimLinkInput] = useState("");
+ const [showClaimModal, setShowClaimModal] = useState(false);
+ const [storedLinks, setStoredLinks] = useState<StoredLink[]>([]);
+ const [copiedLinkId, setCopiedLinkId] = useState("");
 
  const loadData = useCallback(async (addr: string) => {
  try {
@@ -50,6 +60,28 @@ export default function DashboardPage() {
  }
  }, []);
 
+ const copyLink = (url: string, id: string) => {
+  navigator.clipboard.writeText(url);
+  setCopiedLinkId(id);
+  setTimeout(() => setCopiedLinkId(""), 2000);
+ };
+
+ const handleClaimLink = () => {
+  const link = claimLinkInput.trim();
+  if (!link) return;
+  setShowClaimModal(false);
+  setClaimLinkInput("");
+  window.location.href = link;
+ };
+
+ // Auto-refresh after a claim (claimed timestamp set in localStorage)
+ useEffect(() => {
+  const claimed = localStorage.getItem("atreus_claimed");
+  if (claimed && address) {
+   loadData(address);
+  }
+ }, [address, loadData]);
+
  useEffect(() => {
  const wallet = loadWallet();
  if (!wallet) {
@@ -60,7 +92,9 @@ export default function DashboardPage() {
  const pk = wallet.publicKey;
  setAddress(pk);
  setLoading(true);
+ setStoredLinks(getStoredLinks());
  loadData(pk).finally(() => setLoading(false));
+ refreshLinkStatuses().then(() => setStoredLinks(getStoredLinks()));
  }, [loadData, router]);
 
  if (loading) {
@@ -89,14 +123,21 @@ export default function DashboardPage() {
 
   {/* Nav — scrollable */}
   <nav className="flex-1 min-h-0 overflow-y-auto px-6 flex flex-col gap-1.5 py-2">
-   {navItems.map((item, i) => {
-    const LinkComp = item.href ? Link : "div";
-    return (
-     <LinkComp key={i} href={item.href || "#"} className={`flex items-center gap-4 px-4 py-3.5 rounded-2xl transition-all font-bold text-sm cursor-pointer ${item.active ? 'bg-indigo-50/80 text-indigo-700 shadow-sm' : 'text-slate-500 hover:bg-slate-50 hover:text-slate-900'}`}>
-      <item.icon className={`w-5 h-5 ${item.active ? 'text-indigo-600' : 'text-slate-400'}`} />
-      {item.label}
-     </LinkComp>
-    );
+    {navItems.map((item, i) => {
+     if (item.href) {
+      return (
+       <Link key={i} href={item.href} className={`flex items-center gap-4 px-4 py-3.5 rounded-2xl transition-all font-bold text-sm cursor-pointer ${item.active ? 'bg-indigo-50/80 text-indigo-700 shadow-sm' : 'text-slate-500 hover:bg-slate-50 hover:text-slate-900'}`}>
+        <item.icon className={`w-5 h-5 ${item.active ? 'text-indigo-600' : 'text-slate-400'}`} />
+        {item.label}
+       </Link>
+      );
+     }
+     return (
+      <div key={i} onClick={item.onClick} className={`flex items-center gap-4 px-4 py-3.5 rounded-2xl transition-all font-bold text-sm cursor-pointer ${item.active ? 'bg-indigo-50/80 text-indigo-700 shadow-sm' : 'text-slate-500 hover:bg-slate-50 hover:text-slate-900'}`}>
+       <item.icon className={`w-5 h-5 ${item.active ? 'text-indigo-600' : 'text-slate-400'}`} />
+       {item.label}
+      </div>
+     );
    })}
   </nav>
 
@@ -198,9 +239,9 @@ export default function DashboardPage() {
  <Link href="/create" className="flex-1 min-w-[120px] bg-white text-blue-700 hover:bg-slate-50 py-3 rounded-2xl text-sm font-bold flex items-center justify-center gap-2 shadow-[0_4px_12px_rgba(0,0,0,0.1)] transition-transform hover:-translate-y-0.5">
  <Link2 className="w-4 h-4 text-blue-500" /> Create Link
  </Link>
- <Link href="/claim" className="flex-1 min-w-[120px] bg-white text-blue-700 hover:bg-slate-50 py-3 rounded-2xl text-sm font-bold flex items-center justify-center gap-2 shadow-[0_4px_12px_rgba(0,0,0,0.1)] transition-transform hover:-translate-y-0.5">
- <PlusCircle className="w-4 h-4 text-blue-500" /> Claim Link
- </Link>
+  <button onClick={() => setShowClaimModal(true)} className="flex-1 min-w-[120px] bg-white text-blue-700 hover:bg-slate-50 py-3 rounded-2xl text-sm font-bold flex items-center justify-center gap-2 shadow-[0_4px_12px_rgba(0,0,0,0.1)] transition-transform hover:-translate-y-0.5">
+   <PlusCircle className="w-4 h-4 text-blue-500" /> Claim Link
+  </button>
  </div>
  </div>
 
@@ -364,7 +405,44 @@ export default function DashboardPage() {
  </div>
  </div>
 
- {/* Quick Actions Footer */}
+  {/* My Links */}
+  {storedLinks.length > 0 && (
+   <div id="my-links-section" className="bg-white rounded-[2rem] p-8 shadow-[0_12px_40px_rgba(0,0,0,0.04)] border border-slate-100">
+    <div className="flex items-center justify-between mb-6">
+     <h3 className="font-extrabold text-slate-900">My Links</h3>
+     <span className="text-xs font-bold text-slate-400">{storedLinks.filter(l => !l.claimed).length} active</span>
+    </div>
+    <div className="flex flex-col gap-3">
+     {storedLinks.slice(0, 5).map((link) => (
+      <div key={link.id} className="flex items-center justify-between p-3 rounded-xl bg-slate-50 border border-slate-100">
+       <div className="flex flex-col min-w-0 flex-1 mr-3">
+        <div className="flex items-center gap-2">
+         <span className="font-bold text-slate-900 text-sm">{link.amount} XLM</span>
+         <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${link.claimed ? 'bg-green-50 text-green-600' : 'bg-amber-50 text-amber-600'}`}>
+          {link.claimed ? "Claimed" : "Pending"}
+         </span>
+        </div>
+        <span className="text-[10px] text-slate-400 mt-0.5">{new Date(link.createdAt).toLocaleDateString()} {new Date(link.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
+       </div>
+       <button
+        onClick={() => copyLink(link.url, link.id)}
+        className="p-2 rounded-lg bg-white border border-slate-200 hover:bg-indigo-50 hover:border-indigo-200 transition-colors shrink-0"
+        title="Copy link"
+       >
+        {copiedLinkId === link.id ? <Check className="w-4 h-4 text-green-500" /> : <Copy className="w-4 h-4 text-slate-400" />}
+       </button>
+      </div>
+     ))}
+    </div>
+    {storedLinks.length > 5 && (
+     <button className="mt-4 text-sm font-bold text-indigo-600 hover:text-indigo-700 flex items-center gap-1">
+      View all {storedLinks.length} links <ArrowRight className="w-4 h-4" />
+     </button>
+    )}
+   </div>
+  )}
+
+  {/* Quick Actions Footer */}
  <div className="mt-4">
  <h3 className="font-extrabold text-slate-900 mb-1">Quick Actions</h3>
  <p className="text-[12px] font-semibold text-slate-500 mb-4">Do more with Atreus</p>
@@ -387,15 +465,24 @@ export default function DashboardPage() {
  <span className="text-[10px] font-bold text-slate-400 ">Receive crypto or tokens</span>
  </div>
  </Link>
- <Link href="/create" className="flex items-center gap-3 bg-white border border-slate-100 shadow-sm rounded-2xl p-4 min-w-[220px] hover:shadow-md hover:border-purple-100 transition-all group">
- <div className="w-10 h-10 rounded-xl bg-purple-50 text-purple-600 flex items-center justify-center group-hover:scale-110 transition-transform">
- <Link2 className="w-5 h-5" />
- </div>
- <div className="flex flex-col">
- <span className="text-sm font-extrabold text-slate-900 ">Create Payment Link</span>
- <span className="text-[10px] font-bold text-slate-400 ">Create rules & share</span>
- </div>
- </Link>
+  <Link href="/create" className="flex items-center gap-3 bg-white border border-slate-100 shadow-sm rounded-2xl p-4 min-w-[220px] hover:shadow-md hover:border-purple-100 transition-all group">
+   <div className="w-10 h-10 rounded-xl bg-purple-50 text-purple-600 flex items-center justify-center group-hover:scale-110 transition-transform">
+    <Link2 className="w-5 h-5" />
+   </div>
+   <div className="flex flex-col">
+    <span className="text-sm font-extrabold text-slate-900 ">Create Payment Link</span>
+    <span className="text-[10px] font-bold text-slate-400 ">Create rules & share</span>
+   </div>
+  </Link>
+  <button onClick={() => setShowClaimModal(true)} className="flex items-center gap-3 bg-white border border-slate-100 shadow-sm rounded-2xl p-4 min-w-[220px] hover:shadow-md hover:border-purple-100 transition-all group text-left">
+   <div className="w-10 h-10 rounded-xl bg-purple-50 text-purple-600 flex items-center justify-center group-hover:scale-110 transition-transform">
+    <PlusCircle className="w-5 h-5" />
+   </div>
+   <div className="flex flex-col">
+    <span className="text-sm font-extrabold text-slate-900 ">Claim Payment Link</span>
+    <span className="text-[10px] font-bold text-slate-400 ">Claim funds from a link</span>
+   </div>
+  </button>
  <Link href="/swap" className="flex items-center gap-3 bg-white border border-slate-100 shadow-sm rounded-2xl p-4 min-w-[220px] hover:shadow-md hover:border-emerald-100 transition-all group">
  <div className="w-10 h-10 rounded-xl bg-emerald-50 text-emerald-600 flex items-center justify-center group-hover:scale-110 transition-transform">
  <RefreshCw className="w-5 h-5" />
@@ -408,8 +495,38 @@ export default function DashboardPage() {
  </div>
  </div>
 
- </div>
- </main>
- </div>
- );
-}
+  {/* Claim Link Modal */}
+  {showClaimModal && (
+   <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm">
+    <div className="bg-white rounded-[2rem] p-8 shadow-xl border border-slate-100 w-full max-w-md mx-4 space-y-5">
+     <div className="flex items-center justify-between">
+      <h3 className="text-lg font-extrabold text-slate-900">Claim a Payment Link</h3>
+      <button onClick={() => { setShowClaimModal(false); setClaimLinkInput(""); }} className="p-2 hover:bg-slate-100 rounded-xl transition-colors">
+       <X className="w-5 h-5 text-slate-400" />
+      </button>
+     </div>
+     <p className="text-sm text-slate-500">Paste the payment link you received to claim the funds.</p>
+     <input
+      type="text"
+      value={claimLinkInput}
+      onChange={(e) => setClaimLinkInput(e.target.value)}
+      placeholder="https://localhost:3000/claim#..."
+      className="w-full p-3.5 rounded-xl border border-slate-200 text-sm font-medium focus:outline-none focus:border-indigo-500 focus:ring-4 focus:ring-indigo-500/10"
+     />
+     <div className="flex gap-3">
+      <button onClick={() => { setShowClaimModal(false); setClaimLinkInput(""); }} className="flex-1 py-3 rounded-2xl text-sm font-bold text-slate-600 bg-slate-100 hover:bg-slate-200 transition-colors">
+       Cancel
+      </button>
+      <button onClick={handleClaimLink} disabled={!claimLinkInput.trim()} className="flex-1 py-3 rounded-2xl text-sm font-bold text-white bg-indigo-600 hover:bg-indigo-700 disabled:opacity-40 disabled:cursor-not-allowed transition-all shadow-[0_4px_12px_rgba(79,70,229,0.3)]">
+       Open Claim Page
+      </button>
+     </div>
+    </div>
+   </div>
+  )}
+
+  </div>
+  </main>
+  </div>
+  );
+ }
