@@ -1,5 +1,8 @@
+"use client";
+import { useEffect, useState } from "react";
 import Image from "next/image";
 import Link from "next/link";
+import { loadWallet } from "@/lib/wallet";
 import { ArrowUpRight, Rocket, Link as LinkIcon, DollarSign, CheckCircle2, Shield, Layers, Zap, Lock, Wallet, Percent, Bell, ArrowDown, ArrowUp, ArrowRightLeft, RefreshCw, Home as HomeIcon, History, Settings } from "lucide-react";
 import logo from "../media/ateruslogo.jpeg";
 import mobileImg from "../media/ateruslandpto.png";
@@ -161,6 +164,20 @@ function WalletMockup() {
 }
 
 export default function Home() {
+  const [hasWallet, setHasWallet] = useState(false);
+
+  useEffect(() => {
+    const checkWallet = async () => {
+      try {
+        const pk = await loadWallet();
+        setHasWallet(!!pk);
+      } catch {
+        setHasWallet(false);
+      }
+    };
+    checkWallet();
+  }, []);
+
   return (
     <div className="fixed inset-0 w-full h-full bg-[#FAFBFF] text-slate-900 overflow-y-auto font-sans flex flex-col z-[100]">
       {/* Navbar */}
@@ -185,9 +202,12 @@ export default function Home() {
             <Link href="#about" className="text-[13px] font-semibold text-slate-500 hover:text-slate-900 transition-colors tracking-wide">About</Link>
             <Link href="#docs" className="text-[13px] font-semibold text-slate-500 hover:text-slate-900 transition-colors tracking-wide">Docs</Link>
           </div>
-          
-          <Link href="/wallet" className="inline-flex items-center gap-2 bg-slate-900/80 backdrop-blur-md border border-slate-700/50 hover:bg-slate-800/90 text-white px-5 py-2.5 rounded-full text-[13px] font-semibold transition-all shadow-[0_4px_12px_-4px_rgba(0,0,0,0.3)]">
-            Launch Wallet
+
+          <Link
+            href={hasWallet ? "/dashboard" : "/wallet"}
+            className="inline-flex items-center gap-2 bg-slate-900/80 backdrop-blur-md border border-slate-700/50 hover:bg-slate-800/90 text-white px-5 py-2.5 rounded-full text-[13px] font-semibold transition-all shadow-[0_4px_12px_-4px_rgba(0,0,0,0.3)]"
+          >
+            {hasWallet ? "Dashboard" : "Launch Wallet"}
             <ArrowUpRight className="w-3.5 h-3.5 text-slate-300" />
           </Link>
         </div>
@@ -214,9 +234,9 @@ export default function Home() {
             </p>
 
             <div className="flex flex-wrap items-center gap-4 mt-6">
-              <Link href="/wallet" className="inline-flex items-center justify-center gap-2.5 bg-blue-600/80 backdrop-blur-md border border-blue-400/50 hover:bg-blue-600 text-white px-8 py-3.5 rounded-full text-[14px] font-semibold transition-all shadow-[0_8px_20px_-6px_rgba(37,99,235,0.4)] hover:shadow-[0_12px_24px_-8px_rgba(37,99,235,0.5)] hover:-translate-y-0.5">
+              <Link href={hasWallet ? "/dashboard" : "/wallet"} className="inline-flex items-center justify-center gap-2.5 bg-blue-600/80 backdrop-blur-md border border-blue-400/50 hover:bg-blue-600 text-white px-8 py-3.5 rounded-full text-[14px] font-semibold transition-all shadow-[0_8px_20px_-6px_rgba(37,99,235,0.4)] hover:shadow-[0_12px_24px_-8px_rgba(37,99,235,0.5)] hover:-translate-y-0.5">
                 <Rocket className="w-4 h-4 text-blue-200" />
-                Launch Wallet
+                {hasWallet ? "Dashboard" : "Launch Wallet"}
               </Link>
               <Link href="/create" className="inline-flex items-center justify-center gap-2.5 bg-white/40 backdrop-blur-xl border border-white/80 hover:bg-white/60 hover:border-white text-slate-700 px-8 py-3.5 rounded-full text-[14px] font-semibold transition-all shadow-[0_8px_30px_rgb(0,0,0,0.04)] hover:-translate-y-0.5">
                 <LinkIcon className="w-4 h-4 text-slate-500" />
