@@ -84,8 +84,6 @@ Known issue: `prove` service (bb.js UltraHonk) crashes on Windows with `RuntimeE
 
 **Architecture decision:** VerifierContract becomes a proof receipt service instead of a cryptographic verifier.
 
-**File:** `contracts/verifier-contract/src/lib.rs` (53 lines)
-
 **New function:**
 - `submit_proof(recipient, proof)` — validates proof is exactly 2144 bytes (UltraHonk standard size), emits `("proof", recipient)` event with proof length
 - `verify_proof(public_inputs, proof)` — unchanged placeholder, returns `!proof.is_empty()`
@@ -96,7 +94,7 @@ Known issue: `prove` service (bb.js UltraHonk) crashes on Windows with `RuntimeE
 **Date:** 2026-07-02
 **Status:** ✅ Both contracts deployed and responsive via Soroban RPC
 
-| Contract | ID | 
+| Contract | ID |
 |---|---|
 | VerifierContract | `CA3WA53LKQEJH3L3FSLFOUBOB3DG7D4IHEE4GEMM35WC5Z5YWDN264DB` |
 | AtreusContract | `CAITLKEO4YJ5HQR6DORTWX5RAVD5XLSHCPWIOZIWSQF6CSNJIPXOQKT2` |
