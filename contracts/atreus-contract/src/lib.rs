@@ -1,5 +1,5 @@
 #![no_std]
-use soroban_sdk::{contract, contractimpl, contracttype, token, Address, Bytes, BytesN, Env, symbol_short};
+use soroban_sdk::{contract, contractimpl, contracttype, token, vec, Address, Bytes, BytesN, Env, IntoVal, Symbol, Val, symbol_short};
 
 #[contracttype]
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -69,11 +69,25 @@ impl AtreusContract {
         recipient.require_auth();
 
         // Verify secret: sha256(secret) must equal the stored link_hash.
-        // In Phase 2, this is replaced with ZK proof verification via VerifierContract.
         let secret_bytes = Bytes::from_array(&env, &secret.to_array());
         let computed = env.crypto().sha256(&secret_bytes);
         if BytesN::from_array(&env, &computed.to_array()) != link_hash {
             panic!("invalid secret");
+        }
+
+        // Require a real ZK attestation for this exact (link_hash, recipient) pair before
+        // releasing funds. The attestation is only recorded by VerifierContract::attest()
+        // after a trusted attester has verified a real UltraHonk proof off-chain — see the
+        // doc comment on VerifierContract::verify_proof for why this indirection exists.
+        let verifier: Address = env.storage().instance().get(&DataKey::VerifierAddress).expect("verifier not set");
+        let args: soroban_sdk::Vec<Val> = vec![
+            &env,
+            link_hash.into_val(&env),
+            recipient.into_val(&env),
+        ];
+        let attested: bool = env.invoke_contract(&verifier, &Symbol::new(&env, "is_attested"), args);
+        if !attested {
+            panic!("no valid ZK attestation for this claim");
         }
 
         let mut link_info: LinkInfo = env.storage().persistent().get(&link_hash).expect("Link not found");

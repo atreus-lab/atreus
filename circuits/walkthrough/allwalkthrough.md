@@ -53,16 +53,12 @@ secret = "42", recipient = "123"
 - Tests pass via Docker: `docker compose run --rm test` — 2/2 pass
 - Witness generation via Docker: `docker compose run --rm execute` → generates `target/secret.gz`
 - bb.js Pedersen matches Noir at hashIndex=0 (verified via `verify-pedersen.mjs`)
-- `nargo test` passes (circuit logic verified)
+- **Real UltraHonk proof generation works** (see Part 6 — was a version-pin bug, not a platform issue)
+- `circuits/target/secret.json` fetched by browser at `/circuits/secret.json` (copied to `frontend/public/`)
 
-**What's blocked:**
-- bb.js UltraHonk proof generation crashes on ALL platforms (Windows + Docker/Linux) — native backend process crash, not a Windows-specific issue
-- Pedersen hash circuits are incompatible with current bb.js UltraHonk backend
+**Limitations:**
 - No nargo Windows binary — all nargo commands via Docker
-
-**Architecture decision:** Proof generation deferred indefinitely. Mock 2144-byte proof used in frontend for demo. On-chain verification blocked until Soroban Protocol 25/26 BN254 precompiles.
-
-**Known issue:** `circuits/src/utils/mod.nr` declares `pub mod hash;` but `hash.nr` doesn't exist. Currently harmless (utils module not imported by main.nr) but needs fixing before use.
+- On-chain BN254 verification still not available (CAP-0074 proposed) — attestation-oracle pattern used
 
 ## 5 — Docker Setup
 
@@ -74,13 +70,33 @@ secret = "42", recipient = "123"
 | `compile` | `nargo compile --force` | Compile circuits |
 | `test` | `nargo test --show-output` | Run tests |
 | `execute` | `nargo execute --force` | Generate witness |
-| `prove` | `node scripts/prove-circuit.mjs` | Generate UltraHonk proof (crashes on all platforms) |
+| `prove` | `node scripts/prove-circuit.mjs` | Generate UltraHonk proof |
 
-## Upgrade Path (Phase 2/3)
+## 6 — E2E Integration (2026-07-02)
 
-1. Wait for bb.js UltraHonk to support Pedersen hash circuits (or switch to SHA-256 circuit)
-2. Generate proof in Docker once bb.js is fixed
-3. Deploy VerifierContract with generated verification key
-4. Replace SHA-256 check in AtreusContract with `VerifierContract.verify_proof()`
-5. Circuit code stays the same — already uses Pedersen
-6. Wait for Soroban Protocol 25/26 BN254 precompiles for on-chain verification
+### Version-pin root cause (discovered)
+
+The "bb.js crashes on all platforms" belief was wrong. The actual issue:
+
+- **Frontend** had `@aztec/bb.js@^4.4.0` in `package.json`
+- **Circuit** was compiled with Noir `1.0.0-beta.22`
+- Noir `1.0.0-beta.22`'s own `install_bb.sh` pins Barretenberg to **`5.0.0-nightly.20260522`**
+- Version `^4.4.0` is incompatible — crashes with this circuit's proof constraints
+
+**Fix:** Pin exactly `@aztec/bb.js@5.0.0-nightly.20260522` in both frontend and backend.
+
+**Proof confirmed working:**
+```
+Proof generated! Byte length: 14656
+Public inputs: [recipientField, linkHashField, nullifierField]
+Verified: true
+```
+
+### Upgrade path (future)
+
+When CAP-0074 (BN254 host functions) ships on Stellar:
+1. Implement an in-contract BN254 Groth16/UltraHonk verifier (or use native verify_proof once available)
+2. Pass the verification key to `VerifierContract.__constructor` (already stored)
+3. Replace the attestation-oracle flow with direct on-chain verification
+4. Circuit code stays the same — already generates the correct proof format
+5. Remove the backend attester dependency
