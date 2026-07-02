@@ -49,7 +49,7 @@ export function updateLinkStatus(secretHex: string, claimed: boolean): void {
 // Check contract storage to determine if a link has been claimed.
 async function checkLinkOnChain(linkHashHex: string): Promise<boolean | null> {
   const contractId = process.env.NEXT_PUBLIC_CONTRACT_ID;
-  if (!contractId) return null;
+  if (!contractId || !linkHashHex) return null;
   try {
     const contract = new Contract(contractId);
     const key = xdr.ScVal.scvBytes(Buffer.from(linkHashHex, "hex"));
@@ -64,14 +64,36 @@ async function checkLinkOnChain(linkHashHex: string): Promise<boolean | null> {
     if (!entries || entries.entries.length === 0) return null;
     const entry = entries.entries[0];
     const val = entry.val.contractData().val();
-    const vec = val.vec();
-    if (vec) {
-      // LinkInfo Vec: [creator, amount, asset, policy_type, policy_params, expires_at, claimed]
-      const claimedField = vec[6];
-      if (claimedField && claimedField.b() !== undefined) {
-        return claimedField.b() === true;
+
+    // Try Vec format: [creator, amount, asset, policy_type, policy_params, expires_at, claimed]
+    try {
+      const vec = val.vec();
+      if (vec && vec.length > 6) {
+        const claimedField = vec[6];
+        if (claimedField && claimedField.b() !== undefined) {
+          return claimedField.b() === true;
+        }
       }
+    } catch {
+      // Not a Vec, try Map format
     }
+
+    // Try Map format: [{key: Symbol("claimed"), val: Bool}, ...]
+    try {
+      const map: any = val.map();
+      if (map) {
+        for (const entry of map) {
+          const k: any = entry.key;
+          const v: any = entry.val;
+          if (k.sym && k.sym().toString() === "claimed" && v.b !== undefined) {
+            return v.b() === true;
+          }
+        }
+      }
+    } catch {
+      // Not a Map either
+    }
+
     return null;
   } catch (err) {
     console.error("Failed to check link on-chain:", err);
