@@ -1,6 +1,6 @@
-import { loadWallet } from "./wallet";
-import { rpcServer } from "./stellar";
-import { xdr } from "@stellar/stellar-sdk";
+import { loadWallet, getKeypair } from "./wallet";
+import { rpcServer, networkPassphrase, waitForTransaction } from "./stellar";
+import { xdr, TransactionBuilder, Contract, Address } from "@stellar/stellar-sdk";
 import { Durability } from "@stellar/stellar-sdk/rpc";
 
 export interface StoredLink {
@@ -10,6 +10,7 @@ export interface StoredLink {
   secretHex: string;
   linkHashHex: string;
   createdAt: number;
+  expiresAt: number;
   claimed: boolean;
   txHash?: string;
 }
@@ -162,6 +163,48 @@ export async function refreshLinkStatuses(): Promise<void> {
     }
   }
   if (changed) {
+    localStorage.setItem(`${STORAGE_KEY}_${wallet.publicKey}`, JSON.stringify(links));
+  }
+}
+
+export async function refundLink(linkHashHex: string): Promise<string> {
+  const contractId = process.env.NEXT_PUBLIC_CONTRACT_ID;
+  if (!contractId) throw new Error("NEXT_PUBLIC_CONTRACT_ID is not configured");
+
+  const wallet = loadWallet();
+  if (!wallet) throw new Error("No wallet found");
+
+  const contract = new Contract(contractId);
+  const op = contract.call(
+    "refund_link",
+    xdr.ScVal.scvBytes(Buffer.from(linkHashHex, "hex")),
+  );
+
+  const account = await rpcServer.getAccount(wallet.publicKey);
+  let tx = new TransactionBuilder(account, { fee: "100000", networkPassphrase })
+    .addOperation(op).setTimeout(120).build();
+
+  tx = await rpcServer.prepareTransaction(tx) as any;
+
+  const kp = getKeypair();
+  tx.sign(kp);
+
+  const sendResult = await rpcServer.sendTransaction(tx as any);
+  if (sendResult.status === "ERROR") {
+    throw new Error(`Refund failed: ${(sendResult as any).errorResultXdr || "unknown error"}`);
+  }
+
+  await waitForTransaction(sendResult.hash);
+  return sendResult.hash;
+}
+
+export function refundStoredLink(secretHex: string): void {
+  const wallet = loadWallet();
+  if (!wallet) return;
+  const links = getStoredLinks();
+  const idx = links.findIndex(l => l.secretHex === secretHex);
+  if (idx !== -1) {
+    links.splice(idx, 1);
     localStorage.setItem(`${STORAGE_KEY}_${wallet.publicKey}`, JSON.stringify(links));
   }
 }

@@ -1,14 +1,17 @@
 "use client";
 
-import { CheckCircle2, ArrowDownToLine, Copy, Check } from "lucide-react";
+import { CheckCircle2, ArrowDownToLine, Copy, Check, Undo2, Loader2 } from "lucide-react";
+import { useState } from "react";
 
 interface StoredLink {
   id: string;
   amount: string;
   claimed: boolean;
   createdAt: number;
+  expiresAt: number;
   url: string;
   secretHex: string;
+  linkHashHex?: string;
   txHash?: string;
 }
 
@@ -17,11 +20,23 @@ interface PaymentLinksProps {
   receivedLinks: StoredLink[];
   copiedLinkId: string;
   onCopyLink: (url: string, id: string) => void;
+  onRefund: (linkHashHex: string, secretHex: string) => Promise<void>;
 }
 
-function PendingLinks({ links, onCopyLink, copiedLinkId }: { links: StoredLink[]; onCopyLink: (url: string, id: string) => void; copiedLinkId: string }) {
+function PendingLinks({ links, onCopyLink, onRefund, copiedLinkId }: { links: StoredLink[]; onCopyLink: (url: string, id: string) => void; onRefund: (linkHashHex: string, secretHex: string) => Promise<void>; copiedLinkId: string }) {
+  const [refundingId, setRefundingId] = useState<string | null>(null);
   const pending = links.filter(l => !l.claimed);
   if (pending.length === 0) return null;
+
+  const handleRefund = async (link: StoredLink) => {
+    if (!link.linkHashHex) return;
+    setRefundingId(link.id);
+    try {
+      await onRefund(link.linkHashHex, link.secretHex);
+    } finally {
+      setRefundingId(null);
+    }
+  };
 
   return (
     <div className="bg-white rounded-[2rem] p-8 shadow-[0_12px_40px_rgba(0,0,0,0.04)] border border-slate-100">
@@ -33,20 +48,41 @@ function PendingLinks({ links, onCopyLink, copiedLinkId }: { links: StoredLink[]
         <span className="text-xs font-bold text-slate-400">{pending.length} active</span>
       </div>
       <div className="flex flex-col gap-3">
-        {pending.slice(0, 5).map((link) => (
-          <div key={link.id} className="flex items-center justify-between p-3 rounded-xl bg-amber-50/40 border border-amber-100/60">
-            <div className="flex flex-col min-w-0 flex-1 mr-3">
-              <div className="flex items-center gap-2">
-                <span className="font-bold text-slate-900 text-sm">{link.amount} XLM</span>
-                <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-amber-50 text-amber-600 border border-amber-200">Pending</span>
+        {pending.slice(0, 10).map((link) => {
+          const isExpired = Date.now() > link.expiresAt * 1000;
+          return (
+            <div key={link.id} className={`flex items-center justify-between p-3 rounded-xl border ${isExpired ? 'bg-red-50/40 border-red-100/60' : 'bg-amber-50/40 border-amber-100/60'}`}>
+              <div className="flex flex-col min-w-0 flex-1 mr-3">
+                <div className="flex items-center gap-2 flex-wrap">
+                  <span className="font-bold text-slate-900 text-sm">{link.amount} XLM</span>
+                  {isExpired ? (
+                    <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-red-50 text-red-600 border border-red-200">Expired</span>
+                  ) : (
+                    <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-amber-50 text-amber-600 border border-amber-200">Pending</span>
+                  )}
+                </div>
+                <span className="text-[10px] text-slate-400 mt-0.5">
+                  {new Date(link.createdAt).toLocaleDateString()} - {link.expiresAt >= 4102444800 ? 'No expiry' : `Expires ${new Date(link.expiresAt * 1000).toLocaleDateString()}`}
+                </span>
               </div>
-              <span className="text-[10px] text-slate-400 mt-0.5">{new Date(link.createdAt).toLocaleDateString()} {new Date(link.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
+              <div className="flex items-center gap-2 shrink-0">
+                {isExpired && (
+                  <button
+                    onClick={() => handleRefund(link)}
+                    disabled={refundingId === link.id}
+                    className="p-2 rounded-lg bg-white border border-red-200 hover:bg-red-50 hover:border-red-300 transition-colors disabled:opacity-50"
+                    title="Refund"
+                  >
+                    {refundingId === link.id ? <Loader2 className="w-4 h-4 text-red-500 animate-spin" /> : <Undo2 className="w-4 h-4 text-red-500" />}
+                  </button>
+                )}
+                <button onClick={() => onCopyLink(link.url, link.id)} className="p-2 rounded-lg bg-white border border-amber-200 hover:bg-amber-50 hover:border-amber-300 transition-colors" title="Copy link">
+                  {copiedLinkId === link.id ? <Check className="w-4 h-4 text-green-500" /> : <Copy className="w-4 h-4 text-amber-500" />}
+                </button>
+              </div>
             </div>
-            <button onClick={() => onCopyLink(link.url, link.id)} className="p-2 rounded-lg bg-white border border-amber-200 hover:bg-amber-50 hover:border-amber-300 transition-colors shrink-0" title="Copy link">
-              {copiedLinkId === link.id ? <Check className="w-4 h-4 text-green-500" /> : <Copy className="w-4 h-4 text-amber-500" />}
-            </button>
-          </div>
-        ))}
+          );
+        })}
       </div>
     </div>
   );
@@ -131,12 +167,12 @@ function ReceivedLinks({ links, onCopyLink, copiedLinkId }: { links: StoredLink[
   );
 }
 
-export default function PaymentLinks({ storedLinks, receivedLinks, copiedLinkId, onCopyLink }: PaymentLinksProps) {
+export default function PaymentLinks({ storedLinks, receivedLinks, copiedLinkId, onCopyLink, onRefund }: PaymentLinksProps) {
   if (storedLinks.length === 0 && receivedLinks.length === 0) return null;
 
   return (
     <div id="my-links-section" className="space-y-6">
-      <PendingLinks links={storedLinks} onCopyLink={onCopyLink} copiedLinkId={copiedLinkId} />
+      <PendingLinks links={storedLinks} onCopyLink={onCopyLink} onRefund={onRefund} copiedLinkId={copiedLinkId} />
       <ClaimedByYouLinks links={storedLinks} onCopyLink={onCopyLink} copiedLinkId={copiedLinkId} />
       <ReceivedLinks links={receivedLinks} onCopyLink={onCopyLink} copiedLinkId={copiedLinkId} />
     </div>

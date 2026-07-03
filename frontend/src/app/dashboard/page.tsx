@@ -3,7 +3,7 @@
 import { useEffect, useState, useCallback, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { loadWallet, getBalance, getBalances, getTransactions, type StoredWallet } from "@/lib/wallet";
-import { getStoredLinks, refreshLinkStatuses, getClaimedLinks, type StoredLink } from "@/lib/links";
+import { getStoredLinks, refreshLinkStatuses, getClaimedLinks, refundLink, refundStoredLink, type StoredLink } from "@/lib/links";
 import { LayoutDashboard, Wallet, Link2, ArrowRightLeft, BarChart3, Activity, Shield, Settings, Search, Bell, Menu } from "lucide-react";
 
 import DashboardSidebar from "@/components/DashboardSidebar";
@@ -76,6 +76,17 @@ export default function DashboardPage() {
     navigator.clipboard.writeText(url);
     setCopiedLinkId(id);
     setTimeout(() => setCopiedLinkId(""), 2000);
+  };
+
+  const handleRefund = async (linkHashHex: string, secretHex: string) => {
+    try {
+      await refundLink(linkHashHex);
+      refundStoredLink(secretHex);
+      setStoredLinks(getStoredLinks());
+      await loadData(address);
+    } catch (err: any) {
+      console.error("Refund failed:", err);
+    }
   };
 
   const handleClaimLink = () => {
@@ -318,7 +329,7 @@ export default function DashboardPage() {
           </div>
 
           {/* Payment Links */}
-          <PaymentLinks storedLinks={storedLinks} receivedLinks={receivedLinks} copiedLinkId={copiedLinkId} onCopyLink={copyLink} />
+          <PaymentLinks storedLinks={storedLinks} receivedLinks={receivedLinks} copiedLinkId={copiedLinkId} onCopyLink={copyLink} onRefund={handleRefund} />
 
           {/* Quick Actions */}
           <QuickActions onClaimClick={() => setShowClaimModal(true)} />
