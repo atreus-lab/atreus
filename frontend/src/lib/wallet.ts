@@ -205,37 +205,15 @@ export async function swapTokens(
 ): Promise<string> {
   const kp = getKeypair();
   const source = kp.publicKey();
-  const account = await server.loadAccount(source);
 
   const sourceAsset = buildAsset(sourceCode, sourceIssuer);
   const destAsset = buildAsset(destCode, destIssuer);
-
-  // Query the Stellar DEX for the best path and estimated rate
-  const pathsResult = await server.strictSendPaths(
-    sourceAsset,
-    amount,
-    [destAsset]
-  ).call();
-
-  if (pathsResult.records.length === 0) {
-    throw new Error("No liquidity path found. This swap pair may not have enough trading volume on the testnet DEX.");
-  }
-
-  const bestPath = pathsResult.records[0];
-  const estimatedOutput = bestPath.destination_amount;
-  // Guard against negligible liquidity
-  if (parseFloat(estimatedOutput) < 0.0001) {
-    throw new Error("Insufficient liquidity on the Stellar DEX for this pair.");
-  }
-  // 5% slippage protection on the estimated receive amount
-  const destMin = (parseFloat(estimatedOutput) * 0.95).toFixed(7);
-  // Convert path entries back to Asset objects
-  const path = bestPath.path.map(assetFromPathEntry);
 
   // Add dest trustline if needed (issued asset and not already trusted)
   if (destCode !== "XLM") {
     const hasTrust = await hasTrustline(source, destCode, destIssuer);
     if (!hasTrust) {
+      const account = await server.loadAccount(source);
       const trustTx = new TransactionBuilder(account, {
         fee: BASE_FEE,
         networkPassphrase,
@@ -249,28 +227,77 @@ export async function swapTokens(
     }
   }
 
-  // Reload account after potential trustline transaction
-  const freshAccount = await server.loadAccount(source);
+  const account = await server.loadAccount(source);
 
-  // Execute the path payment
-  const swapTx = new TransactionBuilder(freshAccount, {
-    fee: BASE_FEE,
-    networkPassphrase,
-  })
-    .addOperation(Operation.pathPaymentStrictSend({
-      sendAsset: sourceAsset,
-      sendAmount: amount,
-      destination: source,
-      destAsset,
-      destMin,
-      path,
-    }))
-    .setTimeout(30)
-    .build();
+  const destMin = (parseFloat(amount) * 0.01).toFixed(7);
 
-  swapTx.sign(kp);
-  const result = await server.submitTransaction(swapTx);
-  return result.hash;
+  // Strategies to try in order:
+  // 1. Horizon path lookup result
+  // 2. Direct pair
+  // 3. Via XLM intermediary
+  const strategies: Array<{ path: Asset[]; label: string }> = [];
+
+  // Strategy 1: ask Horizon for paths
+  try {
+    const pathsResult = await server.strictSendPaths(
+      sourceAsset,
+      amount,
+      [destAsset]
+    ).call();
+    if (pathsResult.records.length > 0) {
+      const best = pathsResult.records[0];
+      if (parseFloat(best.destination_amount) >= 0.0001) {
+        strategies.push({
+          path: best.path.map(assetFromPathEntry),
+          label: "Horizon path",
+        });
+      }
+    }
+  } catch { /* Horizon path lookup unavailable */ }
+
+  // Strategy 2: direct pair (relies on orderbook + liquidity pools)
+  strategies.push({ path: [], label: "direct pair" });
+
+  // Strategy 3: via XLM intermediary (for non-XLM pairs)
+  if (sourceCode !== "XLM" && destCode !== "XLM") {
+    strategies.push({ path: [Asset.native()], label: "via XLM" });
+  }
+
+  let lastError = "No swap strategy succeeded";
+
+  for (const s of strategies) {
+    try {
+      const tx = new TransactionBuilder(account, {
+        fee: BASE_FEE,
+        networkPassphrase,
+      })
+        .addOperation(
+          Operation.pathPaymentStrictSend({
+            sendAsset: sourceAsset,
+            sendAmount: amount,
+            destination: source,
+            destAsset,
+            destMin,
+            path: s.path,
+          })
+        )
+        .setTimeout(30)
+        .build();
+
+      tx.sign(kp);
+      const result = await server.submitTransaction(tx);
+      return result.hash;
+    } catch (err: any) {
+      const msg = err?.response?.data?.extras?.result_codes
+        ? JSON.stringify(err.response.data.extras.result_codes)
+        : err?.message || `Unknown error`;
+      lastError = `${s.label}: ${msg}`;
+    }
+  }
+
+  throw new Error(
+    `Swap failed — testnet DEX may have no liquidity for ${sourceCode || "XLM"}/${destCode}. Tried: ${strategies.map(s => s.label).join(", ")}. Last error: ${lastError}`
+  );
 }
 
 export function getExplorerUrl(type: "tx" | "account" | "contract", id: string): string {

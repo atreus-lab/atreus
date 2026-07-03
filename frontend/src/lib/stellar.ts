@@ -58,7 +58,7 @@ export const waitForTransaction = async (
   throw new Error(`Timed out waiting for transaction (hash: ${hash})`);
 };
 
-export const createEscrowTx = async (creator: string, amount: string, hash: Uint8Array, expiry?: number) => {
+export const createEscrowTx = async (creator: string, amount: string, hash: Uint8Array, expiry?: number, recipientEmailHash?: Uint8Array) => {
   const contractId = process.env.NEXT_PUBLIC_CONTRACT_ID;
   if (!contractId) throw new Error("NEXT_PUBLIC_CONTRACT_ID is not configured");
 
@@ -79,11 +79,15 @@ export const createEscrowTx = async (creator: string, amount: string, hash: Uint
   const amountStroops = xlmToStroops(amount);
   const linkExpiry = expiry ?? (Math.floor(Date.now() / 1000) + 7 * 24 * 60 * 60);
 
+  const hasRecipient = recipientEmailHash && recipientEmailHash.length === 32;
+  const policyType = hasRecipient ? 1 : 0;
+  const policyParams = hasRecipient ? recipientEmailHash! : new Uint8Array(0);
+
   const op = contract.call(
     "create_link",
     xdr.ScVal.scvBytes(Buffer.from(hash)),
-    nativeToScVal(0, { type: 'u32' }),
-    xdr.ScVal.scvBytes(Buffer.from(new Uint8Array(0))),
+    nativeToScVal(policyType, { type: 'u32' }),
+    xdr.ScVal.scvBytes(Buffer.from(policyParams)),
     nativeToScVal(amountStroops, { type: 'i128' }),
     new Address(tokenId).toScVal(),
     nativeToScVal(linkExpiry, { type: 'u64' }),
@@ -129,7 +133,12 @@ export const createEscrowTx = async (creator: string, amount: string, hash: Uint
   return sendResult.hash;
 };
 
-export const claimLinkTx = async (recipient: string, linkHash: Uint8Array, secret: Uint8Array) => {
+export const claimLinkTx = async (
+  recipient: string,
+  linkHash: Uint8Array,
+  secret: Uint8Array,
+  recipientEmailHash?: Uint8Array,
+) => {
   const contractId = process.env.NEXT_PUBLIC_CONTRACT_ID;
   if (!contractId) throw new Error("NEXT_PUBLIC_CONTRACT_ID is not configured");
 
@@ -141,6 +150,9 @@ export const claimLinkTx = async (recipient: string, linkHash: Uint8Array, secre
     throw new Error("Recipient account isn't funded on testnet — fund it first via friendbot.");
   }
 
+  // If no email hash provided, use 32 zero bytes (no email restriction)
+  const emailHash = recipientEmailHash || new Uint8Array(32);
+
   const contract = new Contract(contractId);
 
   const op = contract.call(
@@ -148,6 +160,7 @@ export const claimLinkTx = async (recipient: string, linkHash: Uint8Array, secre
     xdr.ScVal.scvBytes(Buffer.from(linkHash)),
     new Address(recipient).toScVal(),
     xdr.ScVal.scvBytes(Buffer.from(secret)),
+    xdr.ScVal.scvBytes(Buffer.from(emailHash)),
   );
 
   let tx = new TransactionBuilder(account, { fee: "100000", networkPassphrase })

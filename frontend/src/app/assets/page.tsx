@@ -6,16 +6,14 @@ import Image from "next/image";
 import Link from "next/link";
 import { loadWallet, getBalances, addTrustline, type StoredWallet } from "@/lib/wallet";
 import { Loader2, Check, Plus, ArrowLeft } from "lucide-react";
-import stellarlogo from "../media/stellarlogo.webp";
 import AppSidebar from "@/components/AppSidebar";
 import AppHeader from "@/components/AppHeader";
 import SearchDialog from "@/components/SearchDialog";
 import { getNavItems } from "@/constants/navigation";
 
 const COMMON_ASSETS = [
-  { code: "USDC", issuer: "GA2BYV7QJ75ZAZXQBEDX5CAYXIRMXELJYRK5O6IHF2RLCDKVQU2ZSKBU", name: "USD Coin" },
+  { code: "USDC", issuer: "GBBD47IF6LWK7P7MDEVSCWR7DPUWV3NY3DTQEVFL4NAT4AQH3ZLLFLA5", name: "USD Coin" },
   { code: "EURT", issuer: "GBLETQF7AAB2DPWP3LU6DYXYF3CZX7RVH3PB6IHQWECTOKZL7EENGO2U", name: "Euro Token" },
-  { code: "yUSDC", issuer: "GA2BYV7QJ75ZAZXQBEDX5CAYXIRMXELJYRK5O6IHF2RLCDKVQU2ZSKBU", name: "Your USDC" },
 ];
 
 export default function AssetsPage() {
@@ -84,12 +82,17 @@ export default function AssetsPage() {
               <span className="text-xs font-bold text-slate-400">{balances.length} token{balances.length !== 1 ? 's' : ''}</span>
             </div>
             <div className="flex flex-col gap-3">
-              {balances.length > 0 ? balances.map((b: any, i: number) => {
+              {balances.length > 0 ? balances.filter((b: any) => {
+                const isNative = b.asset_type === "native";
+                const code = isNative ? "XLM" : b.asset_code;
+                const known = COMMON_ASSETS.find(t => t.code === code && t.issuer === b.asset_issuer);
+                return isNative || parseFloat(b.balance) > 0 || known;
+              }).map((b: any, i: number) => {
                 const isNative = b.asset_type === "native";
                 const code = isNative ? "XLM" : b.asset_code;
                 const balanceVal = parseFloat(b.balance);
                 let logoContent = null;
-                if (isNative || code === 'XLM') { logoContent = <Image src={stellarlogo} alt="XLM" width={28} height={28} className="w-full h-full object-contain rounded-full bg-black p-0.5" />; }
+                if (isNative || code === 'XLM') { logoContent = <Image src="/media/stellarlogo.webp" alt="XLM" width={28} height={28} className="w-full h-full object-contain rounded-full bg-black p-0.5" />; }
                 else if (code === 'USDC') { logoContent = <img src="https://cryptologos.cc/logos/usd-coin-usdc-logo.svg?v=029" alt="USDC" className="w-full h-full object-contain p-1" />; }
                 else if (code === 'EURT') { logoContent = <div className="w-full h-full bg-blue-100 text-blue-600 rounded-full flex items-center justify-center font-bold text-[10px]">€</div>; }
                 else { logoContent = <div className="w-full h-full bg-slate-100 text-slate-500 rounded-full flex items-center justify-center font-bold text-[10px]">{code?.slice(0, 3)}</div>; }
