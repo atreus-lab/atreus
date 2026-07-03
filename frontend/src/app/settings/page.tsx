@@ -49,6 +49,10 @@ export default function SettingsPage() {
  const [formName, setFormName] = useState("");
  const [formAddress, setFormAddress] = useState("");
 
+ // Currency and language states
+ const [currency, setCurrency] = useState("USD");
+ const [language, setLanguage] = useState("en");
+
  // Mock toggle states
  const [customRpc, setCustomRpc] = useState(false);
  const [pushNotifs, setPushNotifs] = useState(true);
@@ -354,9 +358,28 @@ export default function SettingsPage() {
  <span className="text-xs font-semibold text-slate-500 mt-0.5">Used for fiat value estimation</span>
  </div>
  </div>
- <button className="flex items-center justify-between gap-3 bg-white border border-slate-200 px-5 py-2.5 rounded-xl text-sm font-bold text-slate-700 shadow-sm hover:border-emerald-300 transition-colors w-full sm:w-auto">
- USD ($) <ChevronDown className="w-5 h-5 text-slate-400 "/>
- </button>
+ <select value={currency} onChange={e => setCurrency(e.target.value)} className="bg-white border border-slate-200 px-5 py-2.5 rounded-xl text-sm font-bold text-slate-700 shadow-sm hover:border-emerald-300 transition-colors appearance-none cursor-pointer outline-none w-full sm:w-auto">
+ <option value="USD">USD ($)</option>
+ <option value="EUR">EUR (€)</option>
+ <option value="GBP">GBP (£)</option>
+ <option value="JPY">JPY (¥)</option>
+ <option value="CNY">CNY (¥)</option>
+ <option value="INR">INR (₹)</option>
+ <option value="NGN">NGN (₦)</option>
+ <option value="KRW">KRW (₩)</option>
+ <option value="BRL">BRL (R$)</option>
+ <option value="AUD">AUD (A$)</option>
+ <option value="CAD">CAD (C$)</option>
+ <option value="CHF">CHF (Fr)</option>
+ <option value="RUB">RUB (₽)</option>
+ <option value="MXN">MXN (Mex$)</option>
+ <option value="ZAR">ZAR (R)</option>
+ <option value="SGD">SGD (S$)</option>
+ <option value="HKD">HKD (HK$)</option>
+ <option value="SEK">SEK (kr)</option>
+ <option value="NOK">NOK (kr)</option>
+ <option value="AED">AED (د.إ)</option>
+ </select>
  </div>
  
  <div className="h-px bg-slate-100 ml-20 my-1.5"></div>
@@ -387,9 +410,26 @@ export default function SettingsPage() {
  <span className="text-xs font-semibold text-slate-500 mt-0.5">Interface language</span>
  </div>
  </div>
- <button className="flex items-center justify-between gap-3 bg-white border border-slate-200 px-5 py-2.5 rounded-xl text-sm font-bold text-slate-700 shadow-sm hover:border-blue-300 transition-colors w-full sm:w-auto">
- English <ChevronDown className="w-5 h-5 text-slate-400 "/>
- </button>
+ <select value={language} onChange={e => setLanguage(e.target.value)} className="bg-white border border-slate-200 px-5 py-2.5 rounded-xl text-sm font-bold text-slate-700 shadow-sm hover:border-blue-300 transition-colors appearance-none cursor-pointer outline-none w-full sm:w-auto">
+ <option value="en">English</option>
+ <option value="es">Español</option>
+ <option value="fr">Français</option>
+ <option value="de">Deutsch</option>
+ <option value="zh">中文</option>
+ <option value="ja">日本語</option>
+ <option value="ar">العربية</option>
+ <option value="pt">Português</option>
+ <option value="hi">हिन्दी</option>
+ <option value="ru">Русский</option>
+ <option value="it">Italiano</option>
+ <option value="ko">한국어</option>
+ <option value="tr">Türkçe</option>
+ <option value="nl">Nederlands</option>
+ <option value="pl">Polski</option>
+ <option value="vi">Tiếng Việt</option>
+ <option value="th">ไทย</option>
+ <option value="id">Bahasa Indonesia</option>
+ </select>
  </div>
  </div>
  </div>

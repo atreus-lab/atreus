@@ -94,16 +94,21 @@ export async function getTransactions(address: string, limit = 10): Promise<any[
   const payments = await server.payments().forAccount(address).limit(limit).order("desc").call();
   return payments.records
     .filter((p: any) => p.type === "payment" || p.type === "path_payment" || p.type === "create_account")
-    .map(p => ({
-      id: p.transaction_hash,
-      type: p.type,
-      amount: (p as any).amount || "0",
-      asset_code: (p as any).asset_code || "XLM",
-      from: (p as any).from || "",
-      to: (p as any).to || "",
-      created_at: p.created_at,
-      successful: p.transaction_successful ?? true,
-    }));
+    .map(p => {
+      const rec = p as any;
+      // create_account uses funder/account/starting_balance instead of from/to/amount
+      const isCreate = rec.type === "create_account";
+      return {
+        id: rec.transaction_hash,
+        type: rec.type,
+        amount: isCreate ? (rec.starting_balance || "0") : (rec.amount || "0"),
+        asset_code: isCreate ? "XLM" : (rec.asset_code || "XLM"),
+        from: isCreate ? (rec.funder || "") : (rec.from || ""),
+        to: isCreate ? (rec.account || "") : (rec.to || ""),
+        created_at: rec.created_at,
+        successful: rec.transaction_successful ?? true,
+      };
+    });
 }
 
 export async function sendXLM(destination: string, amount: string): Promise<string> {
