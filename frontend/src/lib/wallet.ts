@@ -133,17 +133,6 @@ export async function sendXLM(destination: string, amount: string): Promise<stri
   return result.hash;
 }
 
-export async function hasTrustline(address: string, assetCode: string, assetIssuer: string): Promise<boolean> {
-  try {
-    const account = await server.loadAccount(address);
-    return account.balances.some(
-      (b: any) => b.asset_code === assetCode && b.asset_issuer === assetIssuer
-    );
-  } catch {
-    return false;
-  }
-}
-
 export async function addTrustline(assetCode: string, assetIssuer: string): Promise<string> {
   const kp = getKeypair();
   const source = kp.publicKey();
@@ -162,11 +151,6 @@ export async function addTrustline(assetCode: string, assetIssuer: string): Prom
   tx.sign(kp);
   const result = await server.submitTransaction(tx);
   return result.hash;
-}
-
-function assetFromPathEntry(entry: any): Asset {
-  if (entry.asset_type === "native") return Asset.native();
-  return new Asset(entry.asset_code, entry.asset_issuer);
 }
 
 function buildAsset(code: string | null, issuer: string | null): Asset {
@@ -209,11 +193,15 @@ export async function swapTokens(
   const sourceAsset = buildAsset(sourceCode, sourceIssuer);
   const destAsset = buildAsset(destCode, destIssuer);
 
+  // Single loadAccount — reused for trustline check and tx building
+  let account = await server.loadAccount(source);
+
   // Add dest trustline if needed (issued asset and not already trusted)
   if (destCode !== "XLM") {
-    const hasTrust = await hasTrustline(source, destCode, destIssuer);
+    const hasTrust = account.balances.some(
+      (b: any) => b.asset_code === destCode && b.asset_issuer === destIssuer
+    );
     if (!hasTrust) {
-      const account = await server.loadAccount(source);
       const trustTx = new TransactionBuilder(account, {
         fee: BASE_FEE,
         networkPassphrase,
@@ -224,41 +212,18 @@ export async function swapTokens(
 
       trustTx.sign(kp);
       await server.submitTransaction(trustTx);
+      // Reload after trustline (seq number changed)
+      account = await server.loadAccount(source);
     }
   }
 
-  const account = await server.loadAccount(source);
-
   const destMin = (parseFloat(amount) * 0.01).toFixed(7);
 
-  // Strategies to try in order:
-  // 1. Horizon path lookup result
-  // 2. Direct pair
-  // 3. Via XLM intermediary
-  const strategies: Array<{ path: Asset[]; label: string }> = [];
+  // Strategies: direct pair first, then via XLM intermediary
+  const strategies: Array<{ path: Asset[]; label: string }> = [
+    { path: [], label: "direct pair" },
+  ];
 
-  // Strategy 1: ask Horizon for paths
-  try {
-    const pathsResult = await server.strictSendPaths(
-      sourceAsset,
-      amount,
-      [destAsset]
-    ).call();
-    if (pathsResult.records.length > 0) {
-      const best = pathsResult.records[0];
-      if (parseFloat(best.destination_amount) >= 0.0001) {
-        strategies.push({
-          path: best.path.map(assetFromPathEntry),
-          label: "Horizon path",
-        });
-      }
-    }
-  } catch { /* Horizon path lookup unavailable */ }
-
-  // Strategy 2: direct pair (relies on orderbook + liquidity pools)
-  strategies.push({ path: [], label: "direct pair" });
-
-  // Strategy 3: via XLM intermediary (for non-XLM pairs)
   if (sourceCode !== "XLM" && destCode !== "XLM") {
     strategies.push({ path: [Asset.native()], label: "via XLM" });
   }

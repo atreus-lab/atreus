@@ -27,8 +27,8 @@ export interface MultiChainSwapProps {
 export function MultiChainSwap({
   chains = CHAINS,
   tokens = TOKENS,
-  defaultFromId = "eth-eth",
-  defaultToId = "sol-sol",
+  defaultFromId = "stellar-xlm",
+  defaultToId = "stellar-usdc",
   className,
 }: MultiChainSwapProps) {
   const reduce = useReducedMotion();
@@ -86,11 +86,11 @@ export function MultiChainSwap({
     <div
       className={cn(
         "relative isolate w-full max-w-[420px] overflow-hidden rounded-3xl",
-        "border border-border/20 bg-card",
+        "border border-white/10 bg-white/5 backdrop-blur-2xl",
         className,
       )}
     >
-      <div className="flex h-12 items-center justify-between border-b border-border/50 px-3">
+      <div className="flex h-12 items-center justify-between border-b border-[var(--border-default)] px-3">
         <span className="px-2 text-sm font-semibold tracking-tight text-foreground">
           Swap
         </span>

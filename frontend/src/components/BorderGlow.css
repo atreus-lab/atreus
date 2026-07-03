@@ -35,9 +35,9 @@
   z-index: -1;
 }
 
-.border-glow-card:not(:hover):not(.sweep-active)::before,
-.border-glow-card:not(:hover):not(.sweep-active)::after,
-.border-glow-card:not(:hover):not(.sweep-active) > .edge-light {
+.border-glow-card:not(:hover):not(.sweep-active):not(.continuous-glow)::before,
+.border-glow-card:not(:hover):not(.sweep-active):not(.continuous-glow)::after,
+.border-glow-card:not(:hover):not(.sweep-active):not(.continuous-glow) > .edge-light {
   opacity: 0;
   transition: opacity 0.75s ease-in-out;
 }
