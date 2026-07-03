@@ -293,83 +293,97 @@ export default function DashboardPage() {
  {/* Middle Row */}
  <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
  
- {/* Assets List */}
+ {/* Assets List — split into My Assets + Available */}
  <div className="bg-white rounded-[2rem] p-8 shadow-[0_12px_40px_rgba(0,0,0,0.04)] border border-slate-100 flex flex-col">
- <div className="flex items-center justify-between mb-8">
+ <div className="flex items-center justify-between mb-6">
  <h3 className="font-extrabold text-slate-900 ">Assets</h3>
  <Link href="/assets" className="text-sm font-bold text-indigo-600 hover:text-indigo-700">View all</Link>
  </div>
- 
- <div className="flex flex-col gap-5">
- {(() => {
- const defaultAssets = [
- { asset_type: 'native', asset_code: 'XLM', balance: '0.00', name: 'Stellar' },
- { asset_type: 'credit_alphanum4', asset_code: 'USDC', balance: '0.00', name: 'USD Coin' },
- { asset_type: 'credit_alphanum4', asset_code: 'USDT', balance: '0.00', name: 'Tether' },
- { asset_type: 'credit_alphanum4', asset_code: 'SOB', balance: '0.00', name: 'Soroban' },
- ];
 
- const mergedBalances = defaultAssets.map(def => {
- const found = balances.find((b: any) => 
- (b.asset_type === 'native' && def.asset_type === 'native') || 
- b.asset_code === def.asset_code
- );
- return found ? { ...def, ...found } : def;
- });
+ {/* My Assets — only assets with non-zero balance */}
+ <div className="flex flex-col gap-3 mb-4">
+  <h4 className="text-xs font-extrabold text-slate-400 uppercase tracking-wider">My Assets</h4>
+  {(() => {
+   const myAssets = balances.filter((b: any) => b.asset_type === 'native' || b.asset_code);
+   if (myAssets.length === 0) {
+    return <div className="text-xs text-slate-400 italic py-2">No assets activated yet</div>;
+   }
+   return myAssets.slice(0, 3).map((b: any, i: number) => {
+    const isNative = b.asset_type === "native";
+    const code = isNative ? "XLM" : b.asset_code;
+    const balanceVal = parseFloat(b.balance);
+    let logoContent = null;
+    if (isNative || code === 'XLM') {
+     logoContent = <Image src={stellarlogo} alt="XLM" width={28} height={28} className="w-full h-full object-contain rounded-full bg-black p-0.5" />;
+    } else if (code === 'USDC') {
+     logoContent = <img src="https://cryptologos.cc/logos/usd-coin-usdc-logo.svg?v=029" alt="USDC" className="w-full h-full object-contain p-1" />;
+    } else if (code === 'EURT') {
+     logoContent = <div className="w-full h-full bg-blue-100 text-blue-600 rounded-full flex items-center justify-center font-bold text-[10px]">€</div>;
+    } else {
+     logoContent = <div className="w-full h-full bg-slate-100 text-slate-500 rounded-full flex items-center justify-center font-bold text-[10px]">{code?.slice(0, 2)}</div>;
+    }
+    return (
+     <div key={i} className="flex items-center justify-between p-3 rounded-xl bg-slate-50/30 border border-slate-100/60">
+      <div className="flex items-center gap-3">
+       <div className="w-9 h-9 rounded-full border border-slate-200 flex items-center justify-center shrink-0 overflow-hidden bg-white shadow-sm">
+        {logoContent}
+       </div>
+       <span className="font-bold text-slate-900 text-sm">{code}</span>
+      </div>
+      <span className="font-bold text-slate-900 text-sm">{balanceVal.toLocaleString(undefined, { maximumFractionDigits: 4 })}</span>
+     </div>
+    );
+   });
+  })()}
+ </div>
 
- return mergedBalances.map((b: any, i: number) => {
- const isNative = b.asset_type === "native";
- const code = isNative ? "XLM" : b.asset_code;
- const name = b.name || code;
- const balanceVal = parseFloat(b.balance);
- 
- let logoContent = null;
- if (isNative || code === 'XLM') {
- logoContent = <Image src={stellarlogo} alt="XLM" width={32} height={32} className="w-full h-full object-contain rounded-full bg-black p-1" />;
- } else if (code === 'USDC') {
- logoContent = <img src="https://cryptologos.cc/logos/usd-coin-usdc-logo.svg?v=029" alt="USDC" className="w-full h-full object-contain p-1.5" />;
- } else if (code === 'USDT') {
- logoContent = <img src="https://cryptologos.cc/logos/tether-usdt-logo.svg?v=029" alt="USDT" className="w-full h-full object-contain p-1.5" />;
- } else if (code === 'SOB') {
- logoContent = (
- <div className="w-full h-full bg-gradient-to-br from-purple-500 to-indigo-600 rounded-full flex items-center justify-center p-1.5 shadow-inner">
- <svg viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className="w-full h-full">
- <path d="M12 2v20M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6" />
- </svg>
- </div>
- );
- } else {
- logoContent = <div className="w-full h-full bg-blue-100 text-blue-600 rounded-full flex items-center justify-center font-bold text-[10px]">{code.slice(0, 3)}</div>;
- }
+ <div className="h-px bg-slate-100 my-2"></div>
 
- return (
- <div key={i} className="flex items-center justify-between group cursor-pointer">
- <div className="flex items-center gap-4">
- <div className="w-10 h-10 rounded-full border border-slate-200 flex items-center justify-center shrink-0 shadow-sm overflow-hidden bg-white ">
- {logoContent}
+ {/* Available Assets — popular tokens to activate */}
+ <div className="flex flex-col gap-3 mb-2">
+  <h4 className="text-xs font-extrabold text-slate-400 uppercase tracking-wider pt-2">Available</h4>
+  {(() => {
+   const existingCodes = balances.map((b: any) => b.asset_code).filter(Boolean);
+   const available = [
+    { code: 'USDC', name: 'USD Coin' },
+    { code: 'USDT', name: 'Tether' },
+    { code: 'EURT', name: 'Euro Token' },
+   ];
+   return available.map((asset, i) => {
+    const isActive = existingCodes.includes(asset.code);
+    return (
+     <div key={i} className="flex items-center justify-between p-3 rounded-xl bg-slate-50/30 border border-slate-100/60">
+      <div className="flex items-center gap-3">
+       <div className="w-9 h-9 rounded-full border border-slate-200 flex items-center justify-center shrink-0 overflow-hidden bg-white shadow-sm">
+        {asset.code === 'USDC' ? (
+         <img src="https://cryptologos.cc/logos/usd-coin-usdc-logo.svg?v=029" alt="USDC" className="w-full h-full object-contain p-1" />
+        ) : asset.code === 'EURT' ? (
+         <div className="w-full h-full bg-blue-100 text-blue-600 rounded-full flex items-center justify-center font-bold text-[10px]">€</div>
+        ) : (
+         <div className="w-full h-full bg-slate-100 text-slate-500 rounded-full flex items-center justify-center font-bold text-[10px]">{asset.code.slice(0, 2)}</div>
+        )}
+       </div>
+       <div className="flex flex-col">
+        <span className="font-bold text-slate-900 text-sm">{asset.code}</span>
+        <span className="text-[10px] text-slate-400">{asset.name}</span>
+       </div>
+      </div>
+      {isActive ? (
+       <span className="text-[10px] font-bold text-green-600 bg-green-50 px-2 py-1 rounded-lg border border-green-100">Active</span>
+      ) : (
+       <Link href="/assets" className="text-[10px] font-bold text-indigo-600 bg-indigo-50 px-3 py-1.5 rounded-lg border border-indigo-100 hover:bg-indigo-100 transition-colors">
+        Activate
+       </Link>
+      )}
+     </div>
+    );
+   });
+  })()}
  </div>
- <div className="flex flex-col">
- <span className="font-extrabold text-slate-900 text-sm">{name}</span>
- <span className="text-[11px] font-bold text-slate-500 ">{code}</span>
- </div>
- </div>
- <div className="hidden sm:block w-24 h-8 relative opacity-50 group-hover:opacity-100 transition-opacity">
- <svg className="w-full h-full" viewBox="0 0 100 20" preserveAspectRatio="none">
- <path d="M0 15 L20 10 L40 18 L60 8 L80 12 L100 5" fill="none" stroke="#22C55E" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
- </svg>
- </div>
- <div className="flex flex-col items-end">
- <span className="font-bold text-slate-900 text-sm">{balanceVal.toLocaleString(undefined, { maximumFractionDigits: 4 })} {code}</span>
- <span className="text-[11px] font-semibold text-slate-400 ">≈ $0.00</span>
- </div>
- </div>
- );
- });
- })()}
- </div>
- <button className="mt-8 self-start text-sm font-bold text-indigo-600 hover:text-indigo-700 flex items-center gap-1">
- Manage assets <ArrowRight className="w-4 h-4" />
- </button>
+
+ <Link href="/assets" className="mt-4 self-start text-sm font-bold text-indigo-600 hover:text-indigo-700 flex items-center gap-1">
+  Manage assets <ArrowRight className="w-4 h-4" />
+ </Link>
  </div>
 
  {/* Recent Activity — unified feed */}
