@@ -25,10 +25,10 @@ const navItems = [
  { icon: LayoutDashboard, label: "Overview", active: true, href: "/dashboard" },
  { icon: Wallet, label: "Wallet", href: "/wallet" },
  { icon: Link2, label: "Payment Links", onClick: scrollToLinks },
- { icon: ArrowRightLeft, label: "Swap" },
- { icon: BarChart3, label: "Analytics" },
- { icon: Activity, label: "Activity" },
- { icon: Shield, label: "Security" },
+ { icon: ArrowRightLeft, label: "Swap", href: "/swap" },
+ { icon: BarChart3, label: "Analytics", href: "/analytics" },
+ { icon: Activity, label: "Activity", href: "/activity" },
+ { icon: Shield, label: "Security", href: "/security" },
  { icon: Settings, label: "Settings", href: "/settings" },
 ];
 
