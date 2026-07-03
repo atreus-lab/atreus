@@ -32,6 +32,23 @@ export default function SettingsPage() {
  const [address, setAddress] = useState("");
  const [loading, setLoading] = useState(true);
 
+ // Network state
+ const [activeNetwork, setActiveNetwork] = useState("testnet");
+
+ // Recommended contacts from transaction history
+ const [recommendedContacts, setRecommendedContacts] = useState<string[]>([]);
+
+ // Address book state
+ interface AddressEntry {
+   name: string;
+   address: string;
+ }
+ const [addressBook, setAddressBook] = useState<AddressEntry[]>([]);
+ const [showAddForm, setShowAddForm] = useState(false);
+ const [editingIndex, setEditingIndex] = useState<number | null>(null);
+ const [formName, setFormName] = useState("");
+ const [formAddress, setFormAddress] = useState("");
+
  // Mock toggle states
  const [customRpc, setCustomRpc] = useState(false);
  const [pushNotifs, setPushNotifs] = useState(true);
@@ -46,6 +63,20 @@ export default function SettingsPage() {
  }
  setStoredWallet(wallet);
  setAddress(wallet.publicKey);
+
+ // Fetch recent transactions to build recommended contacts
+ const pk = wallet.publicKey;
+ Promise.all([
+   getTransactions(pk, 30),
+ ]).then(([txs]) => {
+   const seen = new Set<string>();
+   txs.forEach((tx: any) => {
+     if (tx.from && tx.from !== pk) seen.add(tx.from);
+     if (tx.to && tx.to !== pk) seen.add(tx.to);
+   });
+   setRecommendedContacts(Array.from(seen).slice(0, 10));
+ }).catch(() => {});
+
  setLoading(false);
  }, [router]);
 
@@ -163,13 +194,13 @@ export default function SettingsPage() {
  <span className="text-xs font-semibold text-slate-500 mt-0.5">Select the Stellar network to connect to</span>
  </div>
  </div>
- <button className="flex items-center justify-between gap-3 bg-white border border-slate-200 px-5 py-2.5 rounded-xl text-sm font-bold text-slate-700 shadow-sm hover:border-indigo-300 transition-colors w-full sm:w-auto">
- <div className="flex items-center gap-2">
- <div className="w-2.5 h-2.5 rounded-full bg-green-500 animate-pulse"></div>
- Testnet
+ <div className="flex items-center gap-3 w-full sm:w-auto">
+ <div className={`w-2.5 h-2.5 rounded-full ${activeNetwork === 'testnet' ? 'bg-green-500 animate-pulse' : 'bg-amber-500'} shrink-0`}></div>
+ <select value={activeNetwork} onChange={e => setActiveNetwork(e.target.value)} className="bg-white border border-slate-200 px-5 py-2.5 rounded-xl text-sm font-bold text-slate-700 shadow-sm hover:border-indigo-300 transition-colors appearance-none cursor-pointer outline-none">
+ <option value="testnet" className="font-bold">Testnet</option>
+ <option value="mainnet" className="font-bold">Mainnet</option>
+ </select>
  </div>
- <ChevronDown className="w-5 h-5 text-slate-400 "/>
- </button>
  </div>
  
  <div className="h-px bg-slate-100 ml-20 my-1.5"></div>
@@ -194,43 +225,113 @@ export default function SettingsPage() {
  <div className="bg-white rounded-[2rem] p-10 shadow-[0_12px_40px_rgba(0,0,0,0.04)] border border-slate-100 flex flex-col">
  <div className="flex items-center justify-between mb-8">
  <h3 className="font-extrabold text-slate-900 text-2xl">Address Book</h3>
- <button className="px-4 py-2 bg-indigo-50 text-indigo-600 hover:bg-indigo-100 rounded-xl text-xs font-bold transition-colors flex items-center gap-2">
+ <button onClick={() => { setShowAddForm(true); setEditingIndex(null); setFormName(""); setFormAddress(""); }} className="px-4 py-2 bg-indigo-50 text-indigo-600 hover:bg-indigo-100 rounded-xl text-xs font-bold transition-colors flex items-center gap-2">
  <Plus className="w-4 h-4"/> Add New
  </button>
  </div>
  
  <div className="flex flex-col gap-3">
- <div className="flex items-center justify-between p-4 bg-slate-50/50 border border-slate-100 rounded-2xl">
- <div className="flex items-center gap-5">
- <div className="w-12 h-12 rounded-full bg-indigo-100 text-indigo-600 flex items-center justify-center font-bold text-lg shadow-sm">
- A
- </div>
- <div className="flex flex-col">
- <span className="font-bold text-slate-900 text-base">Alice</span>
- <span className="text-xs font-mono font-semibold text-slate-500 mt-0.5">GCBX...92A1</span>
- </div>
- </div>
- <div className="flex items-center gap-2">
- <button className="p-2 text-indigo-600 hover:bg-indigo-50 rounded-lg transition-colors"><Send className="w-5 h-5"/></button>
- <button className="p-2 text-slate-400 hover:bg-slate-100 rounded-lg transition-colors"><Edit2 className="w-5 h-5"/></button>
- </div>
- </div>
- 
- <div className="flex items-center justify-between p-4 bg-slate-50/50 border border-slate-100 rounded-2xl">
- <div className="flex items-center gap-5">
- <div className="w-12 h-12 rounded-full bg-emerald-100 text-emerald-600 flex items-center justify-center font-bold text-lg shadow-sm">
- B
- </div>
- <div className="flex flex-col">
- <span className="font-bold text-slate-900 text-base">Bob (Exchange)</span>
- <span className="text-xs font-mono font-semibold text-slate-500 mt-0.5">GD12...4XZP</span>
- </div>
- </div>
- <div className="flex items-center gap-2">
- <button className="p-2 text-indigo-600 hover:bg-indigo-50 rounded-lg transition-colors"><Send className="w-5 h-5"/></button>
- <button className="p-2 text-slate-400 hover:bg-slate-100 rounded-lg transition-colors"><Edit2 className="w-5 h-5"/></button>
- </div>
- </div>
+ {/* Add / Edit Form */}
+ {(showAddForm || editingIndex !== null) && (
+   <div className="p-4 bg-indigo-50/50 border border-indigo-100 rounded-2xl flex flex-col gap-3">
+     <input value={formName} onChange={e => setFormName(e.target.value)} placeholder="Contact name" className="w-full p-3 rounded-xl border border-slate-200 text-sm font-medium focus:outline-none focus:border-indigo-500 focus:ring-4 focus:ring-indigo-500/10 transition-all" />
+     <input value={formAddress} onChange={e => setFormAddress(e.target.value)} placeholder="Stellar address (G...)" className="w-full p-3 rounded-xl border border-slate-200 text-sm font-mono focus:outline-none focus:border-indigo-500 focus:ring-4 focus:ring-indigo-500/10 transition-all" />
+     <div className="flex items-center gap-2">
+       <button onClick={() => {
+         if (!formName.trim() || !formAddress.trim()) return;
+         if (editingIndex !== null) {
+           const updated = [...addressBook];
+           updated[editingIndex] = { name: formName.trim(), address: formAddress.trim() };
+           setAddressBook(updated);
+         } else {
+           setAddressBook([...addressBook, { name: formName.trim(), address: formAddress.trim() }]);
+         }
+         setShowAddForm(false);
+         setEditingIndex(null);
+         setFormName("");
+         setFormAddress("");
+       }} className="px-4 py-2 bg-indigo-600 text-white rounded-xl text-xs font-bold hover:bg-indigo-700 transition-colors">
+         {editingIndex !== null ? "Save" : "Add Contact"}
+       </button>
+       <button onClick={() => { setShowAddForm(false); setEditingIndex(null); setFormName(""); setFormAddress(""); }} className="px-4 py-2 bg-slate-100 text-slate-600 rounded-xl text-xs font-bold hover:bg-slate-200 transition-colors">
+         Cancel
+       </button>
+     </div>
+   </div>
+ )}
+
+ {/* Recommended contacts from transaction history */}
+ {recommendedContacts.length > 0 && (
+   <>
+     <div className="flex items-center gap-2 mt-1 mb-1">
+       <div className="h-px flex-1 bg-slate-100"></div>
+       <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider">Recommended</span>
+       <div className="h-px flex-1 bg-slate-100"></div>
+     </div>
+     {recommendedContacts.map((addr, i) => {
+       const alreadySaved = addressBook.some(e => e.address === addr);
+       return (
+         <div key={i} className="flex items-center justify-between p-4 bg-blue-50/30 border border-blue-100/50 rounded-2xl">
+           <div className="flex items-center gap-5 min-w-0">
+             <div className="w-12 h-12 rounded-full bg-blue-100 text-blue-600 flex items-center justify-center font-bold text-lg shadow-sm shrink-0">
+               {addr.charAt(0)}
+             </div>
+             <div className="flex flex-col min-w-0">
+               <span className="font-bold text-slate-900 text-base">
+                 {addr.slice(0, 4)}...{addr.slice(-4)}
+               </span>
+               <span className="text-xs font-mono font-semibold text-slate-500 mt-0.5 truncate">{addr}</span>
+             </div>
+           </div>
+           <div className="flex items-center gap-2 shrink-0">
+             {alreadySaved ? (
+               <span className="text-[11px] font-bold text-emerald-600 px-2 py-1 bg-emerald-50 rounded-lg">Saved</span>
+             ) : (
+               <button onClick={() => {
+                 setAddressBook([...addressBook, { name: addr.slice(0, 8), address: addr }]);
+               }} className="px-3 py-1.5 bg-blue-100 text-blue-700 hover:bg-blue-200 rounded-lg text-xs font-bold transition-colors flex items-center gap-1.5">
+                 <Plus className="w-3.5 h-3.5" /> Add
+               </button>
+             )}
+             <button onClick={() => router.push(`/send?to=${addr}`)} className="p-2 text-indigo-600 hover:bg-blue-100 rounded-lg transition-colors" title="Send to this address">
+               <Send className="w-4 h-4"/>
+             </button>
+           </div>
+         </div>
+       );
+     })}
+   </>
+ )}
+
+ {addressBook.length === 0 && !showAddForm && recommendedContacts.length === 0 && (
+   <div className="flex flex-col items-center py-8 text-slate-400">
+     <Users className="w-10 h-10 mb-3 opacity-50" />
+     <p className="text-sm font-semibold">No saved addresses</p>
+     <p className="text-xs mt-1">Add frequently-used addresses for quick access</p>
+   </div>
+ )}
+
+ {addressBook.map((entry, i) => (
+   <div key={i} className="flex items-center justify-between p-4 bg-slate-50/50 border border-slate-100 rounded-2xl">
+     <div className="flex items-center gap-5">
+       <div className="w-12 h-12 rounded-full bg-indigo-100 text-indigo-600 flex items-center justify-center font-bold text-lg shadow-sm">
+         {entry.name.charAt(0).toUpperCase()}
+       </div>
+       <div className="flex flex-col">
+         <span className="font-bold text-slate-900 text-base">{entry.name}</span>
+         <span className="text-xs font-mono font-semibold text-slate-500 mt-0.5">{entry.address.slice(0, 4)}...{entry.address.slice(-4)}</span>
+       </div>
+     </div>
+     <div className="flex items-center gap-2">
+       <button onClick={() => router.push(`/send?to=${entry.address}&name=${encodeURIComponent(entry.name)}`)} className="p-2 text-indigo-600 hover:bg-indigo-50 rounded-lg transition-colors" title="Send to this address">
+         <Send className="w-5 h-5"/>
+       </button>
+       <button onClick={() => { setEditingIndex(i); setFormName(entry.name); setFormAddress(entry.address); setShowAddForm(false); }} className="p-2 text-slate-400 hover:bg-slate-100 rounded-lg transition-colors" title="Edit this address">
+         <Edit2 className="w-5 h-5"/>
+       </button>
+     </div>
+   </div>
+ ))}
  </div>
  </div>
 

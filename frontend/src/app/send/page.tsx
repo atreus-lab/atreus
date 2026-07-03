@@ -48,6 +48,11 @@ export default function SendPage() {
     }
     setStoredWallet(wallet);
 
+    // Pre-fill destination from query params (e.g. from address book)
+    const params = new URLSearchParams(window.location.search);
+    const to = params.get("to");
+    if (to) setDestination(to);
+
     getBalance(wallet.publicKey).then(setBalance).catch(console.error);
   }, [router]);
 
