@@ -97,35 +97,32 @@ export default function CreatePage() {
   };
 
   return (
-    <>
-      <div className="w-full max-w-md mx-auto rounded-[2rem] p-8 space-y-6" style={{ background: 'var(--background-card)', border: '1px solid var(--border-default)' }}>
-        <Link
-          href="/"
-          className="text-sm font-bold text-indigo-600 hover:text-indigo-700 inline-flex items-center gap-1"
-        >
+    <div className="app-content max-w-md mx-auto">
+      <div className="panel p-8 space-y-5">
+        <Link href="/" className="text-sm font-bold text-accent inline-flex items-center gap-1 hover:underline">
           <ArrowLeft className="w-4 h-4" /> Home
         </Link>
 
-        <h2 className="text-xl font-extrabold" style={{ color: 'var(--foreground-primary)' }}>Create Link</h2>
+        <h2 className="text-xl font-bold text-primary">Create Link</h2>
 
-        <div>
-          <label className="text-sm font-semibold text-slate-500 block mb-1.5">Amount (XLM)</label>
+        <div className="space-y-1.5">
+          <label className="text-sm font-semibold text-secondary block">Amount (XLM)</label>
           <input
             type="number"
             value={amount}
             onChange={(e) => setAmount(e.target.value)}
             placeholder="0.00"
-            className="w-full p-3.5 rounded-xl text-sm font-medium focus:outline-none focus:ring-4" style={{ background: 'var(--background-elevated)', border: '2px solid var(--border-default)', color: 'var(--foreground-primary)',  }}
+            className="input"
             disabled={isCreating}
           />
         </div>
 
-        <div>
-          <label className="text-sm font-semibold text-slate-500 block mb-1.5">Expires in</label>
+        <div className="space-y-1.5">
+          <label className="text-sm font-semibold text-secondary block">Expires in</label>
           <select
             value={expirySeconds}
             onChange={(e) => setExpirySeconds(Number(e.target.value))}
-            className="w-full p-3.5 rounded-xl text-sm font-medium focus:outline-none focus:ring-4" style={{ background: 'var(--background-elevated)', border: '2px solid var(--border-default)', color: 'var(--foreground-primary)',  }}
+            className="input"
             disabled={isCreating}
           >
             {EXPIRY_OPTIONS.map((opt) => (
@@ -134,40 +131,38 @@ export default function CreatePage() {
           </select>
         </div>
 
-        <div>
-          <label className="text-sm font-semibold text-slate-500 block mb-1.5 flex items-center gap-1.5">
-            <Mail className="w-3.5 h-3.5" /> Recipient Email <span className="text-slate-300 font-normal">(optional — only this person can claim)</span>
+        <div className="space-y-1.5">
+          <label className="text-sm font-semibold text-secondary flex items-center gap-1.5">
+            <Mail className="w-3.5 h-3.5" /> Recipient Email <span className="text-secondary font-normal">(optional — only this person can claim)</span>
           </label>
           <input
             type="email"
             value={recipientEmail}
             onChange={(e) => setRecipientEmail(e.target.value)}
             placeholder="alice@example.com"
-            className="w-full p-3.5 rounded-xl text-sm font-medium focus:outline-none focus:ring-4" style={{ background: 'var(--background-elevated)', border: '2px solid var(--border-default)', color: 'var(--foreground-primary)',  }}
+            className="input"
             disabled={isCreating}
           />
           {recipientEmail.trim() && (
-            <p className="flex items-center gap-1 text-xs font-medium text-amber-600 mt-1.5">
+            <p className="flex items-center gap-1 text-xs text-amber-500 mt-1">
               <Shield className="w-3 h-3" /> Only {recipientEmail.trim()} will be able to claim this link
             </p>
           )}
         </div>
 
         {error && (
-          <div className="text-sm font-medium p-3 rounded-xl" style={{ background: 'rgba(248,113,113,0.15)', border: '1px solid rgba(248,113,113,0.3)', color: 'var(--error)' }}>
+          <div className="text-sm font-semibold p-3 rounded-lg bg-[rgba(248,113,113,0.08)] border border-[rgba(248,113,113,0.15)] text-error">
             {error}
           </div>
         )}
 
         <button
           onClick={handleCreate}
-          className="w-full py-3.5 rounded-2xl text-sm font-bold text-white bg-indigo-600 hover:bg-indigo-700 disabled:opacity-40 disabled:cursor-not-allowed flex items-center justify-center gap-2 transition-all shadow-[0_4px_12px_rgba(79,70,229,0.3)]"
+          className="btn-primary w-full py-3 rounded-lg text-sm font-bold flex items-center justify-center gap-2"
           disabled={isCreating || !amount || parseFloat(amount) <= 0}
         >
           {isCreating ? (
-            <>
-              <Loader2 className="w-4 h-4 animate-spin" /> Generating...
-            </>
+            <><Loader2 className="w-4 h-4 animate-spin" /> Generating...</>
           ) : (
             'Generate Link'
           )}
@@ -175,18 +170,18 @@ export default function CreatePage() {
 
         {link && (
           <div className="space-y-4 pt-2">
-            <div className="rounded-xl p-4" style={{ background: 'var(--background-elevated)', border: '1px solid var(--border-default)' }}>
-              <p className="text-xs font-semibold text-slate-500 mb-2">Share this link:</p>
+            <div className="rounded-lg p-3 bg-elevated border border-[var(--border-default)]">
+              <p className="text-xs font-semibold text-secondary mb-2">Share this link:</p>
               <div className="flex gap-2">
                 <input
                   type="text"
                   readOnly
                   value={link}
-                  className="flex-1 p-2.5 rounded-lg text-xs font-mono" style={{ background: 'var(--background-elevated)', border: '1px solid var(--border-default)', color: 'var(--foreground-primary)' }}
+                  className="input flex-1 text-xs font-mono"
                 />
                 <button
                   onClick={copyToClipboard}
-                  className="p-2.5 rounded-lg transition-colors" style={{ background: 'rgba(59,130,246,0.15)', color: 'var(--accent-primary)' }}
+                  className="p-2.5 rounded-lg bg-[rgba(59,130,246,0.08)] text-accent border border-[rgba(59,130,246,0.1)] transition-colors hover:bg-[rgba(59,130,246,0.12)]"
                   title="Copy to clipboard"
                 >
                   {copied ? <Check className="w-4 h-4" /> : <Copy className="w-4 h-4" />}
@@ -196,13 +191,13 @@ export default function CreatePage() {
 
             <button
               onClick={() => router.push('/dashboard')}
-              className="w-full py-3 rounded-2xl text-sm font-bold transition-colors" style={{ background: 'var(--background-elevated)', color: 'var(--foreground-secondary)' }}
+              className="w-full py-2.5 rounded-lg text-sm font-semibold bg-elevated text-secondary transition-colors hover:text-primary"
             >
               Back to Dashboard
             </button>
           </div>
         )}
       </div>
-    </>
+    </div>
   );
 }

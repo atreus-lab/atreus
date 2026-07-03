@@ -2,7 +2,8 @@
 
 import Image from "next/image";
 import Link from "next/link";
-import { Shield, ChevronDown, X } from "lucide-react";
+import { X } from "lucide-react";
+import { AnimatePresence, motion } from "motion/react";
 import logo from "../media/ateruslogo.jpeg";
 
 interface NavItem {
@@ -22,65 +23,71 @@ interface MobileDrawerProps {
 }
 
 export default function MobileDrawer({ open, onClose, navItems, emailName, displayAddress }: MobileDrawerProps) {
-  if (!open) return null;
-
   return (
-    <div className="fixed inset-0 z-50 lg:hidden">
-      <div className="absolute inset-0 bg-black/40 backdrop-blur-sm" onClick={onClose} />
-      <div className="absolute left-0 top-0 bottom-0 w-[280px] shadow-2xl flex flex-col animate-slide-in" style={{ background: 'var(--background-card)' }}>
-        <div className="px-6 pt-8 pb-4 shrink-0 flex items-center justify-between">
-          <Link href="/" className="flex items-center gap-3 px-2" onClick={onClose}>
-            <Image src={logo} alt="Atreus" width={32} height={32} className="rounded-[10px] shadow-sm" />
-            <span className="font-extrabold text-xl tracking-tight" style={{ color: 'var(--foreground-primary)' }}>Atreus</span>
-          </Link>
-          <button onClick={onClose} className="p-2 hover:bg-slate-100 rounded-xl transition-colors">
-            <X className="w-5 h-5 text-slate-400" />
-          </button>
-        </div>
+    <AnimatePresence>
+      {open && (
+        <div className="fixed inset-0 z-50 lg:hidden">
+          <motion.div
+            className="absolute inset-0 bg-black/40 backdrop-blur-sm"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            transition={{ duration: 0.2 }}
+            onClick={onClose}
+          />
+          <motion.div
+            className="absolute left-0 top-0 bottom-0 w-[280px] flex flex-col bg-[var(--background-card)]"
+            initial={{ x: "-100%" }}
+            animate={{ x: 0 }}
+            exit={{ x: "-100%" }}
+            transition={{ duration: 0.25, ease: [0.32, 0.72, 0, 1] }}
+          >
+            <div className="px-5 pt-6 pb-4 shrink-0 flex items-center justify-between">
+              <Link href="/" className="flex items-center gap-2.5" onClick={onClose}>
+                <Image src={logo} alt="Atreus" width={28} height={28} className="rounded-lg" />
+                <span className="font-extrabold text-lg tracking-tight text-primary">Atreus</span>
+              </Link>
+              <button onClick={onClose} className="p-2 rounded-lg hover:bg-[rgba(255,255,255,0.05)] transition-colors">
+                <X className="w-4 h-4 text-secondary" />
+              </button>
+            </div>
 
-        <nav className="flex-1 min-h-0 overflow-y-auto px-6 flex flex-col gap-1.5 py-2">
-          {navItems.map((item, i) => {
-            if (item.href) {
-              return (
-              <Link key={i} href={item.href} onClick={onClose} className="flex items-center gap-4 px-4 py-3.5 rounded-2xl transition-all font-bold text-sm cursor-pointer" style={item.active ? { background: 'rgba(59,130,246,0.15)', color: 'var(--accent-primary)' } : { color: 'var(--foreground-secondary)' }}>
-                <item.icon className="w-5 h-5" style={item.active ? { color: 'var(--accent-primary)' } : { color: 'var(--foreground-secondary)' }} />
-                  {item.label}
-                </Link>
-              );
-            }
-            return (
-              <div key={i} onClick={() => { item.onClick?.(); onClose(); }} className="flex items-center gap-4 px-4 py-3.5 rounded-2xl transition-all font-bold text-sm cursor-pointer" style={item.active ? { background: 'rgba(59,130,246,0.15)', color: 'var(--accent-primary)' } : { color: 'var(--foreground-secondary)' }}>
-                <item.icon className="w-5 h-5" style={item.active ? { color: 'var(--accent-primary)' } : { color: 'var(--foreground-secondary)' }} />
-                  {item.label}
+            <nav className="flex-1 min-h-0 overflow-y-auto px-4 flex flex-col gap-1 py-2">
+              {navItems.map((item, i) => {
+                const cls = `flex items-center gap-3 px-3 py-2.5 rounded-lg transition-colors text-sm font-medium ${
+                  item.active ? 'bg-elevated text-primary font-semibold' : 'text-secondary hover:text-primary hover:bg-[rgba(255,255,255,0.03)]'
+                }`;
+                if (item.href) {
+                  return (
+                    <Link key={i} href={item.href} onClick={onClose} className={cls}>
+                      <item.icon className="w-[18px] h-[18px]" />
+                      {item.label}
+                    </Link>
+                  );
+                }
+                return (
+                  <button key={i} onClick={() => { item.onClick?.(); onClose(); }} className={`${cls} text-left`}>
+                    <item.icon className="w-[18px] h-[18px]" />
+                    {item.label}
+                  </button>
+                );
+              })}
+            </nav>
+
+            <div className="px-4 pb-4 pt-3" style={{ borderTop: '1px solid var(--border-default)' }}>
+              <div className="flex items-center gap-2.5 p-2.5">
+                <div className="w-8 h-8 rounded-lg flex items-center justify-center font-bold text-xs shrink-0 bg-[var(--accent-primary)] text-white">
+                  {emailName.charAt(0).toUpperCase()}
                 </div>
-            );
-          })}
-        </nav>
-
-        <div className="px-6 pb-6 pt-3 shrink-0 flex flex-col gap-3">
-          <div className="p-4 surface rounded-2xl">
-            <div className="flex items-center gap-2 mb-1">
-              <Shield className="w-4 h-4 text-slate-400" />
-              <span className="text-[11px] font-extrabold uppercase tracking-wider" style={{ color: 'var(--foreground-secondary)' }}>Built on Stellar</span>
-              <div className="w-2 h-2 rounded-full bg-green-500 shadow-[0_0_8px_rgba(34,197,94,0.6)] animate-pulse ml-auto"></div>
-            </div>
-            <p className="text-[12px] font-medium leading-snug" style={{ color: 'var(--foreground-secondary)' }}>Fast. Low cost. Borderless payments.</p>
-          </div>
-
-          <Link href="/profile" onClick={onClose} className="flex items-center justify-between p-3 rounded-2xl transition-colors group" style={{ border: '1px solid var(--border-default)', background: 'var(--background-elevated)' }}>
-            <div className="flex items-center gap-3 min-w-0">
-              <div className="w-10 h-10 flex items-center justify-center font-bold text-sm shadow-sm group-hover:scale-105 transition-transform shrink-0" style={{ background: 'var(--accent-primary)', color: 'white', borderRadius: '0.75rem' }}>
-                {emailName.charAt(0).toUpperCase()}
-              </div>
-              <div className="flex flex-col min-w-0">
-                <span className="text-sm font-bold truncate" style={{ color: 'var(--foreground-primary)' }}>{emailName}</span>
-                <span className="text-[10px] font-medium truncate" style={{ color: 'var(--foreground-secondary)' }}>{displayAddress}</span>
+                <div className="flex flex-col min-w-0">
+                  <span className="text-sm font-semibold text-primary truncate">{emailName}</span>
+                  <span className="text-[10px] text-secondary truncate">{displayAddress}</span>
+                </div>
               </div>
             </div>
-            <ChevronDown className="w-4 h-4 shrink-0" style={{ color: 'var(--foreground-secondary)' }} />
-          </Link>
+          </motion.div>
         </div>
-      </div>
-    </div>
+      )}
+    </AnimatePresence>
   );
 }

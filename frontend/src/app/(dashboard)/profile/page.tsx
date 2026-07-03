@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { loadWallet, getBalances, getTransactions, type StoredWallet } from "@/lib/wallet";
-import { CheckCircle2, Edit2, ShieldCheck, Lock, Fingerprint, KeyRound, Shield, ChevronRight, Copy, Bell, Palette, Globe, Download, ChevronDown, Trash2, Info, Settings as SettingsIcon } from "lucide-react";
+import { CheckCircle2, Edit2, ShieldCheck, Lock, Fingerprint, KeyRound, Shield, ChevronRight, Copy, Bell, Palette, Globe, Download, ChevronDown, Trash2 } from "lucide-react";
 import AppHeader from "@/components/AppHeader";
 import SearchDialog from "@/components/SearchDialog";
 
@@ -80,161 +80,176 @@ export default function ProfilePage() {
     finally { setExporting(false); }
   };
 
-  if (loading) {
-    return <div className="min-h-screen bg-[#FAFBFF] flex items-center justify-center"><div className="animate-spin w-8 h-8 border-4 border-indigo-600 border-t-transparent rounded-full"></div></div>;
-  }
+  const emailName = storedWallet?.email ? storedWallet.email.split('@')[0] : 'User';
+  const displayName = emailName.charAt(0).toUpperCase() + emailName.slice(1);
+
+  const SECURITY_ITEMS = [
+    { icon: ShieldCheck, color: 'var(--accent-primary)', title: 'Recovery Phrase', desc: 'Secure your wallet recovery phrase', badge: <span className="text-[10px] font-bold px-2 py-0.5 rounded-md bg-[rgba(34,197,94,0.08)] text-success">Backed up</span> },
+    { icon: Lock, color: 'var(--accent-primary)', title: 'Password', desc: 'Manage your account password' },
+    { icon: Fingerprint, color: '#a855f7', title: 'Biometric Login', desc: 'Use biometrics to secure your account', badge: <span className="text-[10px] font-bold px-2 py-0.5 rounded-md bg-[rgba(34,197,94,0.08)] text-success">Enabled</span> },
+    { icon: KeyRound, color: 'var(--accent-primary)', title: 'Passkeys', desc: 'Manage your passkeys', badge: <span className="text-[10px] font-bold px-2 py-0.5 rounded-md text-secondary">Coming Soon</span> },
+    { icon: Shield, color: 'var(--foreground-secondary)', title: 'Two-Factor Authentication', desc: 'Add an extra layer of security', badge: <span className="text-[10px] font-bold px-2 py-0.5 rounded-md text-secondary">Disabled</span> },
+  ];
 
   return (
     <>
-      <AppHeader title="Profile" subtitle="Manage your account and wallet preferences" onSearchOpen={() => setSearchOpen(true)} />
-      <div className="app-content px-8 sm:px-10 lg:px-12 py-8 flex-1 flex flex-col">
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+      <AppHeader title="Profile" subtitle="Manage your account and wallet preferences" backHref="/dashboard" onSearchOpen={() => setSearchOpen(true)} />
+      <div className="app-content">
+        {loading ? (
+          <div className="flex-1 flex items-center justify-center p-8">
+            <div className="animate-spin w-6 h-6 border-2 border-[var(--accent-primary)] border-t-transparent rounded-full" />
+          </div>
+        ) : (
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
           {/* Left Column */}
-          <div className="flex flex-col gap-8">
-            {/* Profile Info Card */}
-            <div className="rounded-[2rem] p-8 shadow-[0_12px_40px_rgba(0,0,0,0.04)] flex flex-col gap-6" style={{ background: 'var(--background-card)', border: '1px solid var(--border-default)' }}>
-              <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-6 sm:gap-4">
-                <div className="flex items-center gap-6 min-w-0">
-                  <div className="w-20 h-20 sm:w-24 sm:h-24 rounded-full bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center shadow-lg shadow-[0_10px_15px_-3px_rgba(59,130,246,0.3)] shrink-0 border-4 border-[color:var(--background-primary)]">
-                    <span className="text-white font-extrabold text-3xl sm:text-4xl">{storedWallet?.email ? storedWallet.email.charAt(0).toUpperCase() : 'U'}</span>
+          <div className="flex flex-col gap-6">
+            {/* Profile Card */}
+            <div className="panel p-6">
+              <div className="flex items-start justify-between gap-4 mb-4">
+                <div className="flex items-center gap-4 min-w-0">
+                  <div className="w-14 h-14 rounded-xl bg-[var(--accent-primary)] flex items-center justify-center shrink-0">
+                    <span className="text-white font-bold text-2xl">{displayName.charAt(0)}</span>
                   </div>
                   <div className="flex flex-col min-w-0">
-                    <div className="flex items-center gap-2.5 mb-1 flex-wrap">
-                      <h2 className="text-xl sm:text-2xl font-extrabold text-[color:var(--foreground-primary)] truncate">{storedWallet?.email ? storedWallet.email.split('@')[0].charAt(0).toUpperCase() + storedWallet.email.split('@')[0].slice(1) : 'User'}</h2>
-                      <span className="bg-[rgba(99,102,241,0.15)] text-[color:rgb(79,70,229)] px-2 py-0.5 rounded-lg text-[10px] sm:text-xs font-bold flex items-center gap-1 border border-indigo-100 shrink-0"><CheckCircle2 className="w-3 h-3 sm:w-3.5 sm:h-3.5" /> Verified</span>
+                    <div className="flex items-center gap-2 mb-0.5">
+                      <h2 className="text-lg font-bold text-primary truncate">{displayName}</h2>
+                      <span className="text-[10px] font-bold px-2 py-0.5 rounded-md bg-[rgba(59,130,246,0.08)] text-accent flex items-center gap-1"><CheckCircle2 className="w-3 h-3" /> Verified</span>
                     </div>
-                    <p className="text-xs sm:text-sm font-semibold text-slate-500 truncate">{storedWallet?.email}</p>
-                    <p className="text-[10px] sm:text-xs font-semibold text-slate-400 mt-1 truncate">Member since July 2, 2026</p>
+                    <p className="text-xs text-secondary truncate">{storedWallet?.email}</p>
+                    <p className="text-[10px] text-secondary mt-0.5">Member since July 2, 2026</p>
                   </div>
                 </div>
-                <button className="shrink-0 w-full sm:w-auto justify-center sm:justify-start px-4 py-2.5 sm:py-2 bg-[rgba(99,102,241,0.15)] hover:bg-[rgba(99,102,241,0.25)] text-[color:rgb(79,70,229)] border border-indigo-100 rounded-xl text-sm font-bold transition-colors flex items-center gap-2 whitespace-nowrap"><Edit2 className="w-3.5 h-3.5" /> Edit Profile</button>
+                <button className="px-3 py-1.5 bg-[rgba(59,130,246,0.08)] text-accent text-xs font-bold rounded-lg flex items-center gap-1.5 shrink-0 transition-colors hover:bg-[rgba(59,130,246,0.12)]">
+                  <Edit2 className="w-3 h-3" /> Edit
+                </button>
               </div>
-              <p className="text-sm font-bold text-[color:var(--foreground-primary)]">Exploring the future of payments with Atreus 🚀</p>
+              <p className="text-sm font-medium text-primary">Exploring the future of payments with Atreus 🚀</p>
             </div>
 
             {/* Security Card */}
-            <div className="rounded-[2rem] p-10 shadow-[0_12px_40px_rgba(0,0,0,0.04)] flex flex-col" style={{ background: 'var(--background-card)', border: '1px solid var(--border-default)' }}>
-              <h3 className="font-extrabold text-[color:var(--foreground-primary)] mb-8 text-2xl">Security</h3>
-              <div className="flex flex-col gap-3">
-                {[
-                  { icon: <ShieldCheck className="w-6 h-6" />, color: 'bg-[rgba(99,102,241,0.15)] text-[color:rgb(99,102,241)]', title: 'Recovery Phrase', desc: 'Secure your wallet recovery phrase', right: <span className="bg-[rgba(34,197,94,0.15)] text-[color:rgb(22,163,74)] border border-green-100 px-3 py-1.5 rounded-xl text-xs font-bold">Backed up</span> },
-                  { icon: <Lock className="w-6 h-6" />, color: 'bg-[rgba(59,130,246,0.15)] text-[color:rgb(59,130,246)]', title: 'Password', desc: 'Manage your account password' },
-                  { icon: <Fingerprint className="w-6 h-6" />, color: 'bg-[rgba(168,85,247,0.15)] text-[color:rgb(168,85,247)]', title: 'Biometric Login', desc: 'Use biometrics to secure your account', right: <span className="bg-[rgba(34,197,94,0.15)] text-[color:rgb(22,163,74)] border border-green-100 px-3 py-1.5 rounded-xl text-xs font-bold">Enabled</span> },
-                  { icon: <KeyRound className="w-6 h-6" />, color: 'bg-[rgba(99,102,241,0.15)] text-[color:rgb(99,102,241)]', title: 'Passkeys', desc: 'Manage your passkeys', right: <span className="text-indigo-600 px-3 py-1.5 text-xs font-bold">Coming Soon</span> },
-                  { icon: <Shield className="w-6 h-6" />, color: 'bg-slate-100 text-slate-500', title: 'Two-Factor Authentication', desc: 'Add an extra layer of security', right: <span className="text-slate-400 px-3 py-1.5 text-xs font-bold">Disabled</span> },
-                ].map((item, i) => (
-                  <div key={i}>
-                    <div className="flex items-center justify-between p-4 hover:bg-white/5 rounded-2xl transition-colors cursor-pointer group border border-transparent hover:border-slate-100">
-                      <div className="flex items-center gap-5">
-                        <div className={`w-12 h-12 rounded-xl ${item.color} flex items-center justify-center shrink-0 group-hover:scale-110 transition-transform`}>{item.icon}</div>
-                        <div className="flex flex-col"><span className="font-bold text-[color:var(--foreground-primary)] text-base">{item.title}</span><span className="text-xs font-semibold text-slate-500 mt-0.5">{item.desc}</span></div>
+            <div className="panel p-6">
+              <h3 className="text-base font-bold text-primary mb-4">Security</h3>
+              <div className="flex flex-col gap-1">
+                {SECURITY_ITEMS.map((item, i) => (
+                  <div key={i} className="flex items-center justify-between p-3 rounded-lg hover:bg-[rgba(255,255,255,0.03)] transition-colors cursor-pointer group">
+                    <div className="flex items-center gap-3">
+                      <div className="w-8 h-8 rounded-lg flex items-center justify-center shrink-0" style={{ background: `${item.color}15`, color: item.color }}>
+                        <item.icon className="w-4 h-4" />
                       </div>
-                      <div className="flex items-center gap-4">
-                        {item.right}
-                        <ChevronRight className="w-5 h-5 text-slate-400 group-hover:text-[color:var(--foreground-secondary)] transition-colors" />
+                      <div className="flex flex-col">
+                        <span className="font-semibold text-sm text-primary">{item.title}</span>
+                        <span className="text-[10px] text-secondary">{item.desc}</span>
                       </div>
                     </div>
-                    {i < 4 && <div className="h-px bg-slate-100 ml-20 my-1.5"></div>}
+                    <div className="flex items-center gap-2">
+                      {item.badge}
+                      <ChevronRight className="w-4 h-4 text-secondary opacity-0 group-hover:opacity-100 transition-opacity" />
+                    </div>
                   </div>
                 ))}
               </div>
             </div>
 
             {/* Connected Accounts */}
-            <div className="rounded-[2rem] p-10 shadow-[0_12px_40px_rgba(0,0,0,0.04)] flex flex-col" style={{ background: 'var(--background-card)', border: '1px solid var(--border-default)' }}>
-              <h3 className="font-extrabold text-[color:var(--foreground-primary)] mb-2 text-2xl">Connected Accounts</h3>
-              <p className="text-sm font-semibold text-slate-500 mb-8">Manage your connected accounts and integrations</p>
-              <div className="flex items-center justify-between p-5 border border-slate-100 rounded-2xl" style={{ background: 'rgba(13,13,13,0.5)' }}>
-                <div className="flex items-center gap-5">
-                  <div className="w-12 h-12 rounded-full bg-white shadow-sm flex items-center justify-center p-3">
+            <div className="panel p-6">
+              <h3 className="text-base font-bold text-primary mb-1">Connected Accounts</h3>
+              <p className="text-xs text-secondary mb-4">Manage your connected accounts and integrations</p>
+              <div className="flex items-center justify-between p-3 rounded-lg bg-elevated border border-[var(--border-default)]">
+                <div className="flex items-center gap-3">
+                  <div className="w-8 h-8 rounded-full bg-white flex items-center justify-center p-2">
                     <svg viewBox="0 0 24 24" className="w-full h-full"><path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" fill="#4285F4"/><path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" fill="#34A853"/><path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z" fill="#FBBC05"/><path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" fill="#EA4335"/></svg>
                   </div>
-                  <div className="flex flex-col"><span className="font-bold text-[color:var(--foreground-primary)] text-base">Google</span><span className="text-xs font-semibold text-slate-500">{storedWallet?.email}</span></div>
+                  <div className="flex flex-col">
+                    <span className="font-semibold text-sm text-primary">Google</span>
+                    <span className="text-[10px] text-secondary">{storedWallet?.email}</span>
+                  </div>
                 </div>
-                <div className="flex items-center gap-4">
-                  <span className="bg-[rgba(34,197,94,0.15)] text-[color:rgb(22,163,74)] border border-green-100 px-4 py-1.5 rounded-xl text-xs font-bold">Connected</span>
-                  <button className="text-slate-400 hover:text-[color:var(--foreground-secondary)]"><SettingsIcon className="w-5 h-5" /></button>
-                </div>
+                <span className="text-[10px] font-bold px-2 py-0.5 rounded-md bg-[rgba(34,197,94,0.08)] text-success">Connected</span>
               </div>
             </div>
           </div>
 
           {/* Right Column */}
-          <div className="flex flex-col gap-8">
+          <div className="flex flex-col gap-6">
             {/* Wallet Overview */}
-            <div className="rounded-[2rem] p-10 shadow-[0_12px_40px_rgba(0,0,0,0.04)] flex flex-col" style={{ background: 'var(--background-card)', border: '1px solid var(--border-default)' }}>
-              <h3 className="font-extrabold text-[color:var(--foreground-primary)] mb-8 text-2xl">Wallet Overview</h3>
-              <div className="flex flex-col gap-8">
-                <div className="flex flex-col gap-2.5 items-start">
-                  <span className="text-xs font-bold text-slate-400 uppercase tracking-wider">Wallet Address</span>
-                  <div className="flex items-center gap-3 px-4 py-3 rounded-xl transition-shadow group cursor-pointer" style={{ background: 'var(--background-elevated)', border: '1px solid var(--border-default)' }} onClick={() => { navigator.clipboard.writeText(address); setCopied(true); setTimeout(() => setCopied(false), 2000); }}>
-                    <span className="text-base font-mono font-bold text-[color:var(--foreground-primary)] tracking-tight">{address.slice(0, 12)}...{address.slice(-6)}</span>
-                    {copied ? <CheckCircle2 className="w-5 h-5 text-emerald-500" /> : <Copy className="w-5 h-5 text-indigo-400 group-hover:text-indigo-600" />}
+            <div className="panel p-6">
+              <h3 className="text-base font-bold text-primary mb-4">Wallet Overview</h3>
+              <div className="flex flex-col gap-4">
+                <div className="flex flex-col gap-1">
+                  <span className="section-label">Wallet Address</span>
+                  <button className="flex items-center gap-2 p-3 rounded-lg bg-elevated border border-[var(--border-default)] cursor-pointer transition-colors hover:bg-[rgba(255,255,255,0.06)]" onClick={() => { navigator.clipboard.writeText(address); setCopied(true); setTimeout(() => setCopied(false), 2000); }}>
+                    <span className="font-mono text-sm font-bold text-primary truncate">{address.slice(0, 12)}...{address.slice(-6)}</span>
+                    {copied ? <CheckCircle2 className="w-4 h-4 text-success shrink-0" /> : <Copy className="w-4 h-4 text-secondary shrink-0" />}
+                  </button>
+                </div>
+                <div className="flex flex-col gap-1">
+                  <span className="section-label">Network</span>
+                  <div className="flex items-center gap-2">
+                    <div className={`w-2 h-2 rounded-full ${defaultNetwork === 'testnet' ? 'bg-emerald-500' : 'bg-amber-500'} shrink-0`} />
+                    <span className="text-sm font-bold text-primary">{defaultNetwork === 'testnet' ? 'Stellar Testnet' : 'Stellar Mainnet'}</span>
                   </div>
                 </div>
-                <div className="flex flex-col gap-2.5 items-start">
-                  <span className="text-xs font-bold text-slate-400 uppercase tracking-wider">Network</span>
-                  <div className="flex items-center gap-3"><div className={`w-2.5 h-2.5 rounded-full ${defaultNetwork === 'testnet' ? 'bg-green-500 animate-pulse shadow-[0_0_8px_rgba(34,197,94,0.6)]' : 'bg-amber-500'} shrink-0`}></div><span className="text-base font-bold text-[color:var(--foreground-primary)]">{defaultNetwork === 'testnet' ? 'Stellar Testnet' : 'Stellar Mainnet'}</span></div>
-                </div>
-                <div className="flex flex-col gap-2.5 items-start">
-                  <span className="text-xs font-bold text-slate-400 uppercase tracking-wider">Account Type</span>
-                  <div className="flex items-center gap-2 bg-[rgba(99,102,241,0.15)] text-[color:rgb(79,70,229)] px-4 py-2 rounded-xl border border-indigo-100"><span className="text-sm font-bold">Standard Wallet</span><Info className="w-4 h-4 opacity-80" /></div>
+                <div className="flex flex-col gap-1">
+                  <span className="section-label">Account Type</span>
+                  <span className="text-sm font-bold text-primary">Standard Wallet</span>
                 </div>
               </div>
             </div>
 
             {/* Preferences */}
-            <div className="rounded-[2rem] p-10 shadow-[0_12px_40px_rgba(0,0,0,0.04)] flex flex-col" style={{ background: 'var(--background-card)', border: '1px solid var(--border-default)' }}>
-              <h3 className="font-extrabold text-[color:var(--foreground-primary)] mb-8 text-2xl">Preferences</h3>
-              <div className="flex flex-col gap-3">
-                <div className="flex flex-col sm:flex-row sm:items-center justify-between p-4 hover:bg-white/5 rounded-2xl transition-colors border border-transparent hover:border-slate-100 gap-4">
-                  <div className="flex items-center gap-5"><div className="w-12 h-12 rounded-xl bg-[rgba(99,102,241,0.15)] text-[color:rgb(99,102,241)] flex items-center justify-center shrink-0"><span className="font-bold text-lg">$</span></div><div className="flex flex-col"><span className="font-bold text-[color:var(--foreground-primary)] text-base">Currency Display</span><span className="text-xs font-semibold text-slate-500 mt-0.5">Choose your preferred currency</span></div></div>
-                  <select value={currency} onChange={e => setCurrency(e.target.value)} className="bg-[var(--background-elevated)] border border-[var(--border-default)] px-5 py-2.5 rounded-xl text-sm font-bold text-[color:var(--foreground-primary)] shadow-sm hover:border-accent-primary transition-colors appearance-none cursor-pointer outline-none w-full sm:w-auto">
-                    <option value="USD">USD ($)</option><option value="EUR">EUR (€)</option><option value="GBP">GBP (£)</option><option value="JPY">JPY (¥)</option><option value="CNY">CNY (¥)</option><option value="INR">INR (₹)</option><option value="NGN">NGN (₦)</option><option value="KRW">KRW (₩)</option><option value="BRL">BRL (R$)</option><option value="AUD">AUD (A$)</option><option value="CAD">CAD (C$)</option><option value="CHF">CHF (Fr)</option><option value="RUB">RUB (₽)</option><option value="MXN">MXN (Mex$)</option><option value="ZAR">ZAR (R)</option><option value="SGD">SGD (S$)</option><option value="HKD">HKD (HK$)</option><option value="SEK">SEK (kr)</option><option value="NOK">NOK (kr)</option><option value="AED">AED (د.إ)</option>
-                  </select>
-                </div>
-                <div className="h-px bg-slate-100 ml-20 my-1.5"></div>
-                <div className="flex flex-col sm:flex-row sm:items-center justify-between p-4 hover:bg-white/5 rounded-2xl transition-colors border border-transparent hover:border-slate-100 gap-4">
-                  <div className="flex items-center gap-5"><div className="w-12 h-12 rounded-xl bg-[rgba(168,85,247,0.15)] text-[color:rgb(168,85,247)] flex items-center justify-center shrink-0"><Palette className="w-6 h-6" /></div><div className="flex flex-col"><span className="font-bold text-[color:var(--foreground-primary)] text-base">Theme</span><span className="text-xs font-semibold text-slate-500 mt-0.5">Choose your preferred theme</span></div></div>
-                  <button className="flex items-center justify-between gap-3 bg-[var(--background-elevated)] border border-[var(--border-default)] px-5 py-2.5 rounded-xl text-sm font-bold text-[color:var(--foreground-primary)] shadow-sm hover:border-accent-primary transition-colors w-full sm:w-auto"><div className="flex items-center gap-2"><div className="w-3.5 h-3.5 rounded-full border-2 border-slate-700"></div> Light</div><ChevronDown className="w-5 h-5 text-slate-400" /></button>
-                </div>
-                <div className="h-px bg-slate-100 ml-20 my-1.5"></div>
-                <div className="flex items-center justify-between p-4 hover:bg-white/5 rounded-2xl transition-colors cursor-pointer group border border-transparent hover:border-slate-100">
-                  <div className="flex items-center gap-5"><div className="w-12 h-12 rounded-xl bg-[rgba(59,130,246,0.15)] text-[color:rgb(59,130,246)] flex items-center justify-center shrink-0 group-hover:scale-110 transition-transform"><Bell className="w-6 h-6" /></div><div className="flex flex-col"><span className="font-bold text-[color:var(--foreground-primary)] text-base">Notifications</span><span className="text-xs font-semibold text-slate-500 mt-0.5">Manage your notification settings</span></div></div>
-                  <ChevronRight className="w-5 h-5 text-slate-400 group-hover:text-[color:var(--foreground-secondary)] transition-colors" />
-                </div>
-                <div className="h-px bg-slate-100 ml-20 my-1.5"></div>
-                <div className="flex flex-col sm:flex-row sm:items-center justify-between p-4 hover:bg-white/5 rounded-2xl transition-colors border border-transparent hover:border-slate-100 gap-4">
-                  <div className="flex items-center gap-5"><div className="w-12 h-12 rounded-xl bg-[rgba(59,130,246,0.15)] text-[color:rgb(59,130,246)] flex items-center justify-center shrink-0"><Globe className="w-6 h-6" /></div><div className="flex flex-col"><span className="font-bold text-[color:var(--foreground-primary)] text-base">Language</span><span className="text-xs font-semibold text-slate-500 mt-0.5">Choose your preferred language</span></div></div>
-                  <select value={language} onChange={e => setLanguage(e.target.value)} className="bg-[var(--background-elevated)] border border-[var(--border-default)] px-5 py-2.5 rounded-xl text-sm font-bold text-[color:var(--foreground-primary)] shadow-sm hover:border-accent-primary transition-colors appearance-none cursor-pointer outline-none w-full sm:w-auto">
-                    <option value="en">English</option><option value="es">Español</option><option value="fr">Français</option><option value="de">Deutsch</option><option value="zh">中文</option><option value="ja">日本語</option><option value="ar">العربية</option><option value="pt">Português</option><option value="hi">हिन्दी</option><option value="ru">Русский</option><option value="it">Italiano</option><option value="ko">한국어</option><option value="tr">Türkçe</option><option value="nl">Nederlands</option><option value="pl">Polski</option><option value="vi">Tiếng Việt</option><option value="th">ไทย</option><option value="id">Bahasa Indonesia</option>
-                  </select>
-                </div>
-                <div className="h-px bg-slate-100 ml-20 my-1.5"></div>
-                <div className="flex flex-col sm:flex-row sm:items-center justify-between p-4 hover:bg-white/5 rounded-2xl transition-colors border border-transparent hover:border-slate-100 gap-4">
-                  <div className="flex items-center gap-5"><div className="w-12 h-12 rounded-xl bg-slate-100 text-slate-500 flex items-center justify-center shrink-0"><span className="font-bold">⊞</span></div><div className="flex flex-col"><span className="font-bold text-[color:var(--foreground-primary)] text-base">Default Network</span><span className="text-xs font-semibold text-slate-500 mt-0.5">Select default network</span></div></div>
-                  <div className="flex items-center gap-3 w-full sm:w-auto"><div className={`w-2.5 h-2.5 rounded-full ${defaultNetwork === 'testnet' ? 'bg-green-500 animate-pulse shadow-[0_0_8px_rgba(34,197,94,0.6)]' : 'bg-amber-500'} shrink-0`}></div>
-                  <select value={defaultNetwork} onChange={e => setDefaultNetwork(e.target.value)} className="bg-[var(--background-elevated)] border border-[var(--border-default)] px-5 py-2.5 rounded-xl text-sm font-bold text-[color:var(--foreground-primary)] shadow-sm hover:border-accent-primary transition-colors appearance-none cursor-pointer outline-none"><option value="testnet">Stellar Testnet</option><option value="mainnet">Stellar Mainnet</option></select></div>
-                </div>
+            <div className="panel p-6">
+              <h3 className="text-base font-bold text-primary mb-4">Preferences</h3>
+              <div className="flex flex-col gap-1">
+                {[
+                  { icon: <span className="font-bold text-sm">$</span>, color: 'var(--accent-primary)', title: 'Currency', desc: 'Choose your preferred currency', control: <select value={currency} onChange={e => setCurrency(e.target.value)} className="bg-elevated border border-[var(--border-default)] px-3 py-1.5 rounded-lg text-xs font-bold text-primary outline-none cursor-pointer"><option value="USD">USD ($)</option><option value="EUR">EUR (€)</option><option value="GBP">GBP (£)</option><option value="JPY">JPY (¥)</option><option value="INR">INR (₹)</option></select> },
+                  { icon: <Palette className="w-4 h-4" />, color: '#a855f7', title: 'Theme', desc: 'Choose your preferred theme', control: <span className="text-xs font-bold text-secondary">Dark</span> },
+                  { icon: <Bell className="w-4 h-4" />, color: 'var(--accent-primary)', title: 'Notifications', desc: 'Manage notifications' },
+                  { icon: <Globe className="w-4 h-4" />, color: 'var(--accent-primary)', title: 'Language', desc: 'Choose your language', control: <select value={language} onChange={e => setLanguage(e.target.value)} className="bg-elevated border border-[var(--border-default)] px-3 py-1.5 rounded-lg text-xs font-bold text-primary outline-none cursor-pointer"><option value="en">English</option><option value="es">Español</option><option value="fr">Français</option><option value="de">Deutsch</option><option value="hi">हिन्दी</option></select> },
+                  { icon: <span className="font-bold text-sm">⊞</span>, color: 'var(--foreground-secondary)', title: 'Default Network', desc: 'Select network', control: <div className="flex items-center gap-2"><div className={`w-2 h-2 rounded-full ${defaultNetwork === 'testnet' ? 'bg-emerald-500' : 'bg-amber-500'}`} /><select value={defaultNetwork} onChange={e => setDefaultNetwork(e.target.value)} className="bg-elevated border border-[var(--border-default)] px-3 py-1.5 rounded-lg text-xs font-bold text-primary outline-none cursor-pointer"><option value="testnet">Testnet</option><option value="mainnet">Mainnet</option></select></div> },
+                ].map((item, i) => (
+                  <div key={i} className="flex items-center justify-between p-3 rounded-lg hover:bg-[rgba(255,255,255,0.03)] transition-colors">
+                    <div className="flex items-center gap-3">
+                      <div className="w-8 h-8 rounded-lg flex items-center justify-center shrink-0" style={{ background: `${item.color}15`, color: item.color }}>{item.icon}</div>
+                      <div className="flex flex-col">
+                        <span className="font-semibold text-sm text-primary">{item.title}</span>
+                        <span className="text-[10px] text-secondary">{item.desc}</span>
+                      </div>
+                    </div>
+                    {item.control || <ChevronRight className="w-4 h-4 text-secondary" />}
+                  </div>
+                ))}
               </div>
             </div>
 
             {/* Account Actions */}
-            <div className="rounded-[2rem] p-10 shadow-[0_12px_40px_rgba(0,0,0,0.04)] flex flex-col" style={{ background: 'var(--background-card)', border: '1px solid var(--border-default)' }}>
-              <h3 className="font-extrabold text-[color:var(--foreground-primary)] mb-8 text-2xl">Account Actions</h3>
-              <div className="flex flex-col gap-5">
-                <button onClick={handleExport} className="flex items-center justify-between p-5 bg-[rgba(99,102,241,0.075)] hover:bg-[rgba(99,102,241,0.15)] border border-indigo-100 rounded-2xl transition-colors cursor-pointer group w-full text-left">
-                  <div className="flex items-center gap-5"><Download className={`w-6 h-6 text-indigo-500 ${exporting ? 'animate-bounce' : 'group-hover:-translate-y-0.5'} transition-transform`}/><div className="flex flex-col"><span className="font-bold text-indigo-900 text-base">{exporting ? 'Exporting...' : 'Export Account Data'}</span><span className="text-xs font-semibold text-indigo-500 mt-0.5">{exporting ? 'Gathering your data...' : 'Download your account data'}</span></div></div>
-                  {exporting ? <div className="w-5 h-5 border-2 border-indigo-500 border-t-transparent rounded-full animate-spin"></div> : <ChevronRight className="w-5 h-5 text-indigo-400 group-hover:text-indigo-600 transition-colors" />}
+            <div className="panel p-6">
+              <h3 className="text-base font-bold text-primary mb-4">Account Actions</h3>
+              <div className="flex flex-col gap-3">
+                <button onClick={handleExport} className="flex items-center justify-between p-3 rounded-lg bg-[rgba(59,130,246,0.04)] border border-[rgba(59,130,246,0.08)] transition-colors hover:bg-[rgba(59,130,246,0.08)] cursor-pointer w-full text-left">
+                  <div className="flex items-center gap-3">
+                    <Download className={`w-4 h-4 text-accent ${exporting ? 'animate-bounce' : ''}`} />
+                    <div className="flex flex-col">
+                      <span className="font-semibold text-sm text-primary">{exporting ? 'Exporting...' : 'Export Account Data'}</span>
+                      <span className="text-[10px] text-secondary">{exporting ? 'Gathering your data...' : 'Download your account data'}</span>
+                    </div>
+                  </div>
+                  {exporting ? <div className="w-4 h-4 border-2 border-[var(--accent-primary)] border-t-transparent rounded-full animate-spin" /> : <ChevronRight className="w-4 h-4 text-secondary" />}
                 </button>
-                <div className="flex items-center justify-between p-5 bg-[rgba(248,113,113,0.15)] hover:bg-[rgba(248,113,113,0.25)] border border-red-100 rounded-2xl transition-colors cursor-pointer group">
-                  <div className="flex items-center gap-5"><Trash2 className="w-6 h-6 text-red-500 group-hover:scale-110 transition-transform"/><div className="flex flex-col"><span className="font-bold text-red-700 text-base">Delete Account</span><span className="text-xs font-semibold text-red-500 mt-0.5">Permanently delete your account and all data</span></div></div>
-                  <ChevronRight className="w-5 h-5 text-red-400 group-hover:text-red-600 transition-colors" />
+                <div className="flex items-center justify-between p-3 rounded-lg bg-[rgba(248,113,113,0.04)] border border-[rgba(248,113,113,0.08)] transition-colors hover:bg-[rgba(248,113,113,0.08)] cursor-pointer">
+                  <div className="flex items-center gap-3">
+                    <Trash2 className="w-4 h-4 text-error" />
+                    <div className="flex flex-col">
+                      <span className="font-semibold text-sm text-error">Delete Account</span>
+                      <span className="text-[10px] text-secondary">Permanently delete your account and all data</span>
+                    </div>
+                  </div>
+                  <ChevronRight className="w-4 h-4 text-secondary" />
                 </div>
               </div>
             </div>
           </div>
         </div>
+        )}
       </div>
       <SearchDialog open={searchOpen} onClose={() => setSearchOpen(false)} links={[]} receivedLinks={[]} transactions={[]} address="" />
     </>

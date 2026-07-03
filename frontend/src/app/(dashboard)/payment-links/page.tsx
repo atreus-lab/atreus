@@ -10,6 +10,7 @@ import Link from "next/link";
 import AppHeader from "@/components/AppHeader";
 import PaymentLinksClient from "@/components/PaymentLinks";
 import SearchDialog from "@/components/SearchDialog";
+import EmptyState from "@/components/ui/EmptyState";
 
 export default function PaymentLinksPage() {
   const router = useRouter();
@@ -66,45 +67,36 @@ export default function PaymentLinksPage() {
     return () => document.removeEventListener("keydown", handler);
   }, []);
 
-  if (!mounted) {
-    return (
-      <div className="min-h-screen flex items-center justify-center" style={{ background: 'var(--background-primary)' }}>
-        <div className="animate-spin w-8 h-8 border-4 border-blue-600 border-t-transparent rounded-full"></div>
-      </div>
-    );
-  }
-
   return (
     <>
-      <AppHeader title="Payment Links" subtitle="Create, track, and manage your payment links" onSearchOpen={() => setSearchOpen(true)} />
-      <div className="app-content max-w-5xl mx-auto">
-        <div className="flex items-center justify-between mb-6">
-          <div>
-            <p className="text-sm font-medium" style={{ color: 'var(--foreground-secondary)' }}>Shareable XLM payment links</p>
-          </div>
-          <Link
-            href="/create"
-            className="inline-flex items-center gap-2 px-6 py-3 text-sm font-bold rounded-xl transition-all hover:-translate-y-0.5"
-            style={{ background: 'var(--accent-primary)', color: 'white' }}
-          >
+      <AppHeader
+        title="Payment Links"
+        subtitle="Create, track, and manage your payment links"
+        backHref="/dashboard"
+        onSearchOpen={() => setSearchOpen(true)}
+        rightContent={
+          <Link href="/create" className="btn-primary px-4 py-2 rounded-lg text-sm font-bold inline-flex items-center gap-2">
             <Plus className="w-4 h-4" /> Create Link
           </Link>
-        </div>
-
-        {storedLinks.length === 0 && receivedLinks.length === 0 ? (
-          <div className="panel p-12 text-center">
-            <div className="w-16 h-16 mx-auto mb-4 rounded-2xl flex items-center justify-center" style={{ background: 'var(--background-elevated)' }}>
-              <Plus className="w-7 h-7" style={{ color: 'var(--accent-primary)' }} />
-            </div>
-            <h2 className="section-title mb-2">No Payment Links Yet</h2>
-            <p className="text-sm font-medium mb-6" style={{ color: 'var(--foreground-secondary)' }}>Create a payment link to receive XLM from anyone, even if they don&apos;t have a wallet.</p>
-            <Link
-              href="/create"
-              className="inline-flex items-center gap-2 px-6 py-3 text-sm font-bold rounded-xl transition-all hover:-translate-y-0.5"
-              style={{ background: 'var(--accent-primary)', color: 'white' }}
-            >
-              <Plus className="w-4 h-4" /> Create Your First Link
-            </Link>
+        }
+      />
+      <div className="app-content max-w-5xl mx-auto">
+        {!mounted ? (
+          <div className="flex-1 flex items-center justify-center p-8">
+            <div className="animate-spin w-6 h-6 border-2 border-[var(--accent-primary)] border-t-transparent rounded-full" />
+          </div>
+        ) : storedLinks.length === 0 && receivedLinks.length === 0 ? (
+          <div className="panel p-8">
+            <EmptyState
+              icon={<Plus className="w-6 h-6" />}
+              title="No Payment Links Yet"
+              description="Create a payment link to receive XLM from anyone, even if they don't have a wallet."
+              action={
+                <Link href="/create" className="btn-primary inline-flex items-center gap-2 px-5 py-2.5 rounded-lg text-sm font-bold">
+                  <Plus className="w-4 h-4" /> Create Your First Link
+                </Link>
+              }
+            />
           </div>
         ) : (
           <PaymentLinksClient

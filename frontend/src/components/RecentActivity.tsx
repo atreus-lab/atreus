@@ -83,43 +83,45 @@ const RecentActivity = memo(function RecentActivity({ storedLinks, receivedLinks
     <div className="panel flex flex-col">
       <div className="panel-header">
         <h3 className="section-title">Recent Activity</h3>
-        <Link href="/activity" className="text-sm font-bold" style={{ color: 'var(--accent-primary)' }}>View all</Link>
+        <Link href="/activity" className="text-sm font-bold text-accent">View all</Link>
       </div>
 
       <div className="panel-body">
         <div className="timeline">
-          <div className="timeline-line"></div>
+          <div className="timeline-line" />
 
           {sorted.length === 0 ? (
             <div className="activity-item">
-              <div className="activity-dot" style={{ background: 'var(--foreground-secondary)' }}></div>
+              <div className="activity-dot" style={{ background: 'var(--foreground-secondary)' }} />
               <div className="activity-content">
-                <span className="font-bold text-sm" style={{ color: 'var(--foreground-primary)' }}>No recent activity</span>
-                <span className="text-xs font-medium" style={{ color: 'var(--foreground-secondary)' }}>Your activity will appear here.</span>
+                <span className="font-bold text-sm text-primary">No recent activity</span>
+                <span className="text-xs text-secondary">Your activity will appear here.</span>
               </div>
             </div>
           ) : (
-            sorted.map((item) => {
-              const IconComponent = activityIcons[item.type] || Activity;
-              const dotColor = activityColors[item.type] || 'var(--foreground-secondary)';
-              return (
-                <div key={item.id} className="activity-item">
-                  <div className="activity-dot" style={{ background: dotColor }}></div>
-                  <div className="activity-content">
-                    <div className="flex items-center justify-between">
-                      <span className="font-bold text-sm" style={{ color: 'var(--foreground-primary)' }}>{item.description}</span>
-                      <span className="activity-time">
-                        {new Date(item.timestamp).toLocaleDateString([], { month: 'short', day: 'numeric' })}
-                      </span>
-                    </div>
-                    <div className="flex items-center gap-2 mt-1">
-                      <IconComponent className="w-3 h-3" style={{ color: dotColor }} />
-                      <span className="text-xs font-medium" style={{ color: 'var(--foreground-secondary)' }}>{item.amount}</span>
+            <div className="stagger-children">
+              {sorted.map((item) => {
+                const IconComponent = activityIcons[item.type] || Activity;
+                const dotColor = activityColors[item.type] || 'var(--foreground-secondary)';
+                return (
+                  <div key={item.id} className="activity-item">
+                    <div className="activity-dot" style={{ background: dotColor }} />
+                    <div className="activity-content">
+                      <div className="flex items-center justify-between">
+                        <span className="font-bold text-sm text-primary">{item.description}</span>
+                        <span className="activity-time">
+                          {new Date(item.timestamp).toLocaleDateString([], { month: 'short', day: 'numeric' })}
+                        </span>
+                      </div>
+                      <div className="flex items-center gap-2 mt-1">
+                        <IconComponent className="w-3 h-3" style={{ color: dotColor }} />
+                        <span className="text-xs font-medium text-secondary">{item.amount}</span>
+                      </div>
                     </div>
                   </div>
-                </div>
-              );
-            })
+                );
+              })}
+            </div>
           )}
         </div>
       </div>

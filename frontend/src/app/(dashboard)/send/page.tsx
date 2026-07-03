@@ -52,14 +52,6 @@ export default function SendPage() {
     return () => document.removeEventListener("keydown", handler);
   }, []);
 
-  if (!mounted) {
-   return (
-    <div className="min-h-screen flex items-center justify-center" style={{ background: 'var(--background-primary)' }}>
-     <div className="animate-spin w-8 h-8 border-4 border-indigo-600 border-t-transparent rounded-full"></div>
-    </div>
-   );
-  }
-
   const handleSend = async () => {
     try {
       setStatus("sending");
@@ -87,126 +79,120 @@ export default function SendPage() {
       <AppHeader title="Send XLM" subtitle="Transfer assets securely on the Stellar network" backHref="/dashboard" onSearchOpen={() => setSearchOpen(true)} />
 
       <div className="app-content max-w-4xl mx-auto">
-        {status === "success" ? (
-          <div className="panel flex flex-col items-center text-center relative overflow-hidden p-12">
-            <div className="absolute top-0 right-0 w-64 h-64 rounded-full blur-3xl -mr-32 -mt-32 opacity-50 pointer-events-none" style={{ background: 'rgba(16,185,129,0.15)' }}></div>
-            
-            <div className="w-24 h-24 rounded-full flex items-center justify-center mb-8 relative z-10" style={{ background: 'rgba(16,185,129,0.2)', color: '#22c55e', boxShadow: '0 0 0 8px rgba(16,185,129,0.15)' }}>
-              <CheckCircle2 className="w-12 h-12" />
+        {!mounted ? (
+          <div className="flex-1 flex items-center justify-center p-8">
+            <div className="animate-spin w-6 h-6 border-2 border-[var(--accent-primary)] border-t-transparent rounded-full" />
+          </div>
+        ) : status === "success" ? (
+          <div className="panel flex flex-col items-center text-center p-10">
+            <div className="w-16 h-16 rounded-2xl flex items-center justify-center mb-6 text-success bg-[rgba(34,197,94,0.1)]">
+              <CheckCircle2 className="w-8 h-8" />
             </div>
             
-            <h2 className="text-3xl font-black mb-2 relative z-10" style={{ color: 'var(--foreground-primary)' }}>Transfer Successful</h2>
-            <p className="font-medium mb-10 relative z-10 max-w-sm" style={{ color: 'var(--foreground-secondary)' }}>You have successfully sent <span style={{ color: 'var(--foreground-primary)' }} className="font-bold">{amount} XLM</span> to the destination address.</p>
+            <h2 className="text-2xl font-black mb-2 text-primary">Transfer Successful</h2>
+            <p className="text-sm text-secondary mb-8 max-w-sm">
+              You have successfully sent <span className="text-primary font-bold">{amount} XLM</span> to the destination address.
+            </p>
             
-            <div className="flex items-center justify-center gap-4 w-full relative z-10">
+            <div className="flex items-center justify-center gap-3 w-full">
               <button onClick={() => router.push("/dashboard")} className="btn btn-lg btn-ghost">
                 Back to Wallet
               </button>
-              <a href={getExplorerUrl("tx", txHash)} target="_blank" rel="noopener noreferrer" className="btn btn-lg" style={{ background: 'var(--accent-primary)', color: 'white' }}>
-                View Explorer <ExternalLink className="w-5 h-5" />
+              <a href={getExplorerUrl("tx", txHash)} target="_blank" rel="noopener noreferrer" className="btn btn-lg bg-[var(--accent-primary)] text-white rounded-lg">
+                View Explorer <ExternalLink className="w-4 h-4" />
               </a>
             </div>
           </div>
         ) : (
-          <div className="grid grid-cols-1 lg:grid-cols-5 gap-10">
+          <div className="grid grid-cols-1 lg:grid-cols-5 gap-8">
             
             {/* Send Form */}
-            <div className="panel flex flex-col lg:col-span-3 p-10">
-              <h3 className="section-title flex items-center gap-3" style={{ fontSize: '1.5rem', marginBottom: '2rem' }}>
-                <div style={{ padding: '0.75rem', background: 'rgba(59,130,246,0.15)', color: 'var(--accent-primary)', borderRadius: '0.75rem' }}><Send className="w-6 h-6" /></div>
+            <div className="panel flex flex-col lg:col-span-3 p-8">
+              <h3 className="section-title flex items-center gap-3 mb-6" style={{ fontSize: '1.25rem' }}>
+                <div className="p-2 rounded-lg bg-[rgba(59,130,246,0.1)] text-accent"><Send className="w-5 h-5" /></div>
                 Transfer Details
               </h3>
 
-              <div className="space-y-6">
-                <div className="space-y-2">
-                  <label className="text-sm font-bold ml-1" style={{ color: 'var(--foreground-secondary)' }}>Destination Address</label>
+              <div className="space-y-5">
+                <div className="space-y-1.5">
+                  <label className="text-sm font-semibold text-secondary ml-0.5">Destination Address</label>
                   <div className="relative">
-                    <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none">
-                      <User className="h-5 w-5" style={{ color: 'var(--foreground-secondary)' }} />
+                    <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                      <User className="h-4 w-4 text-secondary" />
                     </div>
                     <input 
                       value={destination} 
                       onChange={e => setDestination(e.target.value)} 
                       placeholder="G..." 
-                      className="w-full pl-11 pr-4 py-4 rounded-2xl text-sm transition-all outline-none font-mono focus:border-indigo-500" 
-                      style={{ background: 'var(--background-elevated)', border: '2px solid var(--border-default)', color: 'var(--foreground-primary)' }}
+                      className="input pl-10 font-mono text-sm"
                     />
                   </div>
                 </div>
 
-                <div className="space-y-2">
-                  <div className="flex items-center justify-between ml-1">
-                    <label className="text-sm font-bold" style={{ color: 'var(--foreground-secondary)' }}>Amount to Send</label>
-                    <span className="text-xs font-semibold" style={{ color: 'var(--foreground-secondary)' }}>Available: {parseFloat(balance).toLocaleString()} XLM</span>
+                <div className="space-y-1.5">
+                  <div className="flex items-center justify-between ml-0.5">
+                    <label className="text-sm font-semibold text-secondary">Amount to Send</label>
+                    <span className="text-xs text-secondary">Available: {parseFloat(balance).toLocaleString()} XLM</span>
                   </div>
                   <div className="relative flex items-center">
-                    <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none">
-                      <span className="font-bold text-lg" style={{ color: 'var(--foreground-secondary)' }}>$</span>
-                    </div>
                     <input 
                       value={amount} 
                       onChange={e => setAmount(e.target.value)} 
                       placeholder="0.00" 
                       type="number" 
                       step="0.0000001" 
-                      className="w-full pl-9 pr-24 py-4 rounded-2xl text-lg transition-all outline-none font-bold focus:border-indigo-500" 
-                      style={{ background: 'var(--background-elevated)', border: '2px solid var(--border-default)', color: 'var(--foreground-primary)' }}
+                      className="input pr-20 text-lg font-bold"
                     />
-                    <div className="absolute inset-y-2 right-2 flex items-center rounded-xl px-3 pointer-events-none" style={{ background: 'var(--background-card)', border: '2px solid var(--border-default)', borderRadius: '0.75rem' }}>
-                      <span className="text-sm font-black" style={{ color: 'var(--foreground-primary)' }}>XLM</span>
+                    <div className="absolute right-3 flex items-center">
+                      <span className="text-sm font-black text-primary">XLM</span>
                     </div>
                   </div>
                 </div>
 
                 {status === "error" && (
-                  <div className="p-4 rounded-2xl text-sm font-bold flex items-center gap-2" style={{ background: 'rgba(248,113,113,0.15)', color: '#f87171', border: '1px solid rgba(248,113,113,0.3)' }}>
-                    <Shield className="w-5 h-5 shrink-0" /> {errorMsg}
+                  <div className="p-3 rounded-lg text-sm font-semibold flex items-center gap-2 bg-[rgba(248,113,113,0.08)] text-error border border-[rgba(248,113,113,0.15)]">
+                    <Shield className="w-4 h-4 shrink-0" /> {errorMsg}
                   </div>
                 )}
 
                 <button 
                   onClick={handleSend} 
                   disabled={status === "sending" || !destination || !amount} 
-                  className="w-full mt-4 py-4 disabled:opacity-50 disabled:cursor-not-allowed rounded-2xl font-black text-lg transition-all hover:-translate-y-1 flex items-center justify-center gap-2"
-                  style={{ background: 'var(--accent-primary)', color: 'white' }}
+                  className="btn-primary w-full mt-2 py-3.5 rounded-lg font-bold text-base flex items-center justify-center gap-2"
                 >
                   {status === "sending" ? (
-                    <><Loader2 className="w-6 h-6 animate-spin" /> Processing...</>
+                    <><Loader2 className="w-5 h-5 animate-spin" /> Processing...</>
                   ) : (
-                    <><ArrowUpRight className="w-6 h-6" /> Confirm Send</>
+                    <><ArrowUpRight className="w-5 h-5" /> Confirm Send</>
                   )}
                 </button>
               </div>
             </div>
 
-            {/* Info Card */}
+            {/* Info Card — flat panel, no gradient */}
             <div className="lg:col-span-2 flex flex-col gap-6">
-              <div className="bg-gradient-to-br from-indigo-500 via-blue-600 to-indigo-700 rounded-[2.5rem] p-8 text-white shadow-xl relative overflow-hidden">
-                <svg className="absolute bottom-0 right-0 w-full h-[150px] opacity-40 mix-blend-overlay pointer-events-none" preserveAspectRatio="none" viewBox="0 0 100 100">
-                  <path d="M0 100 L0 70 Q10 80, 20 60 T40 50 T60 30 T80 40 T100 10 L100 100 Z" fill="rgba(255,255,255,0.1)" />
-                </svg>
+              <div className="panel p-6">
+                <h3 className="font-bold text-base mb-2 text-primary">Stellar Network</h3>
+                <p className="text-sm text-secondary mb-4 leading-relaxed">Transfers on the Stellar network typically finalize in 3-5 seconds and cost a fraction of a cent.</p>
                 
-                <h3 className="font-extrabold text-xl mb-2 relative z-10">Stellar Network</h3>
-                <p className="text-indigo-100 text-sm font-medium mb-6 relative z-10 leading-relaxed">Transfers on the Stellar network typically finalize in 3-5 seconds and cost a fraction of a cent.</p>
-                
-                <div className="bg-white/10 backdrop-blur-md rounded-2xl p-4 border border-white/20 relative z-10 space-y-3">
+                <div className="flex flex-col gap-2 p-3 rounded-lg bg-elevated">
                   <div className="flex items-center justify-between">
-                    <span className="text-sm font-semibold text-indigo-100">Network Fee</span>
-                    <span className="text-sm font-bold text-white">~0.00001 XLM</span>
+                    <span className="text-sm text-secondary">Network Fee</span>
+                    <span className="text-sm font-bold text-primary">~0.00001 XLM</span>
                   </div>
                   <div className="flex items-center justify-between">
-                    <span className="text-sm font-semibold text-indigo-100">Time</span>
-                    <span className="text-sm font-bold text-white">~4 Seconds</span>
+                    <span className="text-sm text-secondary">Time</span>
+                    <span className="text-sm font-bold text-primary">~4 Seconds</span>
                   </div>
                 </div>
               </div>
 
-              <div className="rounded-[2.5rem] p-8" style={{ background: 'rgba(245,158,11,0.1)', border: '1px solid rgba(245,158,11,0.2)' }}>
-                <div className="w-12 h-12 flex items-center justify-center mb-4" style={{ background: 'rgba(245,158,11,0.2)', color: '#d97706', borderRadius: '1rem' }}>
-                  <ShieldCheck className="w-6 h-6" />
+              <div className="panel p-6">
+                <div className="w-10 h-10 flex items-center justify-center mb-3 rounded-lg bg-[rgba(245,158,11,0.1)] text-amber-500">
+                  <ShieldCheck className="w-5 h-5" />
                 </div>
-                <h3 className="font-extrabold mb-2" style={{ color: 'var(--foreground-primary)' }}>Safety First</h3>
-                <p className="text-sm font-medium leading-relaxed" style={{ color: 'var(--foreground-secondary)' }}>Always double-check the destination address before sending. Cryptocurrency transactions are irreversible once confirmed on the blockchain.</p>
+                <h3 className="font-bold text-base mb-1 text-primary">Safety First</h3>
+                <p className="text-sm text-secondary leading-relaxed">Always double-check the destination address before sending. Cryptocurrency transactions are irreversible once confirmed on the blockchain.</p>
               </div>
             </div>
           </div>

@@ -2,9 +2,8 @@
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import Link from "next/link";
 import { loadWallet, type StoredWallet } from "@/lib/wallet";
-import { CheckCircle2, Lock, ArrowLeft } from "lucide-react";
+import { CheckCircle2, Lock } from "lucide-react";
 import AppHeader from "@/components/AppHeader";
 import SearchDialog from "@/components/SearchDialog";
 
@@ -29,33 +28,36 @@ export default function SecurityPage() {
     return () => document.removeEventListener("keydown", handler);
   }, []);
 
-  if (loading) {
-    return <div className="min-h-screen flex items-center justify-center" style={{ background: 'var(--background-primary)' }}><div className="animate-spin w-8 h-8 border-4 border-blue-600 border-t-transparent rounded-full"></div></div>;
-  }
-
   return (
     <>
-      <AppHeader title="Security" subtitle="Manage your account security and privacy settings" onSearchOpen={() => setSearchOpen(true)} />
+      <AppHeader title="Security" subtitle="Manage your account security and privacy settings" backHref="/dashboard" onSearchOpen={() => setSearchOpen(true)} />
       <div className="app-content flex flex-col gap-6">
-        <div>
-          <Link href="/dashboard" className="inline-flex items-center gap-1.5 text-sm font-bold transition-colors" style={{ color: 'var(--accent-primary)' }}><ArrowLeft className="w-4 h-4" /> Back to Dashboard</Link>
-        </div>
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-          <div className="panel flex flex-col gap-6 p-8">
-            <div className="w-16 h-16 rounded-2xl bg-green-50 border border-green-100/50 flex items-center justify-center"><CheckCircle2 className="w-8 h-8 text-green-500" /></div>
-            <div>
-              <h3 className="section-title" style={{ fontSize: '1.25rem' }}>Privacy Score</h3>
-              <p className="text-sm font-medium" style={{ color: 'var(--foreground-secondary)' }}>Your current privacy score is <strong className="text-green-600">100%</strong>. No identity leaks detected.</p>
+        {loading ? (
+          <div className="flex-1 flex items-center justify-center p-8">
+            <div className="animate-spin w-6 h-6 border-2 border-[var(--accent-primary)] border-t-transparent rounded-full" />
+          </div>
+        ) : (
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            <div className="panel flex flex-col gap-4 p-6">
+              <div className="w-10 h-10 rounded-lg bg-[rgba(34,197,94,0.08)] flex items-center justify-center">
+                <CheckCircle2 className="w-5 h-5 text-success" />
+              </div>
+              <div>
+                <h3 className="text-base font-bold text-primary mb-1">Privacy Score</h3>
+                <p className="text-sm text-secondary">Your current privacy score is <strong className="text-success">100%</strong>. No identity leaks detected.</p>
+              </div>
+            </div>
+            <div className="panel flex flex-col gap-4 p-6">
+              <div className="w-10 h-10 rounded-lg bg-[rgba(59,130,246,0.08)] flex items-center justify-center">
+                <Lock className="w-5 h-5 text-accent" />
+              </div>
+              <div>
+                <h3 className="text-base font-bold text-primary mb-1">Security Settings</h3>
+                <p className="text-sm text-secondary">Manage your passkey, recovery phrase, and connected devices.</p>
+              </div>
             </div>
           </div>
-          <div className="panel flex flex-col gap-6 p-8">
-            <div className="w-16 h-16 rounded-2xl flex items-center justify-center" style={{ background: 'rgba(59,130,246,0.15)', border: '1px solid rgba(59,130,246,0.2)' }}><Lock className="w-8 h-8" style={{ color: 'var(--accent-primary)' }} /></div>
-            <div>
-              <h3 className="section-title" style={{ fontSize: '1.25rem' }}>Security Settings</h3>
-              <p className="text-sm font-medium" style={{ color: 'var(--foreground-secondary)' }}>Manage your passkey, recovery phrase, and connected devices.</p>
-            </div>
-          </div>
-        </div>
+        )}
       </div>
       <SearchDialog open={searchOpen} onClose={() => setSearchOpen(false)} links={[]} receivedLinks={[]} transactions={[]} address="" />
     </>

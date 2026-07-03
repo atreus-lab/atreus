@@ -1,6 +1,7 @@
 "use client";
 
 import { X } from "lucide-react";
+import { AnimatePresence, motion } from "motion/react";
 
 interface ClaimLinkModalProps {
   show: boolean;
@@ -11,34 +12,43 @@ interface ClaimLinkModalProps {
 }
 
 export default function ClaimLinkModal({ show, input, onInputChange, onClaim, onClose }: ClaimLinkModalProps) {
-  if (!show) return null;
-
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm">
-      <div className="rounded-[2rem] p-8 w-full max-w-md mx-4 space-y-5" style={{ background: 'var(--background-card)', border: '1px solid var(--border-default)', boxShadow: '0 30px 60px rgba(0,0,0,0.5)' }}>
-        <div className="flex items-center justify-between">
-          <h3 className="text-lg font-extrabold" style={{ color: 'var(--foreground-primary)' }}>Claim a Payment Link</h3>
-          <button onClick={onClose} className="p-2 rounded-xl transition-colors" style={{ color: 'var(--foreground-secondary)' }}>
-            <X className="w-5 h-5 text-slate-400" />
-          </button>
+    <AnimatePresence>
+      {show && (
+        <div className="modal-overlay" onClick={onClose}>
+          <motion.div
+            className="modal-content max-w-md mx-4 p-6 space-y-4"
+            onClick={(e) => e.stopPropagation()}
+            initial={{ opacity: 0, scale: 0.95 }}
+            animate={{ opacity: 1, scale: 1 }}
+            exit={{ opacity: 0, scale: 0.97 }}
+            transition={{ duration: 0.15, ease: [0.23, 1, 0.32, 1] }}
+          >
+            <div className="flex items-center justify-between">
+              <h3 className="text-base font-bold text-primary">Claim a Payment Link</h3>
+              <button onClick={onClose} className="p-1.5 rounded-lg hover:bg-[rgba(255,255,255,0.05)] transition-colors">
+                <X className="w-4 h-4 text-secondary" />
+              </button>
+            </div>
+            <p className="text-sm text-secondary">Paste the payment link you received to claim the funds.</p>
+            <input
+              type="text"
+              value={input}
+              onChange={(e) => onInputChange(e.target.value)}
+              placeholder="https://localhost:3000/claim#..."
+              className="input"
+            />
+            <div className="flex gap-3">
+              <button onClick={onClose} className="flex-1 py-2.5 rounded-lg text-sm font-semibold bg-elevated text-secondary transition-colors hover:text-primary">
+                Cancel
+              </button>
+              <button onClick={onClaim} disabled={!input.trim()} className="flex-1 py-2.5 rounded-lg text-sm font-bold text-white disabled:opacity-40 disabled:cursor-not-allowed bg-[var(--accent-primary)] transition-all">
+                Open Claim Page
+              </button>
+            </div>
+          </motion.div>
         </div>
-        <p className="text-sm text-slate-500">Paste the payment link you received to claim the funds.</p>
-        <input
-          type="text"
-          value={input}
-          onChange={(e) => onInputChange(e.target.value)}
-          placeholder="https://localhost:3000/claim#..."
-          className="w-full px-5 py-4 rounded-2xl text-sm font-medium focus:outline-none focus:ring-4" style={{ background: 'var(--background-elevated)', border: '2px solid var(--border-default)', color: 'var(--foreground-primary)' }}
-        />
-        <div className="flex gap-3">
-          <button onClick={onClose} className="flex-1 py-3 rounded-2xl text-sm font-bold transition-colors" style={{ background: 'var(--background-elevated)', color: 'var(--foreground-secondary)' }}>
-            Cancel
-          </button>
-          <button onClick={onClaim} disabled={!input.trim()} className="flex-1 py-3 rounded-2xl text-sm font-bold text-white disabled:opacity-40 disabled:cursor-not-allowed transition-all" style={{ background: 'var(--accent-primary)' }}>
-            Open Claim Page
-          </button>
-        </div>
-      </div>
-    </div>
+      )}
+    </AnimatePresence>
   );
 }

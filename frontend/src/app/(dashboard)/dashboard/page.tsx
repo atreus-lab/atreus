@@ -236,50 +236,43 @@ export default function DashboardPage() {
     });
   }, [loadData, router, checkForNotifications]);
 
-  if (loading) {
-    return (
-      <div className="flex items-center justify-center p-8">
-        <div className="animate-spin w-8 h-8 border-4 border-blue-600 border-t-transparent rounded-full"></div>
-      </div>
-    );
-  }
-
   const emailName = storedWallet?.email ? storedWallet.email.split('@')[0] : 'User';
-  const displayAddress = address ? `${address.slice(0, 5)}...${address.slice(-4)}` : '';
 
   return (
     <>
       {/* Top Header */}
       <header className="app-header">
         <div className="flex flex-col">
-          <h1 className="text-2xl sm:text-[28px] font-extrabold tracking-tight" style={{ color: 'var(--foreground-primary)' }}>Good afternoon, {emailName} <span className="inline-block animate-wave">👋</span></h1>
-          <p className="text-sm font-medium mt-1" style={{ color: 'var(--foreground-secondary)' }}>Here&apos;s what&apos;s happening with your wallet today.</p>
+          <h1 className="text-xl sm:text-2xl font-extrabold tracking-tight text-primary">
+            Good afternoon, {emailName} <span className="inline-block">👋</span>
+          </h1>
+          <p className="text-sm font-medium mt-0.5 text-secondary">Here&apos;s what&apos;s happening with your wallet today.</p>
         </div>
-        <div className="hidden md:flex items-center gap-6">
-          <button onClick={() => setSearchOpen(true)} className="flex items-center gap-3 px-4 py-2.5 rounded-full text-sm font-medium transition-all w-64 group" style={{ background: 'var(--background-elevated)', border: '1px solid var(--border-default)' }}>
-            <Search className="w-4 h-4" style={{ color: 'var(--foreground-secondary)' }} />
-            <span className="truncate" style={{ color: 'var(--foreground-secondary)' }}>Search anything...</span>
-            <div className="ml-auto flex items-center gap-1">
-              <span className="px-1.5 py-0.5 rounded text-[10px] font-bold" style={{ background: 'var(--background-card)', color: 'var(--foreground-secondary)' }}>⌘</span>
-              <span className="px-1.5 py-0.5 rounded text-[10px] font-bold" style={{ background: 'var(--background-card)', color: 'var(--foreground-secondary)' }}>K</span>
+        <div className="hidden md:flex items-center gap-4">
+          <button onClick={() => setSearchOpen(true)} className="header-search-trigger w-56">
+            <Search className="w-4 h-4 shrink-0" />
+            <span className="truncate flex-1 text-left">Search anything...</span>
+            <div className="flex items-center gap-1 shrink-0">
+              <span className="kbd">⌘</span>
+              <span className="kbd">K</span>
             </div>
           </button>
-          <button data-bell onClick={() => setShowNotifications(!showNotifications)} className="btn-icon relative" style={{ background: 'var(--background-elevated)', border: '1px solid var(--border-default)', borderRadius: '9999px' }}>
-            <Bell className="w-5 h-5" style={{ color: 'var(--foreground-secondary)' }} />
+          <button data-bell onClick={() => setShowNotifications(!showNotifications)} className="btn btn-icon btn-ghost relative" style={{ borderRadius: '9999px', border: '1px solid var(--border-default)' }}>
+            <Bell className="w-[18px] h-[18px] text-secondary" />
             {notifications.filter(n => !n.read).length > 0 && (
-              <span className="absolute top-0 right-0 w-5 h-5 text-[9px] font-bold rounded-full flex items-center justify-center border-2 border-white -translate-y-1/4 translate-x-1/4" style={{ background: 'var(--accent-primary)', color: 'white' }}>{notifications.filter(n => !n.read).length}</span>
+              <span className="absolute -top-1 -right-1 w-4 h-4 text-[9px] font-bold rounded-full flex items-center justify-center bg-[var(--accent-primary)] text-white">{notifications.filter(n => !n.read).length}</span>
             )}
           </button>
         </div>
         <div className="flex items-center gap-2 lg:hidden">
-          <button data-bell onClick={() => setShowNotifications(!showNotifications)} className="btn-icon relative" style={{ background: 'var(--background-elevated)', border: '1px solid var(--border-default)', borderRadius: '9999px' }}>
-            <Bell className="w-5 h-5" style={{ color: 'var(--foreground-secondary)' }} />
+          <button data-bell onClick={() => setShowNotifications(!showNotifications)} className="btn btn-icon btn-ghost relative" style={{ borderRadius: '9999px', border: '1px solid var(--border-default)' }}>
+            <Bell className="w-[18px] h-[18px] text-secondary" />
             {notifications.filter(n => !n.read).length > 0 && (
-              <span className="absolute top-0 right-0 w-5 h-5 text-[9px] font-bold rounded-full flex items-center justify-center border-2 border-white -translate-y-1/4 translate-x-1/4" style={{ background: 'var(--accent-primary)', color: 'white' }}>{notifications.filter(n => !n.read).length}</span>
+              <span className="absolute -top-1 -right-1 w-4 h-4 text-[9px] font-bold rounded-full flex items-center justify-center bg-[var(--accent-primary)] text-white">{notifications.filter(n => !n.read).length}</span>
             )}
           </button>
-          <button onClick={() => setMobileMenuOpen(true)} className="btn-icon" style={{ background: 'var(--background-elevated)', border: '1px solid var(--border-default)', borderRadius: '9999px' }}>
-            <Menu className="w-5 h-5" style={{ color: 'var(--foreground-secondary)' }} />
+          <button onClick={() => setMobileMenuOpen(true)} className="btn btn-icon btn-ghost" style={{ borderRadius: '9999px', border: '1px solid var(--border-default)' }}>
+            <Menu className="w-[18px] h-[18px] text-secondary" />
           </button>
         </div>
 
@@ -294,25 +287,31 @@ export default function DashboardPage() {
         />
       </header>
 
-      <div className="app-content flex flex-col gap-8">
-        {/* Top Row */}
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-          <BalanceCard balance={balance} showBalance={showBalance} onToggleBalance={() => setShowBalance(!showBalance)} onClaimClick={() => setShowClaimModal(true)} />
-          <PrivacyScoreCard />
+      {loading ? (
+        <div className="flex-1 flex items-center justify-center p-8">
+          <div className="animate-spin w-6 h-6 border-2 border-[var(--accent-primary)] border-t-transparent rounded-full" />
         </div>
+      ) : (
+        <div className="app-content flex flex-col gap-6">
+          {/* Top Row */}
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+            <BalanceCard balance={balance} showBalance={showBalance} onToggleBalance={() => setShowBalance(!showBalance)} onClaimClick={() => setShowClaimModal(true)} />
+            <PrivacyScoreCard />
+          </div>
 
-        {/* Middle Row */}
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-          <AssetsList balances={balances} />
-          <RecentActivity storedLinks={storedLinks} receivedLinks={receivedLinks} transactions={transactions} address={address} />
+          {/* Middle Row */}
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            <AssetsList balances={balances} />
+            <RecentActivity storedLinks={storedLinks} receivedLinks={receivedLinks} transactions={transactions} address={address} />
+          </div>
+
+          {/* Payment Links */}
+          <PaymentLinks storedLinks={storedLinks} receivedLinks={receivedLinks} copiedLinkId={copiedLinkId} onCopyLink={copyLink} onRefund={handleRefund} />
+
+          {/* Quick Actions */}
+          <QuickActions onClaimClick={() => setShowClaimModal(true)} />
         </div>
-
-        {/* Payment Links */}
-        <PaymentLinks storedLinks={storedLinks} receivedLinks={receivedLinks} copiedLinkId={copiedLinkId} onCopyLink={copyLink} onRefund={handleRefund} />
-
-        {/* Quick Actions */}
-        <QuickActions onClaimClick={() => setShowClaimModal(true)} />
-      </div>
+      )}
 
       {/* Modals & Overlays */}
       <ClaimLinkModal show={showClaimModal} input={claimLinkInput} onInputChange={setClaimLinkInput} onClaim={handleClaimLink} onClose={() => { setShowClaimModal(false); setClaimLinkInput(""); }} />

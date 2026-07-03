@@ -3,6 +3,7 @@
 import { useRouter } from "next/navigation";
 import { Copy, Check, LogOut, ExternalLink, X } from "lucide-react";
 import { useState } from "react";
+import { AnimatePresence, motion } from "motion/react";
 import { useSidebar } from "./sidebar-context";
 import { loadWallet, clearWallet } from "@/lib/wallet";
 
@@ -31,44 +32,49 @@ export default function ProfileModal() {
   return (
     <>
       <div className="fixed inset-0 z-50" onClick={() => setProfileOpen(false)} style={{ background: 'rgba(0,0,0,0.5)' }} />
-      <div className="fixed left-[calc(280px+1rem)] bottom-24 z-50 w-[320px] animate-in" style={{ background: 'var(--background-card)', border: '1px solid var(--border-default)', borderRadius: '1rem', boxShadow: '0 20px 60px rgba(0,0,0,0.3)' }}>
+      <motion.div
+        className="fixed left-[calc(280px+1rem)] bottom-24 z-50 w-[300px] modal-content"
+        initial={{ opacity: 0, scale: 0.95, y: 8 }}
+        animate={{ opacity: 1, scale: 1, y: 0 }}
+        transition={{ duration: 0.15, ease: [0.23, 1, 0.32, 1] }}
+      >
         <div className="flex items-center justify-between px-4 py-3" style={{ borderBottom: '1px solid var(--border-default)' }}>
-          <div className="flex items-center gap-3">
-            <div className="w-9 h-9 rounded-xl flex items-center justify-center font-bold text-sm" style={{ background: 'var(--accent-primary)', color: 'white' }}>
+          <div className="flex items-center gap-2.5">
+            <div className="w-8 h-8 rounded-lg flex items-center justify-center font-bold text-xs bg-[var(--accent-primary)] text-white">
               {emailName.charAt(0).toUpperCase()}
             </div>
             <div className="flex flex-col">
-              <span className="text-sm font-bold" style={{ color: 'var(--foreground-primary)' }}>{emailName}</span>
-              <span className="text-xs" style={{ color: 'var(--foreground-secondary)' }}>{displayAddress}</span>
+              <span className="text-sm font-bold text-primary">{emailName}</span>
+              <span className="text-[10px] text-secondary">{displayAddress}</span>
             </div>
           </div>
-          <button onClick={() => setProfileOpen(false)} className="btn-icon btn-ghost">
+          <button onClick={() => setProfileOpen(false)} className="btn btn-icon btn-ghost">
             <X className="w-4 h-4" />
           </button>
         </div>
 
-        <div className="p-3 space-y-1">
-          <button onClick={copyAddress} className="flex items-center gap-3 w-full p-2.5 rounded-xl hover:bg-[var(--background-elevated)] transition-colors text-left">
-            {copied ? <Check className="w-4 h-4" style={{ color: 'var(--success)' }} /> : <Copy className="w-4 h-4" style={{ color: 'var(--foreground-secondary)' }} />}
+        <div className="p-2.5 space-y-0.5">
+          <button onClick={copyAddress} className="flex items-center gap-3 w-full p-2.5 rounded-lg hover:bg-[var(--background-elevated)] transition-colors text-left">
+            {copied ? <Check className="w-4 h-4 text-success" /> : <Copy className="w-4 h-4 text-secondary" />}
             <div className="flex flex-col">
-              <span className="text-sm font-medium" style={{ color: 'var(--foreground-primary)' }}>{copied ? 'Copied!' : 'Copy Address'}</span>
-              <span className="text-xs" style={{ color: 'var(--foreground-secondary)' }}>{wallet.publicKey.slice(0, 12)}...</span>
+              <span className="text-sm font-medium text-primary">{copied ? 'Copied!' : 'Copy Address'}</span>
+              <span className="text-[10px] text-secondary">{wallet.publicKey.slice(0, 12)}...</span>
             </div>
           </button>
 
-          <button onClick={() => { setProfileOpen(false); router.push("/settings"); }} className="flex items-center gap-3 w-full p-2.5 rounded-xl hover:bg-[var(--background-elevated)] transition-colors text-left">
-            <ExternalLink className="w-4 h-4" style={{ color: 'var(--foreground-secondary)' }} />
-            <span className="text-sm font-medium" style={{ color: 'var(--foreground-primary)' }}>Settings</span>
+          <button onClick={() => { setProfileOpen(false); router.push("/settings"); }} className="flex items-center gap-3 w-full p-2.5 rounded-lg hover:bg-[var(--background-elevated)] transition-colors text-left">
+            <ExternalLink className="w-4 h-4 text-secondary" />
+            <span className="text-sm font-medium text-primary">Settings</span>
           </button>
 
-          <div style={{ borderTop: '1px solid var(--border-default)' }} className="my-1" />
+          <div className="h-px bg-[var(--border-default)] my-1" />
 
-          <button onClick={handleDisconnect} className="flex items-center gap-3 w-full p-2.5 rounded-xl hover:bg-[var(--background-elevated)] transition-colors text-left">
-            <LogOut className="w-4 h-4" style={{ color: '#f87171' }} />
-            <span className="text-sm font-medium" style={{ color: '#f87171' }}>Disconnect</span>
+          <button onClick={handleDisconnect} className="flex items-center gap-3 w-full p-2.5 rounded-lg hover:bg-[var(--background-elevated)] transition-colors text-left">
+            <LogOut className="w-4 h-4 text-error" />
+            <span className="text-sm font-medium text-error">Disconnect</span>
           </button>
         </div>
-      </div>
+      </motion.div>
     </>
   );
 }
