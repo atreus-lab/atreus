@@ -1,6 +1,7 @@
 import { loadWallet } from "./wallet";
 import { rpcServer } from "./stellar";
-import { Contract, Address, xdr } from "@stellar/stellar-sdk";
+import { xdr } from "@stellar/stellar-sdk";
+import { Durability } from "@stellar/stellar-sdk/rpc";
 
 export interface StoredLink {
   id: string;
@@ -47,22 +48,14 @@ export function updateLinkStatus(secretHex: string, claimed: boolean): void {
 }
 
 // Check contract storage to determine if a link has been claimed.
-async function checkLinkOnChain(linkHashHex: string): Promise<boolean | null> {
+// Uses the SDK's built-in getContractData helper for reliable ledger key construction.
+export async function checkLinkOnChain(linkHashHex: string): Promise<boolean | null> {
   const contractId = process.env.NEXT_PUBLIC_CONTRACT_ID;
   if (!contractId || !linkHashHex) return null;
   try {
-    const contract = new Contract(contractId);
     const key = xdr.ScVal.scvBytes(Buffer.from(linkHashHex, "hex"));
-    const ledgerKey = xdr.LedgerKey.contractData(
-      new xdr.LedgerKeyContractData({
-        contract: contract.address().toScAddress(),
-        key,
-        durability: xdr.ContractDataDurability.persistent(),
-      })
-    );
-    const entries = await rpcServer.getLedgerEntries(ledgerKey);
-    if (!entries || entries.entries.length === 0) return null;
-    const entry = entries.entries[0];
+    const entry = await rpcServer.getContractData(contractId, key, Durability.Persistent);
+    if (!entry) return null;
     const val = entry.val.contractData().val();
 
     // Try Vec format: [creator, amount, asset, policy_type, policy_params, expires_at, claimed]
@@ -95,7 +88,10 @@ async function checkLinkOnChain(linkHashHex: string): Promise<boolean | null> {
     }
 
     return null;
-  } catch (err) {
+  } catch (err: any) {
+    // getContractData throws { status: 404 } when no entry found — that's expected,
+    // not an error. Other errors (network, parse) are logged.
+    if (err?.status === 404) return null;
     console.error("Failed to check link on-chain:", err);
     return null;
   }
