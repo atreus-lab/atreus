@@ -17,6 +17,11 @@ Next.js 15 web app for creating and claiming Stellar payment links with real ZK 
 | `/assets` | `src/app/assets/page.tsx` | Add trustlines (USDC, EURT, custom) |
 | `/create` | `src/app/create/page.tsx` | Create escrow payment link |
 | `/claim` | `src/app/claim/page.tsx` | Claim funds via real ZK proof flow |
+| `/activity` | `src/app/activity/page.tsx` | Transaction history and activity feed |
+| `/analytics` | `src/app/analytics/page.tsx` | Wallet analytics and charts |
+| `/profile` | `src/app/profile/page.tsx` | User profile and preferences |
+| `/security` | `src/app/security/page.tsx` | Security settings and passkeys |
+| `/settings` | `src/app/settings/page.tsx` | Network, address book, notifications |
 
 ### Libraries
 
@@ -112,22 +117,35 @@ frontend/
 ├── scripts/                # Node.js ZK tooling scripts
 └── src/
     ├── app/
-    │   ├── globals.css     # Tailwind + CSS custom properties + semantic classes
+    │   ├── globals.css     # Tailwind + CSS custom properties
     │   ├── layout.tsx      # Root layout (fonts, GoogleOAuthProvider)
     │   ├── page.tsx        # Landing
-    │   ├── wallet/         # Wallet creation/restore
-    │   ├── dashboard/      # Balance, tx history
-    │   ├── send/           # XLM send
-    │   ├── receive/        # Address display
-    │   ├── swap/           # DEX swap
+    │   ├── activity/       # Transaction history
+    │   ├── analytics/      # Wallet analytics
     │   ├── assets/         # Trustlines
+    │   ├── claim/          # Claim link — real ZK proof flow
     │   ├── create/         # Create payment link
-    │   └── claim/          # Claim link — real ZK proof flow
+    │   ├── dashboard/      # Balance, tx history, payment links
+    │   ├── profile/        # User profile
+    │   ├── receive/        # Address display
+    │   ├── security/       # Security settings
+    │   ├── send/           # XLM send
+    │   ├── settings/       # Network, address book, notifications
+    │   ├── swap/           # DEX swap
+    │   └── wallet/         # Wallet creation/restore
+    ├── components/          # 15 reusable components (AppSidebar, AppHeader, SearchDialog,
+    │                       # BalanceCard, DashboardSidebar, PaymentLinks, etc.)
+    ├── constants/
+    │   └── navigation.ts   # Shared nav items + getNavItems() helper
     └── lib/
         ├── stellar.ts      # Soroban tx building, signing, balance checks
         ├── zk.ts           # Client-side ZK proof generation + attestation POST
         ├── proof.ts        # hexToBytes / bytesToHex utilities
-        └── wallet.ts       # BIP39 mnemonic wallet
+        ├── wallet.ts       # BIP39 mnemonic wallet
+        ├── links.ts        # Payment links local storage + on-chain checks
+        ├── passkey.ts      # WebAuthn passkey utilities
+        ├── ease.ts         # EASE attestation utilities
+        └── utils.ts        # General utilities
 ```
 
 ## License
