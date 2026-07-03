@@ -58,7 +58,7 @@ export const waitForTransaction = async (
   throw new Error(`Timed out waiting for transaction (hash: ${hash})`);
 };
 
-export const createEscrowTx = async (creator: string, amount: string, hash: Uint8Array) => {
+export const createEscrowTx = async (creator: string, amount: string, hash: Uint8Array, expiry?: number) => {
   const contractId = process.env.NEXT_PUBLIC_CONTRACT_ID;
   if (!contractId) throw new Error("NEXT_PUBLIC_CONTRACT_ID is not configured");
 
@@ -77,7 +77,7 @@ export const createEscrowTx = async (creator: string, amount: string, hash: Uint
 
   const contract = new Contract(contractId);
   const amountStroops = xlmToStroops(amount);
-  const expiry = Math.floor(Date.now() / 1000) + 7 * 24 * 60 * 60;
+  const linkExpiry = expiry ?? (Math.floor(Date.now() / 1000) + 7 * 24 * 60 * 60);
 
   const op = contract.call(
     "create_link",
@@ -86,7 +86,7 @@ export const createEscrowTx = async (creator: string, amount: string, hash: Uint
     xdr.ScVal.scvBytes(Buffer.from(new Uint8Array(0))),
     nativeToScVal(amountStroops, { type: 'i128' }),
     new Address(tokenId).toScVal(),
-    nativeToScVal(expiry, { type: 'u64' }),
+    nativeToScVal(linkExpiry, { type: 'u64' }),
     new Address(creator).toScVal()
   );
 

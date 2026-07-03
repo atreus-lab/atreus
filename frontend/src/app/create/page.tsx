@@ -7,9 +7,22 @@ import { Copy, Check, Loader2, ArrowLeft } from 'lucide-react';
 import { connectWallet, createEscrowTx } from '@/lib/stellar';
 import { saveLink } from '@/lib/links';
 
+const EXPIRY_OPTIONS = [
+  { label: '1 minute', value: 60 },
+  { label: '5 minutes', value: 5 * 60 },
+  { label: '15 minutes', value: 15 * 60 },
+  { label: '1 hour', value: 60 * 60 },
+  { label: '6 hours', value: 6 * 60 * 60 },
+  { label: '24 hours', value: 24 * 60 * 60 },
+  { label: '3 days', value: 3 * 24 * 60 * 60 },
+  { label: '7 days', value: 7 * 24 * 60 * 60 },
+  { label: 'No limit', value: 0 },
+];
+
 export default function CreatePage() {
   const router = useRouter();
   const [amount, setAmount] = useState('');
+  const [expirySeconds, setExpirySeconds] = useState(7 * 24 * 60 * 60);
   const [link, setLink] = useState('');
   const [isCreating, setIsCreating] = useState(false);
   const [error, setError] = useState('');
@@ -32,7 +45,10 @@ export default function CreatePage() {
         .map((b) => b.toString(16).padStart(2, '0'))
         .join('');
 
-      await createEscrowTx(creator, amount, hashBytes);
+      const expiresAt = expirySeconds === 0
+        ? 4102444800 // 2100-01-01 — effectively never expires
+        : Math.floor(Date.now() / 1000) + expirySeconds;
+      await createEscrowTx(creator, amount, hashBytes, expiresAt);
 
       const url = new URL(window.location.origin);
       url.pathname = '/claim';
@@ -47,6 +63,7 @@ export default function CreatePage() {
         secretHex,
         linkHashHex,
         createdAt: Date.now(),
+        expiresAt,
         claimed: false,
       });
     } catch (err: any) {
@@ -85,6 +102,20 @@ export default function CreatePage() {
             className="w-full p-3.5 rounded-xl border border-slate-200 text-slate-900 text-sm font-medium focus:outline-none focus:border-indigo-500 focus:ring-4 focus:ring-indigo-500/10"
             disabled={isCreating}
           />
+        </div>
+
+        <div>
+          <label className="text-sm font-semibold text-slate-500 block mb-1.5">Expires in</label>
+          <select
+            value={expirySeconds}
+            onChange={(e) => setExpirySeconds(Number(e.target.value))}
+            className="w-full p-3.5 rounded-xl border border-slate-200 text-slate-900 text-sm font-medium focus:outline-none focus:border-indigo-500 focus:ring-4 focus:ring-indigo-500/10 bg-white"
+            disabled={isCreating}
+          >
+            {EXPIRY_OPTIONS.map((opt) => (
+              <option key={opt.value} value={opt.value}>{opt.label}</option>
+            ))}
+          </select>
         </div>
 
         {error && (

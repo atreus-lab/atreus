@@ -142,6 +142,7 @@ const parseLinkInput = () => {
         secretHex,
         linkHashHex,
         createdAt: Date.now(),
+        expiresAt: 0,
         claimed: true,
         txHash: hash,
       });
