@@ -84,7 +84,7 @@ export function TokenPicker({
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
             transition={{ duration: 0.2, ease: EASE }}
-            className="absolute inset-0 z-10 cursor-default bg-background/40 backdrop-blur-sm"
+            className="absolute inset-0 z-10 cursor-default bg-black/60 backdrop-blur-md"
           />
 
           <motion.div
@@ -95,7 +95,7 @@ export function TokenPicker({
             transition={
               reduce ? { duration: 0.18, ease: EASE } : SPRING_PANEL
             }
-            className="absolute inset-x-0 bottom-0 z-20 flex max-h-[92%] flex-col rounded-t-3xl border-t border-border bg-card shadow-2xl"
+            className="absolute inset-x-0 bottom-0 z-20 flex max-h-[92%] flex-col rounded-t-3xl border-t border-white/10 bg-black/80 backdrop-blur-2xl shadow-2xl"
             role="dialog"
             aria-modal="true"
             aria-label={`Select ${side === "from" ? "from" : "to"} token`}
@@ -104,7 +104,7 @@ export function TokenPicker({
               <span className="h-1 w-9 rounded-full bg-primary/15" />
             </div>
 
-            <div className="flex items-center gap-2 border-b border-border px-4 pb-3">
+            <div className="flex items-center gap-2 border-b border-[var(--border-default)] px-4 pb-3">
               <Search className="h-4 w-4 shrink-0 text-muted-foreground" />
               <input
                 ref={inputRef}
@@ -123,7 +123,7 @@ export function TokenPicker({
               </button>
             </div>
 
-            <div className="[scrollbar-width:none] [&::-webkit-scrollbar]:hidden flex items-center gap-1.5 overflow-x-auto border-b border-border px-3 py-5">
+            <div className="[scrollbar-width:none] [&::-webkit-scrollbar]:hidden flex items-center gap-1.5 overflow-x-auto border-b border-[var(--border-default)] px-3 py-5">
               <ChainChip
                 active={chainFilter === "all"}
                 onClick={() => setChainFilter("all")}
@@ -154,7 +154,7 @@ export function TokenPicker({
                           key={t.id}
                           type="button"
                           onClick={() => onPick(t.id)}
-                          className="inline-flex shrink-0 items-center gap-2 rounded-full border border-border bg-background/50 py-1 pl-1 pr-3 text-sm font-semibold text-foreground transition-transform hover:border-border active:scale-[0.97]"
+                          className="inline-flex shrink-0 items-center gap-2 rounded-full border border-[var(--border-default)] bg-[var(--background-primary)]/50 py-1 pl-1 pr-3 text-sm font-semibold text-foreground transition-transform hover:border-[var(--border-default)] active:scale-[0.97]"
                         >
                           <TokenDot token={t} chain={chain} size={22} />
                           {t.symbol}
@@ -186,8 +186,8 @@ export function TokenPicker({
                         className={cn(
                           "flex w-full items-center justify-between rounded-xl px-2 py-2 text-left transition-colors active:scale-[0.97]",
                           active
-                            ? "bg-primary/5"
-                            : "hover:bg-primary/[0.04]",
+                            ? "bg-[var(--background-card)]"
+                            : "hover:bg-[var(--background-card)]/50",
                         )}
                       >
                         <span className="flex min-w-0 items-center gap-2.5">

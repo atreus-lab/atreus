@@ -112,7 +112,7 @@ export function DestinationRow({
   }, [show]);
 
   return (
-    <div className="mt-1 overflow-hidden rounded-xl border border-border/50 bg-background/40">
+    <div className="mt-1 overflow-hidden rounded-xl border border-white/5 bg-white/[0.03]">
       <button
         type="button"
         onClick={onToggle}
@@ -145,13 +145,13 @@ export function DestinationRow({
             transition={{ duration: 0.22, ease: EASE }}
             style={{ overflow: "hidden" }}
           >
-            <div className="border-t border-border/50 px-3.5 pb-3 pt-2.5">
+            <div className="border-t border-white/5 px-3.5 pb-3 pt-2.5">
               <div
                 className={cn(
                   "flex items-center gap-2 rounded-lg border px-2.5 py-2 transition-colors",
                   hasAddress && !valid
                     ? "border-destructive/40"
-                    : "border-border",
+                    : "border-white/10",
                 )}
               >
                 <input

@@ -34,7 +34,8 @@ export default function ProfileModal() {
     <>
       <div className="fixed inset-0 z-50" onClick={() => setProfileOpen(false)} style={{ background: 'rgba(0,0,0,0.5)' }} />
       <motion.div
-        className="fixed left-[260px] bottom-24 z-50 w-[300px] modal-content"
+        className="fixed w-fit  left-5 bottom-24 z-50 modal-content"
+        style={{ width: '300px' }}
         initial={{ opacity: 0, scale: 0.95, y: 8 }}
         animate={{ opacity: 1, scale: 1, y: 0 }}
         transition={{ duration: 0.15, ease: [0.23, 1, 0.32, 1] }}

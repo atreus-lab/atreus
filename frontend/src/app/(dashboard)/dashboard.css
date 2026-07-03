@@ -314,6 +314,9 @@
     padding: 2rem;
     position: relative;
     overflow: hidden;
+    min-height: 50vh;
+    display: flex;
+    flex-direction: column;
   }
 
   .balance-hero-actions {

@@ -1,4 +1,4 @@
-import React, { useRef, useCallback, useEffect } from 'react';
+import React, { useRef, useCallback, useEffect, useState } from 'react';
 import './BorderGlow.css';
 
 function parseHSL(hslStr) {
@@ -63,6 +63,8 @@ const BorderGlow = ({
   fillOpacity = 0.5,
 }) => {
   const cardRef = useRef(null);
+  const [isHovered, setIsHovered] = useState(false);
+  const angleRef = useRef(0);
 
   const getCenterOfElement = useCallback((el) => {
     const { width, height } = el.getBoundingClientRect();
@@ -102,9 +104,28 @@ const BorderGlow = ({
     const edge = getEdgeProximity(card, x, y);
     const angle = getCursorAngle(card, x, y);
 
+    angleRef.current = angle;
+
     card.style.setProperty('--edge-proximity', `${(edge * 100).toFixed(3)}`);
     card.style.setProperty('--cursor-angle', `${angle.toFixed(3)}deg`);
   }, [getEdgeProximity, getCursorAngle]);
+
+  useEffect(() => {
+    if (isHovered) return;
+    const card = cardRef.current;
+    if (!card) return;
+
+    card.style.setProperty('--edge-proximity', '100');
+
+    let animId;
+    const tick = () => {
+      angleRef.current = (angleRef.current + 0.6) % 360;
+      card.style.setProperty('--cursor-angle', `${angleRef.current.toFixed(3)}deg`);
+      animId = requestAnimationFrame(tick);
+    };
+    animId = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(animId);
+  }, [isHovered]);
 
   useEffect(() => {
     if (!animated || !cardRef.current) return;
@@ -133,7 +154,9 @@ const BorderGlow = ({
     <div
       ref={cardRef}
       onPointerMove={handlePointerMove}
-      className={`border-glow-card ${className}`}
+      onPointerEnter={() => setIsHovered(true)}
+      onPointerLeave={() => setIsHovered(false)}
+      className={`border-glow-card ${!isHovered ? 'continuous-glow' : ''} ${className}`}
       style={{
         '--card-bg': backgroundColor,
         '--edge-sensitivity': edgeSensitivity,

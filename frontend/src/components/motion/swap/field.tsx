@@ -31,7 +31,7 @@ export function Field({
   const usdValue = (Number(amount) || 0) * (token.usd ?? 0);
 
   return (
-    <div className="relative rounded-2xl border border-border/50 bg-background/40 p-3.5">
+    <div className="relative rounded-2xl border border-white/5 bg-white/[0.03] p-3.5">
       <label
         htmlFor={id}
         className="mb-2 block text-[11px] font-medium uppercase tracking-wider text-muted-foreground"
@@ -84,7 +84,7 @@ export function Field({
         <button
           type="button"
           onClick={onOpenPicker}
-          className="group inline-flex h-10 items-center gap-2 rounded-full border border-border bg-card pl-1 pr-2.5 text-sm font-semibold text-foreground transition-transform hover:border-border active:scale-[0.97]"
+          className="group inline-flex h-10 items-center gap-2 rounded-full border border-white/10 bg-white/5 pl-1 pr-2.5 text-sm font-semibold text-foreground transition-transform hover:bg-white/10 hover:border-white/20 active:scale-[0.97]"
         >
           <TokenDot token={token} chain={chain} />
           <span>{token.symbol}</span>

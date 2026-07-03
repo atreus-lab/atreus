@@ -1,6 +1,6 @@
 "use client";
 
-import { memo, useMemo } from "react";
+import { memo, useMemo, useState } from "react";
 import Link from "next/link";
 import { Eye, EyeOff, ArrowUpRight, ArrowDownLeft, Link2, PlusCircle, TrendingUp, TrendingDown } from "lucide-react";
 import { NumberTicker } from "./motion/number-ticker";
@@ -42,6 +42,12 @@ const BalanceCard = memo(function BalanceCard({ balance, showBalance, onToggleBa
   const pctChange = ((endVal - startVal) / startVal) * 100;
   const positive = pctChange >= 0;
 
+  const [hoverIndex, setHoverIndex] = useState<number | null>(null);
+  const activeIndex = hoverIndex ?? chartData.length - 1;
+  const activePct = ((chartData[activeIndex] - startVal) / startVal) * 100;
+  const activePositive = activePct >= 0;
+  const displayBalance = hoverIndex !== null ? chartData[hoverIndex] : numericBalance;
+
   return (
     <div className="lg:col-span-2 balance-hero">
       <div className="flex items-center justify-between mb-2">
@@ -54,29 +60,57 @@ const BalanceCard = memo(function BalanceCard({ balance, showBalance, onToggleBa
         </button>
       </div>
 
-      <div className="flex items-center justify-between gap-4">
-        <div className="flex items-baseline gap-2">
-          <span className="text-4xl sm:text-5xl font-extrabold tracking-tight text-primary tabular-nums">
-            {showBalance ? (
-              <NumberTicker value={numericBalance} duration={1.2} locale />
-            ) : '••••••'}
-          </span>
-          <span className="text-lg font-semibold text-secondary">XLM</span>
-        </div>
-
-        {showBalance && (
-          <div className="flex items-center gap-3 shrink-0">
-            <SparklineChart data={chartData} width={100} height={32} positive={positive} />
-            <div className="flex flex-col items-start gap-0.5 min-w-[72px]">
-              <span className={`text-sm font-bold tabular-nums flex items-center gap-1 ${positive ? "text-success" : "text-error"}`}>
-                {positive ? <TrendingUp className="w-3.5 h-3.5" /> : <TrendingDown className="w-3.5 h-3.5" />}
-                {positive ? "+" : ""}{pctChange.toFixed(1)}%
-              </span>
-              <span className="text-[11px] font-medium text-secondary">past week</span>
-            </div>
-          </div>
-        )}
+      <div className="flex items-center gap-2">
+        <span className="text-4xl sm:text-5xl font-extrabold tracking-tight text-primary tabular-nums leading-none">
+          {showBalance ? (
+            <NumberTicker value={displayBalance} duration={hoverIndex !== null ? 0.3 : 1.2} stagger={hoverIndex !== null ? 0.015 : 0.04} locale />
+          ) : '••••••'}
+        </span>
+        <span className="text-lg font-semibold text-secondary leading-none">XLM</span>
       </div>
+
+      {showBalance && (
+        <div className="mt-4 w-full flex-1 min-h-0 flex flex-col">
+          <div className="flex-1 min-h-0">
+            <SparklineChart
+              data={chartData}
+              positive={positive}
+              onHoverIndexChange={setHoverIndex}
+              renderTooltip={(idx) => (
+                <div className="rounded-lg bg-[rgba(20,20,20,0.92)] border border-[rgba(255,255,255,0.08)] px-2.5 py-1 shadow-lg backdrop-blur-sm whitespace-nowrap">
+                  <span className="text-xs font-semibold text-primary tabular-nums">
+                    <NumberTicker
+                      value={Math.round(chartData[idx] * 100)}
+                      format={(v) => (v / 100).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                      suffix=" XLM"
+                      duration={0.25}
+                      stagger={0.015}
+                      startOnView={false}
+                    />
+                  </span>
+                </div>
+              )}
+            />
+          </div>
+          <div className="flex items-center justify-between mt-2">
+            <span className="text-[11px] font-medium text-secondary">
+              {hoverIndex !== null ? "at hovered point" : "past week"}
+            </span>
+            <span className={`text-sm font-bold tabular-nums flex items-center gap-1 ${activePositive ? "text-success" : "text-error"}`}>
+              {activePositive ? <TrendingUp className="w-3.5 h-3.5" /> : <TrendingDown className="w-3.5 h-3.5" />}
+              <NumberTicker
+                value={Math.round(activePct * 10)}
+                format={(v) => Math.abs(v / 10).toFixed(1)}
+                prefix={activePositive ? "+" : "-"}
+                suffix="%"
+                duration={0.35}
+                stagger={0.02}
+                startOnView={false}
+              />
+            </span>
+          </div>
+        </div>
+      )}
 
       <div className="balance-hero-actions">
         <Link href="/send" className="balance-hero-btn">

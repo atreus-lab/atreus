@@ -78,17 +78,20 @@ export default function Home() {
 
   return (
     <div className="fixed inset-0 w-full h-full bg-black text-white overflow-y-auto font-sans flex flex-col z-[100]">
-      <div className="absolute inset-0 z-0 pointer-events-none overflow-hidden">
-        <div className="absolute top-0 left-1/2 -translate-x-1/2 w-[800px] h-[600px] bg-blue-500/10 rounded-full blur-[120px] animate-pulse" />
-        <div className="absolute top-20 right-0 w-[400px] h-[400px] bg-indigo-500/8 rounded-full blur-[100px]" />
+      <motion.div
+        initial={{ opacity: 0 }}
+        animate={{ opacity: 1 }}
+        transition={{ duration: 1.5, delay: 0.7, ease: "easeIn" }}
+        className="absolute inset-0 z-0 pointer-events-none overflow-hidden"
+      >
         <Beams beamWidth={3} beamHeight={30} beamNumber={20} lightColor="#ffffff" speed={2} noiseIntensity={1.75} scale={0.2} rotation={30} />
         <div className="absolute inset-0 bg-gradient-to-b from-transparent from-40% via-black/20 to-black pointer-events-none"></div>
-      </div>
+      </motion.div>
 
       <motion.nav
-        initial={{ opacity: 0, y: -8, filter: "blur(6px)" }}
-        animate={{ opacity: 1, y: 0, filter: "blur(0px)" }}
-        transition={{ duration: 0.52, ease: [0.16, 1, 0.3, 1] }}
+        initial={{ opacity: 0, transform: "translateY(-8px)", filter: "blur(6px)" }}
+        animate={{ opacity: 1, transform: "translateY(0px)", filter: "blur(0px)" }}
+        transition={{ duration: 0.52, ease: [0.23, 1, 0.32, 1] }}
         className="w-full max-w-4xl mx-auto px-8 py-3 mt-4 flex items-center justify-between z-20 relative bg-white/5 backdrop-blur-xl border border-white/10 rounded-full shadow-xl"
       >
         <div className="flex lg:hidden items-center justify-between w-full">
@@ -140,13 +143,13 @@ export default function Home() {
       </motion.nav>
 
       <main className="flex-1 w-full max-w-7xl mx-auto px-6 pt-12 pb-24 flex flex-col relative">
-        <div className="flex flex-col lg:flex-row items-center justify-between w-full h-full gap-16 lg:gap-8">
+        <div className="flex flex-col items-center justify-center w-full text-center gap-12 pt-8 lg:pt-16 pb-16">
 
-          <div className="w-full lg:w-1/2 flex flex-col items-start gap-6 z-10 pt-8 lg:pt-0">
+          <div className="w-full max-w-3xl flex flex-col items-center gap-6 z-10">
             <motion.div
-              initial={{ opacity: 0, y: 12, filter: "blur(6px)" }}
-              animate={{ opacity: 1, y: 0, filter: "blur(0px)" }}
-              transition={{ duration: 0.52, delay: 0.1, ease: [0.16, 1, 0.3, 1] }}
+              initial={{ opacity: 0, transform: "translateY(12px)", filter: "blur(6px)" }}
+              animate={{ opacity: 1, transform: "translateY(0px)", filter: "blur(0px)" }}
+              transition={{ duration: 0.9, delay: 0.1, ease: [0.23, 1, 0.32, 1] }}
               className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-white/10 text-white font-bold text-[10px] tracking-widest shadow-lg border border-white/20 backdrop-blur-md"
             >
               <div className="relative flex h-1.5 w-1.5">
@@ -157,29 +160,29 @@ export default function Home() {
             </motion.div>
 
             <motion.h1
-              initial={{ opacity: 0, y: 12, filter: "blur(6px)" }}
-              animate={{ opacity: 1, y: 0, filter: "blur(0px)" }}
-              transition={{ duration: 0.52, delay: 0.2, ease: [0.16, 1, 0.3, 1] }}
-              className="text-5xl lg:text-[4.5rem] font-extrabold tracking-tight text-white leading-[1.1] mt-2 flex flex-col"
+              initial={{ opacity: 0, transform: "translateY(12px)", filter: "blur(6px)" }}
+              animate={{ opacity: 1, transform: "translateY(0px)", filter: "blur(0px)" }}
+              transition={{ duration: 0.9, delay: 0.25, ease: [0.23, 1, 0.32, 1] }}
+              className="text-5xl lg:text-[4.5rem] font-extrabold tracking-tight text-white leading-[1.1] mt-2 flex flex-col items-center text-center"
             >
               <ShinyText text="Send. Receive." disabled={false} speed={3} className="text-white" />
               <span>Build. <span className="text-slate-300">Beyond.</span></span>
             </motion.h1>
 
             <motion.p
-              initial={{ opacity: 0, y: 12, filter: "blur(6px)" }}
-              animate={{ opacity: 1, y: 0, filter: "blur(0px)" }}
-              transition={{ duration: 0.52, delay: 0.3, ease: [0.16, 1, 0.3, 1] }}
-              className="text-lg lg:text-xl text-slate-400 max-w-lg leading-relaxed font-medium mt-2"
+              initial={{ opacity: 0, transform: "translateY(12px)", filter: "blur(6px)" }}
+              animate={{ opacity: 1, transform: "translateY(0px)", filter: "blur(0px)" }}
+              transition={{ duration: 0.9, delay: 0.4, ease: [0.23, 1, 0.32, 1] }}
+              className="text-lg lg:text-xl text-slate-400 max-w-2xl leading-relaxed font-medium mt-2 text-center"
             >
               Atreus is the easiest way to send and receive funds on Stellar. Secure, private, and no wallet required for the recipient.
             </motion.p>
 
             <motion.div
-              initial={{ opacity: 0, y: 12, filter: "blur(6px)" }}
-              animate={{ opacity: 1, y: 0, filter: "blur(0px)" }}
-              transition={{ duration: 0.52, delay: 0.4, ease: [0.16, 1, 0.3, 1] }}
-              className="flex flex-wrap items-center gap-3 mt-6"
+              initial={{ opacity: 0, transform: "translateY(12px)", filter: "blur(6px)" }}
+              animate={{ opacity: 1, transform: "translateY(0px)", filter: "blur(0px)" }}
+              transition={{ duration: 0.9, delay: 0.55, ease: [0.23, 1, 0.32, 1] }}
+              className="flex flex-wrap items-center justify-center gap-3 mt-6"
             >
               <motion.div whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.97 }} transition={SPRING_PRESS}>
                 <Link href={hasWallet ? "/dashboard" : "/wallet"} className="group relative inline-flex items-center justify-center gap-2.5 bg-white hover:bg-slate-200 text-black px-7 py-3 rounded-full text-[13px] font-semibold transition-all shadow-[0_8px_24px_rgb(255,255,255,0.15)] hover:-translate-y-0.5">
@@ -204,10 +207,10 @@ export default function Home() {
             </motion.div>
 
             <motion.div
-              initial={{ opacity: 0, y: 12, filter: "blur(6px)" }}
-              animate={{ opacity: 1, y: 0, filter: "blur(0px)" }}
-              transition={{ duration: 0.52, delay: 0.5, ease: [0.16, 1, 0.3, 1] }}
-              className="flex flex-wrap items-center gap-6 mt-8 text-sm font-semibold text-slate-400"
+              initial={{ opacity: 0, transform: "translateY(12px)", filter: "blur(6px)" }}
+              animate={{ opacity: 1, transform: "translateY(0px)", filter: "blur(0px)" }}
+              transition={{ duration: 0.9, delay: 0.7, ease: [0.23, 1, 0.32, 1] }}
+              className="flex flex-wrap items-center justify-center gap-6 mt-8 text-sm font-semibold text-slate-400"
             >
               <div className="flex items-center gap-2">
                 <CheckCircle2 className="w-5 h-5 text-white/80" />
@@ -225,17 +228,6 @@ export default function Home() {
               </div>
             </motion.div>
           </div>
-
-          <motion.div
-            initial={{ opacity: 0, y: 24, filter: "blur(8px)" }}
-            animate={{ opacity: 1, y: 0, filter: "blur(0px)" }}
-            transition={{ duration: 0.72, delay: 0.6, ease: [0.16, 1, 0.3, 1] }}
-            className="relative w-full lg:w-1/2 flex items-center justify-center lg:justify-end mt-16 lg:mt-0 min-h-[550px]"
-          >
-            <div className="dark relative w-full max-w-[380px] mx-auto lg:ml-auto lg:mr-0 lg:translate-x-8 z-10 animate-float shadow-2xl rounded-3xl">
-              <MultiChainSwap />
-            </div>
-          </motion.div>
         </div>
 
         <motion.div
@@ -251,10 +243,10 @@ export default function Home() {
             { value: 99.9, label: "Uptime", suffix: "%" },
           ].map((stat, i) => (
             <div key={i} className="flex flex-col items-center gap-1 py-6 rounded-2xl bg-white/[0.02] border border-white/5">
-              <span className="text-3xl lg:text-4xl font-black text-white tracking-tight">
+              <span className="text-3xl lg:text-4xl font-black text-white tracking-tight" style={{ fontFamily: "var(--font-manrope)" }}>
                 <NumberTicker value={stat.value} duration={1.5} suffix={stat.suffix} prefix={stat.prefix} startOnView />
               </span>
-              <span className="text-sm font-medium text-slate-500">{stat.label}</span>
+              <span className="text-sm font-medium text-slate-500" style={{ fontFamily: "var(--font-manrope)" }}>{stat.label}</span>
             </div>
           ))}
         </motion.div>
@@ -289,6 +281,23 @@ export default function Home() {
                 ))}
               </div>
             </BorderGlow>
+          </div>
+        </Reveal>
+
+        <Reveal delay={0.1} className="w-full mt-32 flex flex-col items-center justify-center">
+          <div className="flex flex-col items-center text-center mb-10">
+            <div className="inline-flex items-center gap-2 bg-white/10 border border-white/20 text-white px-4 py-2 rounded-full text-xs font-bold tracking-widest mb-6 backdrop-blur-md">
+              SWAP TOKENS
+            </div>
+            <h2 className="text-4xl lg:text-5xl font-extrabold text-white tracking-tight mb-4">
+              Instant, low-cost <span className="text-slate-300">Stellar swaps</span>
+            </h2>
+            <p className="text-lg text-slate-400 max-w-xl font-medium">
+              Swap between XLM and USDC directly on Atreus.
+            </p>
+          </div>
+          <div className="dark w-full max-w-[420px] mx-auto z-10 shadow-2xl rounded-3xl">
+            <MultiChainSwap />
           </div>
         </Reveal>
 
@@ -551,6 +560,7 @@ export default function Home() {
                   centerY={0}
                   zoom={0.9}
                 />
+                <div className="absolute inset-0 bg-gradient-to-r from-black/85 via-black/45 to-transparent pointer-events-none" />
               </div>
 
               <div className="relative z-10 p-10 lg:p-14 text-white flex flex-col lg:flex-row items-center justify-between gap-8">
@@ -585,77 +595,75 @@ export default function Home() {
 
       </main>
 
-      <footer className="w-full relative overflow-hidden pt-12 pb-16 bg-black z-10 mt-0 flex flex-col items-center shrink-0">
-        <div className="absolute bottom-0 left-0 right-0 w-full flex justify-center pointer-events-none select-none overflow-hidden z-0">
-          <h1 className="text-[25vw] font-black text-white/[0.08] leading-[0.75] tracking-tighter whitespace-nowrap">ATREUS</h1>
-        </div>
+      <footer className="w-full relative overflow-hidden pt-16 pb-16 bg-white/5 border-t border-white/10 backdrop-blur-2xl z-10 mt-0 flex flex-col items-center shrink-0">
+        <Reveal delay={0.1} className="w-full">
+          <div className="w-full max-w-7xl mx-auto px-6 md:px-12 relative z-10">
 
-        <Reveal delay={0.1}>
-          <div className="w-full max-w-7xl mx-auto px-6 relative z-10">
-            <div className="bg-white/5 border border-white/10 backdrop-blur-2xl rounded-[2rem] p-8 md:p-12 shadow-2xl">
+            <div className="flex flex-col lg:flex-row justify-between gap-12 mb-16">
 
-              <div className="flex flex-col lg:flex-row justify-between gap-12 mb-16">
-
-                <div className="lg:w-1/3 flex flex-col gap-6">
-                  <div className="flex items-center gap-3">
-                    <Image src={logo} alt="Atreus Logo" width={32} height={32} className="rounded-xl shadow-lg grayscale opacity-80" />
-                    <span className="text-xl font-bold text-white tracking-tight">Atreus</span>
-                  </div>
-                  <p className="text-sm text-slate-400 leading-relaxed max-w-sm">
-                    Atreus empowers teams to transform raw crypto into clear, compelling payments — making transfers easier to share, understand, and act on.
-                  </p>
-                  <div className="flex gap-4 mt-2">
-                    <a href="https://twitter.com" target="_blank" rel="noopener noreferrer" className="p-2 rounded-full hover:bg-white/5 transition-colors">
-                      <Twitter className="w-5 h-5 text-slate-400 hover:text-white transition-colors" />
-                    </a>
-                    <a href="https://linkedin.com" target="_blank" rel="noopener noreferrer" className="p-2 rounded-full hover:bg-white/5 transition-colors">
-                      <Linkedin className="w-5 h-5 text-slate-400 hover:text-white transition-colors" />
-                    </a>
-                    <a href="https://github.com" target="_blank" rel="noopener noreferrer" className="p-2 rounded-full hover:bg-white/5 transition-colors">
-                      <Github className="w-5 h-5 text-slate-400 hover:text-white transition-colors" />
-                    </a>
-                  </div>
+              <div className="lg:w-1/3 flex flex-col gap-6">
+                <div className="flex items-center gap-3">
+                  <Image src={logo} alt="Atreus Logo" width={32} height={32} className="rounded-xl shadow-lg grayscale opacity-80" />
+                  <span className="text-xl font-bold text-white tracking-tight">Atreus</span>
                 </div>
-
-                <div className="lg:w-2/3 grid grid-cols-2 sm:grid-cols-3 gap-8">
-                  <div className="flex flex-col gap-4">
-                    <h4 className="text-white font-bold text-sm mb-2">Product</h4>
-                    <Link href="#features" className="text-slate-400 hover:text-white text-sm transition-colors">Features</Link>
-                    <Link href="#pricing" className="text-slate-400 hover:text-white text-sm transition-colors">Pricing</Link>
-                    <Link href="#" className="text-slate-400 hover:text-white text-sm transition-colors">Integrations</Link>
-                    <Link href="#changelog" className="text-slate-400 hover:text-white text-sm transition-colors">Changelog</Link>
-                  </div>
-                  <div className="flex flex-col gap-4">
-                    <h4 className="text-white font-bold text-sm mb-2">Resources</h4>
-                    <Link href="#docs" className="text-slate-400 hover:text-white text-sm transition-colors">Documentation</Link>
-                    <Link href="#" className="text-slate-400 hover:text-white text-sm transition-colors">Tutorials</Link>
-                    <Link href="#" className="text-slate-400 hover:text-white text-sm transition-colors">Blog</Link>
-                    <Link href="#" className="text-slate-400 hover:text-white text-sm transition-colors">Support</Link>
-                  </div>
-                  <div className="flex flex-col gap-4">
-                    <h4 className="text-white font-bold text-sm mb-2">Company</h4>
-                    <Link href="#about" className="text-slate-400 hover:text-white text-sm transition-colors">About</Link>
-                    <Link href="#" className="text-slate-400 hover:text-white text-sm transition-colors">Careers</Link>
-                    <Link href="#" className="text-slate-400 hover:text-white text-sm transition-colors">Contact</Link>
-                    <Link href="#" className="text-slate-400 hover:text-white text-sm transition-colors">Partners</Link>
-                  </div>
+                <p className="text-sm text-slate-400 leading-relaxed max-w-sm">
+                  Atreus empowers teams to transform raw crypto into clear, compelling payments — making transfers easier to share, understand, and act on.
+                </p>
+                <div className="flex gap-4 mt-2">
+                  <a href="https://twitter.com" target="_blank" rel="noopener noreferrer" className="p-2 rounded-full hover:bg-white/5 transition-colors">
+                    <Twitter className="w-5 h-5 text-slate-400 hover:text-white transition-colors" />
+                  </a>
+                  <a href="https://linkedin.com" target="_blank" rel="noopener noreferrer" className="p-2 rounded-full hover:bg-white/5 transition-colors">
+                    <Linkedin className="w-5 h-5 text-slate-400 hover:text-white transition-colors" />
+                  </a>
+                  <a href="https://github.com" target="_blank" rel="noopener noreferrer" className="p-2 rounded-full hover:bg-white/5 transition-colors">
+                    <Github className="w-5 h-5 text-slate-400 hover:text-white transition-colors" />
+                  </a>
                 </div>
               </div>
 
-              <div className="border-t border-white/10 pt-8 flex flex-col md:flex-row items-center justify-between gap-6">
-                <div className="text-sm text-slate-500">
-                  © 2026 Atreus. All rights reserved.
+              <div className="lg:w-2/3 grid grid-cols-2 sm:grid-cols-3 gap-8">
+                <div className="flex flex-col gap-4">
+                  <h4 className="text-white font-bold text-sm mb-2">Product</h4>
+                  <Link href="#features" className="text-slate-400 hover:text-white text-sm transition-colors">Features</Link>
+                  <Link href="#pricing" className="text-slate-400 hover:text-white text-sm transition-colors">Pricing</Link>
+                  <Link href="#" className="text-slate-400 hover:text-white text-sm transition-colors">Integrations</Link>
+                  <Link href="#changelog" className="text-slate-400 hover:text-white text-sm transition-colors">Changelog</Link>
                 </div>
-                <div className="flex flex-wrap gap-6 text-sm">
-                  <Link href="#" className="text-slate-500 hover:text-slate-300 transition-colors">Privacy Policy</Link>
-                  <Link href="#" className="text-slate-500 hover:text-slate-300 transition-colors">Terms of Service</Link>
-                  <Link href="#" className="text-slate-500 hover:text-slate-300 transition-colors">Cookie Settings</Link>
+                <div className="flex flex-col gap-4">
+                  <h4 className="text-white font-bold text-sm mb-2">Resources</h4>
+                  <Link href="#docs" className="text-slate-400 hover:text-white text-sm transition-colors">Documentation</Link>
+                  <Link href="#" className="text-slate-400 hover:text-white text-sm transition-colors">Tutorials</Link>
+                  <Link href="#" className="text-slate-400 hover:text-white text-sm transition-colors">Blog</Link>
+                  <Link href="#" className="text-slate-400 hover:text-white text-sm transition-colors">Support</Link>
+                </div>
+                <div className="flex flex-col gap-4">
+                  <h4 className="text-white font-bold text-sm mb-2">Company</h4>
+                  <Link href="#about" className="text-slate-400 hover:text-white text-sm transition-colors">About</Link>
+                  <Link href="#" className="text-slate-400 hover:text-white text-sm transition-colors">Careers</Link>
+                  <Link href="#" className="text-slate-400 hover:text-white text-sm transition-colors">Contact</Link>
+                  <Link href="#" className="text-slate-400 hover:text-white text-sm transition-colors">Partners</Link>
                 </div>
               </div>
-
             </div>
+
+            <div className="border-t border-white/10 pt-8 flex flex-col md:flex-row items-center justify-between gap-6">
+              <div className="text-sm text-slate-500">
+                © 2026 Atreus. All rights reserved.
+              </div>
+              <div className="flex flex-wrap gap-6 text-sm">
+                <Link href="#" className="text-slate-500 hover:text-slate-300 transition-colors">Privacy Policy</Link>
+                <Link href="#" className="text-slate-500 hover:text-slate-300 transition-colors">Terms of Service</Link>
+                <Link href="#" className="text-slate-500 hover:text-slate-300 transition-colors">Cookie Settings</Link>
+              </div>
+            </div>
+
           </div>
         </Reveal>
+
+        <div className="w-full flex justify-center pointer-events-none select-none overflow-hidden z-0 mt-8">
+          <h1 className="text-[25vw] font-black text-white/[0.08] leading-[0.75] tracking-tighter whitespace-nowrap">ATREUS</h1>
+        </div>
       </footer>
 
       <AnimatePresence>
