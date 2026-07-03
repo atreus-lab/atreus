@@ -405,40 +405,81 @@ export default function DashboardPage() {
  </div>
  </div>
 
-  {/* My Links */}
+  {/* My Links — separate Pending and Claimed sections */}
   {storedLinks.length > 0 && (
-   <div id="my-links-section" className="bg-white rounded-[2rem] p-8 shadow-[0_12px_40px_rgba(0,0,0,0.04)] border border-slate-100">
-    <div className="flex items-center justify-between mb-6">
-     <h3 className="font-extrabold text-slate-900">My Links</h3>
-     <span className="text-xs font-bold text-slate-400">{storedLinks.filter(l => !l.claimed).length} active</span>
-    </div>
-    <div className="flex flex-col gap-3">
-     {storedLinks.slice(0, 5).map((link) => (
-      <div key={link.id} className="flex items-center justify-between p-3 rounded-xl bg-slate-50 border border-slate-100">
-       <div className="flex flex-col min-w-0 flex-1 mr-3">
-        <div className="flex items-center gap-2">
-         <span className="font-bold text-slate-900 text-sm">{link.amount} XLM</span>
-         <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${link.claimed ? 'bg-green-50 text-green-600' : 'bg-amber-50 text-amber-600'}`}>
-          {link.claimed ? "Claimed" : "Pending"}
-         </span>
-        </div>
-        <span className="text-[10px] text-slate-400 mt-0.5">{new Date(link.createdAt).toLocaleDateString()} {new Date(link.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
+   <div id="my-links-section" className="space-y-6">
+    
+    {/* Pending Links */}
+    {(() => {
+     const pending = storedLinks.filter(l => !l.claimed);
+     if (pending.length === 0) return null;
+     return (
+      <div className="bg-white rounded-[2rem] p-8 shadow-[0_12px_40px_rgba(0,0,0,0.04)] border border-slate-100">
+       <div className="flex items-center justify-between mb-6">
+        <h3 className="font-extrabold text-slate-900 flex items-center gap-2">
+         <span className="w-2 h-2 rounded-full bg-amber-400 shadow-[0_0_8px_rgba(251,191,36,0.6)]"></span>
+         Pending Links
+        </h3>
+        <span className="text-xs font-bold text-slate-400">{pending.length} active</span>
        </div>
-       <button
-        onClick={() => copyLink(link.url, link.id)}
-        className="p-2 rounded-lg bg-white border border-slate-200 hover:bg-indigo-50 hover:border-indigo-200 transition-colors shrink-0"
-        title="Copy link"
-       >
-        {copiedLinkId === link.id ? <Check className="w-4 h-4 text-green-500" /> : <Copy className="w-4 h-4 text-slate-400" />}
-       </button>
+       <div className="flex flex-col gap-3">
+        {pending.slice(0, 5).map((link) => (
+         <div key={link.id} className="flex items-center justify-between p-3 rounded-xl bg-amber-50/40 border border-amber-100/60">
+          <div className="flex flex-col min-w-0 flex-1 mr-3">
+           <div className="flex items-center gap-2">
+            <span className="font-bold text-slate-900 text-sm">{link.amount} XLM</span>
+            <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-amber-50 text-amber-600 border border-amber-200">
+             Pending
+            </span>
+           </div>
+           <span className="text-[10px] text-slate-400 mt-0.5">{new Date(link.createdAt).toLocaleDateString()} {new Date(link.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
+          </div>
+          <button
+           onClick={() => copyLink(link.url, link.id)}
+           className="p-2 rounded-lg bg-white border border-amber-200 hover:bg-amber-50 hover:border-amber-300 transition-colors shrink-0"
+           title="Copy link"
+          >
+           {copiedLinkId === link.id ? <Check className="w-4 h-4 text-green-500" /> : <Copy className="w-4 h-4 text-amber-500" />}
+          </button>
+         </div>
+        ))}
+       </div>
       </div>
-     ))}
-    </div>
-    {storedLinks.length > 5 && (
-     <button className="mt-4 text-sm font-bold text-indigo-600 hover:text-indigo-700 flex items-center gap-1">
-      View all {storedLinks.length} links <ArrowRight className="w-4 h-4" />
-     </button>
-    )}
+     );
+    })()}
+
+    {/* Claimed Links */}
+    {(() => {
+     const claimed = storedLinks.filter(l => l.claimed);
+     if (claimed.length === 0) return null;
+     return (
+      <div className="bg-white rounded-[2rem] p-8 shadow-[0_12px_40px_rgba(0,0,0,0.04)] border border-slate-100">
+       <div className="flex items-center justify-between mb-6">
+        <h3 className="font-extrabold text-slate-900 flex items-center gap-2">
+         <CheckCircle2 className="w-5 h-5 text-green-500" />
+         Claimed
+        </h3>
+        <span className="text-xs font-bold text-green-500">{claimed.length} total</span>
+       </div>
+       <div className="flex flex-col gap-3">
+        {claimed.slice(0, 5).map((link) => (
+         <div key={link.id} className="flex items-center justify-between p-3 rounded-xl bg-green-50/30 border border-green-100/60">
+          <div className="flex flex-col min-w-0 flex-1 mr-3">
+           <div className="flex items-center gap-2">
+            <span className="font-bold text-slate-900 text-sm">{link.amount} XLM</span>
+            <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-green-50 text-green-600 border border-green-200 flex items-center gap-1">
+             <CheckCircle2 className="w-3 h-3" /> Claimed
+            </span>
+           </div>
+           <span className="text-[10px] text-slate-400 mt-0.5">{new Date(link.createdAt).toLocaleDateString()} {new Date(link.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
+          </div>
+         </div>
+        ))}
+       </div>
+      </div>
+     );
+    })()}
+
    </div>
   )}
 

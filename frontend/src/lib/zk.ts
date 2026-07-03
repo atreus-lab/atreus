@@ -51,6 +51,7 @@ function frBuffer(val: bigint): Uint8Array {
 }
 
 let circuitCache: any = null;
+let bbSyncCache: any = null;
 
 async function loadCircuit(): Promise<any> {
   if (circuitCache) return circuitCache;
@@ -82,8 +83,11 @@ export async function generateClaimProof(
   const secretField = secretToField(secretBytes);
   const recipientField = addressToField(recipientAddress);
 
-  // 2. Compute Pedersen hashes
-  const bbSync = await BarretenbergSync.initSingleton();
+  // 2. Compute Pedersen hashes — use cached sync instance (no destroy needed)
+  if (!bbSyncCache) {
+    bbSyncCache = await BarretenbergSync.new();
+  }
+  const bbSync = bbSyncCache;
 
   const linkHashResult = (bbSync as any).pedersenHash({
     inputs: [frBuffer(secretField)],
@@ -120,20 +124,24 @@ export async function generateClaimProof(
 
   const { witness } = await noir.execute(inputs);
 
-  // 4. Generate UltraHonk proof
-  const api = await Barretenberg.initSingleton({ threads: 1 });
-  const backend = new UltraHonkBackend(circuit.bytecode, api);
-  const result = await backend.generateProof(witness);
+  // 4. Generate UltraHonk proof — use a fresh async instance (not the singleton)
+  //    so that api.destroy() properly cleans up and subsequent calls don't
+  //    receive a destroyed singleton.
+  const api = await Barretenberg.new({ threads: 1 });
+  try {
+    const backend = new UltraHonkBackend(circuit.bytecode, api);
+    const result = await backend.generateProof(witness);
 
-  // Compute SHA-256 link hash for the API path
-  const hashBuffer = await crypto.subtle.digest("SHA-256", new Uint8Array(secretBytes) as unknown as ArrayBuffer);
-  const linkHashHex = Array.from(new Uint8Array(hashBuffer))
-    .map((b) => b.toString(16).padStart(2, "0"))
-    .join("");
+    // Compute SHA-256 link hash for the API path
+    const hashBuffer = await crypto.subtle.digest("SHA-256", new Uint8Array(secretBytes) as unknown as ArrayBuffer);
+    const linkHashHex = Array.from(new Uint8Array(hashBuffer))
+      .map((b) => b.toString(16).padStart(2, "0"))
+      .join("");
 
-  await api.destroy();
-
-  return { proof: result.proof, linkHashHex };
+    return { proof: result.proof, linkHashHex };
+  } finally {
+    await api.destroy();
+  }
 }
 
 /**
