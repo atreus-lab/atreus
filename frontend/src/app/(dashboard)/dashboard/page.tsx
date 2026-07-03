@@ -292,24 +292,22 @@ export default function DashboardPage() {
           <div className="animate-spin w-6 h-6 border-2 border-[var(--accent-primary)] border-t-transparent rounded-full" />
         </div>
       ) : (
-        <div className="app-content flex flex-col gap-6">
-          {/* Top Row */}
+        <div className="app-content">
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-            <BalanceCard balance={balance} showBalance={showBalance} onToggleBalance={() => setShowBalance(!showBalance)} onClaimClick={() => setShowClaimModal(true)} />
-            <PrivacyScoreCard />
+            {/* Left Column (spans 2) */}
+            <div className="lg:col-span-2 flex flex-col gap-6">
+              <BalanceCard balance={balance} showBalance={showBalance} onToggleBalance={() => setShowBalance(!showBalance)} onClaimClick={() => setShowClaimModal(true)} />
+              <AssetsList balances={balances} />
+              <PaymentLinks storedLinks={storedLinks} receivedLinks={receivedLinks} copiedLinkId={copiedLinkId} onCopyLink={copyLink} onRefund={handleRefund} />
+            </div>
+
+            {/* Right Column (spans 1) */}
+            <div className="flex flex-col gap-6">
+              <PrivacyScoreCard />
+              <RecentActivity storedLinks={storedLinks} receivedLinks={receivedLinks} transactions={transactions} address={address} />
+              <QuickActions onClaimClick={() => setShowClaimModal(true)} />
+            </div>
           </div>
-
-          {/* Middle Row */}
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-            <AssetsList balances={balances} />
-            <RecentActivity storedLinks={storedLinks} receivedLinks={receivedLinks} transactions={transactions} address={address} />
-          </div>
-
-          {/* Payment Links */}
-          <PaymentLinks storedLinks={storedLinks} receivedLinks={receivedLinks} copiedLinkId={copiedLinkId} onCopyLink={copyLink} onRefund={handleRefund} />
-
-          {/* Quick Actions */}
-          <QuickActions onClaimClick={() => setShowClaimModal(true)} />
         </div>
       )}
 
