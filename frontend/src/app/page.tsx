@@ -8,7 +8,6 @@ import logo from "../media/ateruslogo.jpeg";
 import mobileImg from "../media/ateruslandpto.png";
 import boltImg from "../media/bolt.png";
 import lockImg from "../media/lock.png";
-import stellarImg from "../media/stellarlogo.webp";
 import assetsImg from "../media/assets.png";
 import earthImg from "../media/ateruseart.png";
 import clockImg from "../media/clock.png";
@@ -173,7 +172,7 @@ export default function Home() {
               <MultiChainSwap />
             </div>
 
-            {/* Floating Badges Removed */}
+{/* Floating Badges Removed */}
 
           </div>
         </div>

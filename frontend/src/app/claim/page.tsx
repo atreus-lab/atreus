@@ -3,11 +3,12 @@
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
+import { loadWallet } from '@/lib/wallet';
 import { connectWallet, claimLinkTx } from '@/lib/stellar';
 import { bytesToHex } from '@/lib/proof';
 import { generateClaimProof, requestAttestation } from '@/lib/zk';
 import { updateLinkStatus, checkLinkOnChain, saveClaimedLink, readLinkInfo } from '@/lib/links';
-import { Loader2, CheckCircle2, XCircle, ArrowLeft, Link2 } from 'lucide-react';
+import { Loader2, CheckCircle2, XCircle, ArrowLeft, Link2, Mail } from 'lucide-react';
 
 type ClaimStatus =
   | 'idle'
@@ -26,6 +27,28 @@ export default function ClaimPage() {
   const [errorKind, setErrorKind] = useState<'error' | 'info' | 'expired'>('error');
   const [txHash, setTxHash] = useState('');
   const [linkInput, setLinkInput] = useState('');
+  const [intendedEmail, setIntendedEmail] = useState<string | null>(null);
+  const [walletEmail, setWalletEmail] = useState<string | null>(null);
+
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const emailParam = params.get('email');
+    if (emailParam) {
+      try {
+        setIntendedEmail(atob(emailParam));
+      } catch {}
+    }
+    const wallet = loadWallet();
+    if (wallet?.email) {
+      setWalletEmail(wallet.email);
+    }
+  }, []);
+
+  async function sha256Hash(str: string): Promise<Uint8Array> {
+    const encoder = new TextEncoder();
+    const data = encoder.encode(str.toLowerCase().trim());
+    return new Uint8Array(await crypto.subtle.digest('SHA-256', data));
+  }
 
   /** Map contract panic messages and network errors to user-friendly messages */
 function getFriendlyErrorMessage(err: any): { title: string; description: string } {
@@ -123,9 +146,22 @@ const parseLinkInput = () => {
       const proofHex = bytesToHex(proof);
       await requestAttestation(linkHashHex, secretHex, proofHex, recipient);
 
+      // Email verification: if the link was created for a specific email, check it matches
+      if (intendedEmail) {
+        const wallet = loadWallet();
+        const authedEmail = wallet?.email;
+        if (!authedEmail || authedEmail.toLowerCase().trim() !== intendedEmail.toLowerCase().trim()) {
+          setErrorKind('error');
+          setErrorMsg(`This link is intended for ${intendedEmail}. Please log in with that email to claim.`);
+          setStatus('error');
+          return;
+        }
+      }
+
       setStatus('claiming');
       const linkHash = new Uint8Array(await crypto.subtle.digest('SHA-256', secretBytes));
-      const hash = await claimLinkTx(recipient, linkHash, secretBytes);
+      const emailHash = walletEmail ? await sha256Hash(walletEmail) : undefined;
+      const hash = await claimLinkTx(recipient, linkHash, secretBytes, emailHash);
       setTxHash(hash);
 
       setStatus('success');
@@ -195,6 +231,26 @@ const parseLinkInput = () => {
             <p className="text-sm text-slate-500">
               A payment has been found! Verify your identity with a ZK proof to claim it.
             </p>
+
+            {intendedEmail && (
+              <div className={`p-4 rounded-xl text-sm font-medium border ${
+                walletEmail && walletEmail.toLowerCase().trim() === intendedEmail.toLowerCase().trim()
+                  ? 'bg-green-50 border-green-100 text-green-700'
+                  : 'bg-amber-50 border-amber-100 text-amber-700'
+              }`}>
+                <p className="flex items-center gap-2">
+                  <Mail className="w-4 h-4 shrink-0" />
+                  Intended for: <strong>{intendedEmail}</strong>
+                </p>
+                {walletEmail && walletEmail.toLowerCase().trim() === intendedEmail.toLowerCase().trim() ? (
+                  <p className="text-xs mt-1 text-green-600">✓ Your email matches!</p>
+                ) : walletEmail ? (
+                  <p className="text-xs mt-1 text-amber-600">You are logged in as {walletEmail}. Only {intendedEmail} can claim this link.</p>
+                ) : (
+                  <p className="text-xs mt-1 text-amber-600">Log in with {intendedEmail} to claim this link.</p>
+                )}
+              </div>
+            )}
 
             {status === 'generating_proof' && (
               <div className="bg-indigo-50 border border-indigo-100 text-indigo-700 text-sm font-medium p-3 rounded-xl flex items-center gap-2">
