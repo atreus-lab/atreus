@@ -36,8 +36,11 @@ export default function WalletPage() {
   useEffect(() => {
     const existing = loadWallet();
     if (existing) {
-      // Already has a wallet — go straight to dashboard
-      router.push("/dashboard");
+      // Already has a wallet — show wallet info
+      setWallet(existing);
+      setView("ready");
+      getBalance(existing.publicKey).then(b => setBalance(b));
+      setLoading(false);
       return;
     }
     setLoading(false);
