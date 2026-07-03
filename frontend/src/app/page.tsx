@@ -8,7 +8,7 @@ import logo from "../media/ateruslogo.jpeg";
 import mobileImg from "../media/ateruslandpto.png";
 import boltImg from "../media/bolt.png";
 import lockImg from "../media/lock.png";
-import stellarImg from "../media/stellarlogo.webp";
+
 
 function WalletMockup() {
   return (
@@ -345,7 +345,7 @@ export default function Home() {
             {/* Floating Badge 4 (Bottom Right) */}
             <div className="hidden sm:flex absolute bottom-12 right-0 lg:-right-6 bg-white/90 backdrop-blur-xl shadow-[0_20px_40px_-15px_rgba(0,0,0,0.07),inset_0_2px_4px_rgba(255,255,255,1)] rounded-[1.5rem] p-5 flex-col items-center justify-center gap-3 border border-white/60 z-20 w-[120px] hover:-translate-y-1 transition-transform cursor-default">
               <div className="w-12 h-12 flex items-center justify-center">
-                <Image src={stellarImg} alt="Stellar" width={48} height={48} className="w-full h-full object-contain" />
+                <Image src="/media/stellarlogo.webp" alt="Stellar" width={48} height={48} className="w-full h-full object-contain" />
               </div>
               <div className="flex flex-col items-center">
                 <span className="text-[14px] font-bold text-slate-800 leading-tight tracking-tight">Built on</span>

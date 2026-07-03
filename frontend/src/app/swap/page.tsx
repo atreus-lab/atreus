@@ -14,9 +14,10 @@ import { getNavItems } from "@/constants/navigation";
 
 const ALL_TOKENS = [
   { code: "XLM", issuer: null } as const,
-  { code: "USDC", issuer: "GA2BYV7QJ75ZAZXQBEDX5CAYXIRMXELJYRK5O6IHF2RLCDKVQU2ZSKBU" },
+  { code: "USDC", issuer: "GBBD47IF6LWK7P7MDEVSCWR7DPUWV3NY3DTQEVFL4NAT4AQH3ZLLFLA5" },
   { code: "EURT", issuer: "GBLETQF7AAB2DPWP3LU6DYXYF3CZX7RVH3PB6IHQWECTOKZL7EENGO2U" },
 ];
+const SUPPORTED_CODES = new Set(ALL_TOKENS.map(t => t.code));
 type Token = typeof ALL_TOKENS[number];
 
 function tokenColor(token: Token): string {
@@ -38,7 +39,7 @@ export default function SwapPage() {
   const [displayEstimate, setDisplayEstimate] = useState<string | null>(null);
   const [searchOpen, setSearchOpen] = useState(false);
 
-  const activatedTokens = ALL_TOKENS.filter(t => t.code === "XLM" || balances.some(b => b.asset_code === t.code));
+  const activatedTokens = ALL_TOKENS.filter(t => t.code === "XLM" || balances.some(b => b.asset_code === t.code && (t.issuer === null || b.asset_issuer === t.issuer)));
   const toOptions = activatedTokens.filter(t => t.code !== fromToken.code);
 
   useEffect(() => {
@@ -68,14 +69,7 @@ export default function SwapPage() {
     const val = parseFloat(amount);
     const from = fromToken.code;
     const to = toToken.code;
-    let fallback = val * 0.9;
-    if (from === "XLM" && to === "USDC") fallback = val * 0.85;
-    else if (from === "XLM" && to === "EURT") fallback = val * 0.72;
-    else if (from === "USDC" && to === "XLM") fallback = val * 1.15;
-    else if (from === "USDC" && to === "EURT") fallback = val * 0.84;
-    else if (from === "EURT" && to === "XLM") fallback = val * 1.35;
-    else if (from === "EURT" && to === "USDC") fallback = val * 1.18;
-    setDisplayEstimate(fallback.toFixed(4));
+    setDisplayEstimate(null);
     setEstimating(true);
     const timer = setTimeout(async () => {
       try { const est = await getSwapEstimate(fromToken.code === "XLM" ? null : fromToken.code, fromToken.code === "XLM" ? null : fromToken.issuer, toToken.code, toToken.issuer!, amount); if (parseFloat(est) > 0) setDisplayEstimate(est); }

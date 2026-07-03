@@ -65,6 +65,7 @@ impl AtreusContract {
         link_hash: BytesN<32>,
         recipient: Address,
         secret: BytesN<32>,
+        recipient_email_hash: BytesN<32>,
     ) {
         recipient.require_auth();
 
@@ -73,6 +74,20 @@ impl AtreusContract {
         let computed = env.crypto().sha256(&secret_bytes);
         if BytesN::from_array(&env, &computed.to_array()) != link_hash {
             panic!("invalid secret");
+        }
+
+        let mut link_info: LinkInfo = env.storage().persistent().get(&link_hash).expect("Link not found");
+
+        // If policy_type == 1 (email-restricted), verify the claimer's email hash
+        // matches the intended recipient's email hash stored at link creation.
+        if link_info.policy_type == 1 {
+            if link_info.policy_params.len() != 32 {
+                panic!("invalid policy params length");
+            }
+            let recipient_email_bytes = Bytes::from_array(&env, &recipient_email_hash.to_array());
+            if link_info.policy_params != recipient_email_bytes {
+                panic!("recipient email does not match");
+            }
         }
 
         // Require a real ZK attestation for this exact (link_hash, recipient) pair before
@@ -89,8 +104,6 @@ impl AtreusContract {
         if !attested {
             panic!("no valid ZK attestation for this claim");
         }
-
-        let mut link_info: LinkInfo = env.storage().persistent().get(&link_hash).expect("Link not found");
 
         if link_info.claimed {
             panic!("already claimed");

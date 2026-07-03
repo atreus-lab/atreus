@@ -2,12 +2,27 @@
 
 use super::*;
 use soroban_sdk::{
-    testutils::Address as _, testutils::Ledger, token::StellarAssetClient, Address, Bytes,
-    BytesN, Env,
+    contract, contractimpl, testutils::Address as _, testutils::Ledger,
+    token::StellarAssetClient, Address, Bytes, BytesN, Env, Symbol,
 };
 
+// Minimal mock verifier that always returns true for is_attested
+#[contract]
+pub struct MockVerifier;
+
+#[contractimpl]
+impl MockVerifier {
+    pub fn __constructor(env: Env, _vk: Bytes, _attester: Address) {
+        env.storage().instance().set(&Symbol::new(&env, "init"), &true);
+    }
+
+    pub fn is_attested(_env: Env, _link_hash: BytesN<32>, _recipient: Address) -> bool {
+        true
+    }
+}
+
 fn setup_test(env: &Env) -> (AtreusContractClient<'_>, Address, Address) {
-    let verifier = Address::generate(env);
+    let verifier: Address = env.register(MockVerifier, (Bytes::new(env), Address::generate(env)));
     let contract_id = env.register(AtreusContract, (&verifier,));
     let client = AtreusContractClient::new(env, &contract_id);
 
@@ -28,6 +43,42 @@ fn make_secret(env: &Env, val: u8) -> (BytesN<32>, BytesN<32>) {
     (secret, link_hash)
 }
 
+fn empty_email_hash(env: &Env) -> BytesN<32> {
+    BytesN::from_array(env, &[0u8; 32])
+}
+
+fn email_hash(env: &Env, email: &str) -> BytesN<32> {
+    let email_bytes = Bytes::from_slice(env, email.as_bytes());
+    let hash = env.crypto().sha256(&email_bytes);
+    BytesN::from_array(env, &hash.to_array())
+}
+
+#[test]
+fn test_email_restricted_claim() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let (client, sender, token) = setup_test(&env);
+    let (secret, link_hash) = make_secret(&env, 1);
+    let amount = 1000i128;
+    let expiry = env.ledger().timestamp() + 1000;
+    let intended_email = "alice@example.com";
+    let intended_hash = email_hash(&env, intended_email);
+    let policy_params = Bytes::from_array(&env, &intended_hash.to_array());
+
+    // Create link with email restriction (policy_type=1)
+    client.create_link(&link_hash, &1u32, &policy_params, &amount, &token, &expiry, &sender);
+
+    let recipient = Address::generate(&env);
+
+    // Try claiming with wrong email hash — should fail
+    let wrong_hash = email_hash(&env, "bob@example.com");
+    assert!(client.try_claim_link(&link_hash, &recipient, &secret, &wrong_hash).is_err());
+
+    // Claim with correct email hash — should succeed
+    client.claim_link(&link_hash, &recipient, &secret, &intended_hash);
+}
+
 #[test]
 fn test_create_and_claim() {
     let env = Env::default();
@@ -42,7 +93,7 @@ fn test_create_and_claim() {
     client.create_link(&link_hash, &0u32, &policy_params, &amount, &token, &expiry, &sender);
 
     let recipient = Address::generate(&env);
-    client.claim_link(&link_hash, &recipient, &secret);
+    client.claim_link(&link_hash, &recipient, &secret, &empty_email_hash(&env));
 }
 
 #[test]
@@ -60,7 +111,7 @@ fn test_wrong_secret_fails() {
     client.create_link(&link_hash, &0u32, &policy_params, &amount, &token, &expiry, &sender);
 
     let recipient = Address::generate(&env);
-    assert!(client.try_claim_link(&link_hash, &recipient, &wrong_secret).is_err());
+    assert!(client.try_claim_link(&link_hash, &recipient, &wrong_secret, &empty_email_hash(&env)).is_err());
 }
 
 #[test]
@@ -77,9 +128,9 @@ fn test_double_claim_fails() {
     client.create_link(&link_hash, &0u32, &policy_params, &amount, &token, &expiry, &sender);
 
     let recipient = Address::generate(&env);
-    client.claim_link(&link_hash, &recipient, &secret);
+    client.claim_link(&link_hash, &recipient, &secret, &empty_email_hash(&env));
 
-    assert!(client.try_claim_link(&link_hash, &recipient, &secret).is_err());
+    assert!(client.try_claim_link(&link_hash, &recipient, &secret, &empty_email_hash(&env)).is_err());
 }
 
 #[test]
@@ -115,5 +166,5 @@ fn test_claim_expired_fails() {
     env.ledger().set_timestamp(expiry + 1);
 
     let recipient = Address::generate(&env);
-    assert!(client.try_claim_link(&link_hash, &recipient, &secret).is_err());
+    assert!(client.try_claim_link(&link_hash, &recipient, &secret, &empty_email_hash(&env)).is_err());
 }

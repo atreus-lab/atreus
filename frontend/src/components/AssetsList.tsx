@@ -3,7 +3,6 @@
 import Image from "next/image";
 import Link from "next/link";
 import { ArrowRight } from "lucide-react";
-import stellarlogo from "../media/stellarlogo.webp";
 
 interface AssetsListProps {
   balances: any[];
@@ -21,7 +20,12 @@ export default function AssetsList({ balances }: AssetsListProps) {
       <div className="flex flex-col gap-3 mb-4">
         <h4 className="text-xs font-extrabold text-slate-400 uppercase tracking-wider">My Assets</h4>
         {(() => {
-          const myAssets = balances.filter((b: any) => b.asset_type === 'native' || b.asset_code);
+          const myAssets = balances.filter((b: any) => {
+            if (b.asset_type === 'native') return true;
+            if (!b.asset_code) return false;
+            if (parseFloat(b.balance) > 0) return true;
+            return false;
+          });
           if (myAssets.length === 0) {
             return <div className="text-xs text-slate-400 italic py-2">No assets activated yet</div>;
           }
@@ -31,7 +35,7 @@ export default function AssetsList({ balances }: AssetsListProps) {
             const balanceVal = parseFloat(b.balance);
             let logoContent = null;
             if (isNative || code === 'XLM') {
-              logoContent = <Image src={stellarlogo} alt="XLM" width={28} height={28} className="w-full h-full object-contain rounded-full bg-black p-0.5" />;
+              logoContent = <Image src="/media/stellarlogo.webp" alt="XLM" width={28} height={28} className="w-full h-full object-contain rounded-full bg-black p-0.5" />;
             } else if (code === 'USDC') {
               logoContent = <img src="https://cryptologos.cc/logos/usd-coin-usdc-logo.svg?v=029" alt="USDC" className="w-full h-full object-contain p-1" />;
             } else if (code === 'EURT') {

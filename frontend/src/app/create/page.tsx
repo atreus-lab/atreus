@@ -3,7 +3,7 @@
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
-import { Copy, Check, Loader2, ArrowLeft } from 'lucide-react';
+import { Copy, Check, Loader2, ArrowLeft, Mail, Shield } from 'lucide-react';
 import { connectWallet, createEscrowTx } from '@/lib/stellar';
 import { saveLink } from '@/lib/links';
 
@@ -19,9 +19,16 @@ const EXPIRY_OPTIONS = [
   { label: 'No limit', value: 0 },
 ];
 
+async function sha256Hash(str: string): Promise<Uint8Array> {
+  const encoder = new TextEncoder();
+  const data = encoder.encode(str.toLowerCase().trim());
+  return new Uint8Array(await crypto.subtle.digest('SHA-256', data));
+}
+
 export default function CreatePage() {
   const router = useRouter();
   const [amount, setAmount] = useState('');
+  const [recipientEmail, setRecipientEmail] = useState('');
   const [expirySeconds, setExpirySeconds] = useState(7 * 24 * 60 * 60);
   const [link, setLink] = useState('');
   const [isCreating, setIsCreating] = useState(false);
@@ -45,14 +52,23 @@ export default function CreatePage() {
         .map((b) => b.toString(16).padStart(2, '0'))
         .join('');
 
+      // Compute SHA-256 hash of recipient email if provided
+      let recipientEmailHash: Uint8Array | undefined;
+      if (recipientEmail.trim()) {
+        recipientEmailHash = await sha256Hash(recipientEmail.trim());
+      }
+
       const expiresAt = expirySeconds === 0
         ? 4102444800 // 2100-01-01 — effectively never expires
         : Math.floor(Date.now() / 1000) + expirySeconds;
-      await createEscrowTx(creator, amount, hashBytes, expiresAt);
+      await createEscrowTx(creator, amount, hashBytes, expiresAt, recipientEmailHash);
 
       const url = new URL(window.location.origin);
       url.pathname = '/claim';
       url.hash = secretHex;
+      if (recipientEmail.trim()) {
+        url.searchParams.set('email', btoa(recipientEmail.trim()));
+      }
       const linkUrl = url.toString();
       setLink(linkUrl);
 
@@ -116,6 +132,25 @@ export default function CreatePage() {
               <option key={opt.value} value={opt.value}>{opt.label}</option>
             ))}
           </select>
+        </div>
+
+        <div>
+          <label className="text-sm font-semibold text-slate-500 block mb-1.5 flex items-center gap-1.5">
+            <Mail className="w-3.5 h-3.5" /> Recipient Email <span className="text-slate-300 font-normal">(optional — only this person can claim)</span>
+          </label>
+          <input
+            type="email"
+            value={recipientEmail}
+            onChange={(e) => setRecipientEmail(e.target.value)}
+            placeholder="alice@example.com"
+            className="w-full p-3.5 rounded-xl border border-slate-200 text-slate-900 text-sm font-medium focus:outline-none focus:border-indigo-500 focus:ring-4 focus:ring-indigo-500/10"
+            disabled={isCreating}
+          />
+          {recipientEmail.trim() && (
+            <p className="flex items-center gap-1 text-xs font-medium text-amber-600 mt-1.5">
+              <Shield className="w-3 h-3" /> Only {recipientEmail.trim()} will be able to claim this link
+            </p>
+          )}
         </div>
 
         {error && (
