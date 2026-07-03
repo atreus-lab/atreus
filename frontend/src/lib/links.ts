@@ -11,9 +11,11 @@ export interface StoredLink {
   linkHashHex: string;
   createdAt: number;
   claimed: boolean;
+  txHash?: string;
 }
 
 const STORAGE_KEY = "atreus_links";
+const RECEIVED_STORAGE_KEY = "atreus_received";
 
 export function getStoredLinks(): StoredLink[] {
   if (typeof window === "undefined") return [];
@@ -36,65 +38,112 @@ export function saveLink(link: StoredLink): void {
   localStorage.setItem(`${STORAGE_KEY}_${wallet.publicKey}`, JSON.stringify(links));
 }
 
-export function updateLinkStatus(secretHex: string, claimed: boolean): void {
+export function updateLinkStatus(secretHex: string, claimed: boolean, txHash?: string): void {
   const wallet = loadWallet();
   if (!wallet) return;
   const links = getStoredLinks();
   const idx = links.findIndex(l => l.secretHex === secretHex);
   if (idx !== -1) {
     links[idx].claimed = claimed;
+    if (txHash) links[idx].txHash = txHash;
     localStorage.setItem(`${STORAGE_KEY}_${wallet.publicKey}`, JSON.stringify(links));
   }
 }
 
-// Check contract storage to determine if a link has been claimed.
-// Uses the SDK's built-in getContractData helper for reliable ledger key construction.
-export async function checkLinkOnChain(linkHashHex: string): Promise<boolean | null> {
+// Save a claimed link to the *recipient's* storage so they can see it on their dashboard.
+export function saveClaimedLink(link: StoredLink): void {
+  const wallet = loadWallet();
+  if (!wallet) return;
+  const links = getClaimedLinks();
+  links.unshift(link);
+  localStorage.setItem(`${RECEIVED_STORAGE_KEY}_${wallet.publicKey}`, JSON.stringify(links));
+}
+
+// Get links the current user has claimed (as recipient).
+export function getClaimedLinks(): StoredLink[] {
+  if (typeof window === "undefined") return [];
+  const wallet = loadWallet();
+  if (!wallet) return [];
+  const raw = localStorage.getItem(`${RECEIVED_STORAGE_KEY}_${wallet.publicKey}`);
+  if (!raw) return [];
+  try {
+    return JSON.parse(raw);
+  } catch {
+    return [];
+  }
+}
+
+/** Try to extract a native number from an i128 XDR internal representation. */
+function extractI128(v: any): bigint | null {
+  try {
+    if (!v || v._arm !== 'i128') return null;
+    const parts = v._value;
+    if (!parts || !parts._attributes) return null;
+    const lo = parts._attributes.lo?._value;
+    const hi = parts._attributes.hi?._value;
+    if (lo === undefined || hi === undefined) return null;
+    const loBig = BigInt(lo);
+    const hiBig = BigInt(hi);
+    return (hiBig << BigInt(64)) + loBig;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Read link info (claimed status + amount) from the contract.
+ * Returns { claimed, amount } where amount is in XLM as a string, or null for both if unreadable.
+ */
+export async function readLinkInfo(linkHashHex: string): Promise<{ claimed: boolean | null; amount: string | null }> {
+  const result: { claimed: boolean | null; amount: string | null } = { claimed: null, amount: null };
   const contractId = process.env.NEXT_PUBLIC_CONTRACT_ID;
-  if (!contractId || !linkHashHex) return null;
+  if (!contractId || !linkHashHex) return result;
   try {
     const key = xdr.ScVal.scvBytes(Buffer.from(linkHashHex, "hex"));
     const entry = await rpcServer.getContractData(contractId, key, Durability.Persistent);
-    if (!entry) return null;
+    if (!entry) return result;
     const val = entry.val.contractData().val();
 
-    // Try Vec format: [creator, amount, asset, policy_type, policy_params, expires_at, claimed]
-    try {
-      const vec = val.vec();
-      if (vec && vec.length > 6) {
-        const claimedField = vec[6];
-        if (claimedField && claimedField.b() !== undefined) {
-          return claimedField.b() === true;
-        }
-      }
-    } catch {
-      // Not a Vec, try Map format
-    }
-
-    // Try Map format: [{key: Symbol("claimed"), val: Bool}, ...]
+    // Try Map format — Soroban stores #[contracttype] structs as ScMap with Symbol keys
     try {
       const map: any = val.map();
       if (map) {
-        for (const entry of map) {
-          const k: any = entry.key;
-          const v: any = entry.val;
-          if (k.sym && k.sym().toString() === "claimed" && v.b !== undefined) {
-            return v.b() === true;
+        for (let i = 0; i < map.length; i++) {
+          const entry: any = map[i];
+          const attrs = entry._attributes || entry;
+          const k: any = attrs.key;
+          const v: any = attrs.val;
+          if (k && k._arm === 'sym') {
+            const fieldName = Buffer.from(k._value).toString('utf8');
+            if (fieldName === 'claimed' && v && v._arm === 'b') {
+              result.claimed = v._value === true;
+            } else if (fieldName === 'amount' && v) {
+              const i128 = extractI128(v);
+              if (i128 !== null) {
+                // Convert stroops to XLM (1 XLM = 10,000,000 stroops)
+                const xlm = Number(i128) / 10_000_000;
+                result.amount = xlm.toFixed(7).replace(/\.?0+$/, '');
+              }
+            }
           }
         }
       }
     } catch {
-      // Not a Map either
+      // Not a Map
     }
 
-    return null;
+    return result;
   } catch (err: any) {
-    // getContractData throws { status: 404 } when no entry found — that's expected,
-    // not an error. Other errors (network, parse) are logged.
-    if (err?.status === 404) return null;
-    console.error("Failed to check link on-chain:", err);
-    return null;
+    if (err?.status === 404) return result;
+    console.error("Failed to read link info:", err);
+    return result;
   }
+}
+
+// Check contract storage to determine if a link has been claimed.
+export async function checkLinkOnChain(linkHashHex: string): Promise<boolean | null> {
+  const info = await readLinkInfo(linkHashHex);
+  return info.claimed;
 }
 
 // Refresh all stored links' claimed status from the chain.

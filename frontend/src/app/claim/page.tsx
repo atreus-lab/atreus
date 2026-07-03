@@ -6,7 +6,7 @@ import { useRouter } from 'next/navigation';
 import { connectWallet, claimLinkTx } from '@/lib/stellar';
 import { bytesToHex } from '@/lib/proof';
 import { generateClaimProof, requestAttestation } from '@/lib/zk';
-import { updateLinkStatus, checkLinkOnChain } from '@/lib/links';
+import { updateLinkStatus, checkLinkOnChain, saveClaimedLink, readLinkInfo } from '@/lib/links';
 import { Loader2, CheckCircle2, XCircle, ArrowLeft, Link2 } from 'lucide-react';
 
 type ClaimStatus =
@@ -130,7 +130,21 @@ const parseLinkInput = () => {
 
       setStatus('success');
       localStorage.setItem('atreus_claimed', Date.now().toString());
-      updateLinkStatus(secretHex, true);
+      updateLinkStatus(secretHex, true, hash);
+      // Read the actual amount from the contract for the recipient's dashboard
+      const linkInfo = await readLinkInfo(linkHashHex);
+      const displayAmount = linkInfo.amount || 'Claimed';
+      // Save to recipient's storage so they can see their claimed links on dashboard
+      saveClaimedLink({
+        id: `received-${Date.now()}`,
+        url: window.location.href,
+        amount: displayAmount,
+        secretHex,
+        linkHashHex,
+        createdAt: Date.now(),
+        claimed: true,
+        txHash: hash,
+      });
     } catch (err: any) {
       console.error(err);
       const friendly = getFriendlyErrorMessage(err);

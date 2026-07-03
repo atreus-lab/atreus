@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import Image from "next/image";
 import Link from "next/link";
 import { loadWallet, getBalance, getBalances, getTransactions, getExplorerUrl, type StoredWallet } from "@/lib/wallet";
-import { getStoredLinks, refreshLinkStatuses, type StoredLink } from "@/lib/links";
+import { getStoredLinks, refreshLinkStatuses, updateLinkStatus, getClaimedLinks, type StoredLink } from "@/lib/links";
 import { 
  LayoutDashboard, Wallet, Link2, ArrowRightLeft, BarChart3, Activity, Shield, 
  Settings, Search, Bell, ChevronDown, Send, ArrowDownToLine, RefreshCw, 
@@ -43,6 +43,7 @@ export default function DashboardPage() {
  const [claimLinkInput, setClaimLinkInput] = useState("");
  const [showClaimModal, setShowClaimModal] = useState(false);
  const [storedLinks, setStoredLinks] = useState<StoredLink[]>([]);
+ const [receivedLinks, setReceivedLinks] = useState<StoredLink[]>([]);
  const [copiedLinkId, setCopiedLinkId] = useState("");
 
  const loadData = useCallback(async (addr: string) => {
@@ -64,6 +65,11 @@ export default function DashboardPage() {
   navigator.clipboard.writeText(url);
   setCopiedLinkId(id);
   setTimeout(() => setCopiedLinkId(""), 2000);
+ };
+
+ const markAsClaimed = (secretHex: string) => {
+  updateLinkStatus(secretHex, true);
+  setStoredLinks(getStoredLinks());
  };
 
  const handleClaimLink = () => {
@@ -93,8 +99,12 @@ export default function DashboardPage() {
  setAddress(pk);
  setLoading(true);
  setStoredLinks(getStoredLinks());
+ setReceivedLinks(getClaimedLinks());
  loadData(pk).finally(() => setLoading(false));
- refreshLinkStatuses().then(() => setStoredLinks(getStoredLinks()));
+ refreshLinkStatuses().then(() => {
+   setStoredLinks(getStoredLinks());
+   setReceivedLinks(getClaimedLinks());
+  });
  }, [loadData, router]);
 
  if (loading) {
@@ -423,7 +433,7 @@ export default function DashboardPage() {
         <span className="text-xs font-bold text-slate-400">{pending.length} active</span>
        </div>
        <div className="flex flex-col gap-3">
-        {pending.slice(0, 5).map((link) => (
+            {pending.slice(0, 5).map((link) => (
          <div key={link.id} className="flex items-center justify-between p-3 rounded-xl bg-amber-50/40 border border-amber-100/60">
           <div className="flex flex-col min-w-0 flex-1 mr-3">
            <div className="flex items-center gap-2">
@@ -434,13 +444,22 @@ export default function DashboardPage() {
            </div>
            <span className="text-[10px] text-slate-400 mt-0.5">{new Date(link.createdAt).toLocaleDateString()} {new Date(link.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
           </div>
-          <button
-           onClick={() => copyLink(link.url, link.id)}
-           className="p-2 rounded-lg bg-white border border-amber-200 hover:bg-amber-50 hover:border-amber-300 transition-colors shrink-0"
-           title="Copy link"
-          >
-           {copiedLinkId === link.id ? <Check className="w-4 h-4 text-green-500" /> : <Copy className="w-4 h-4 text-amber-500" />}
-          </button>
+          <div className="flex items-center gap-1.5">
+           <button
+            onClick={() => markAsClaimed(link.secretHex)}
+            className="p-2 rounded-lg bg-white border border-green-200 hover:bg-green-50 hover:border-green-300 transition-colors shrink-0 group"
+            title="Mark as claimed"
+           >
+            <CheckCircle2 className="w-4 h-4 text-green-400 group-hover:text-green-600" />
+           </button>
+           <button
+            onClick={() => copyLink(link.url, link.id)}
+            className="p-2 rounded-lg bg-white border border-amber-200 hover:bg-amber-50 hover:border-amber-300 transition-colors shrink-0"
+            title="Copy link"
+           >
+            {copiedLinkId === link.id ? <Check className="w-4 h-4 text-green-500" /> : <Copy className="w-4 h-4 text-amber-500" />}
+           </button>
+          </div>
          </div>
         ))}
        </div>
@@ -448,7 +467,7 @@ export default function DashboardPage() {
      );
     })()}
 
-    {/* Claimed Links */}
+    {/* Claimed Links (created by you) */}
     {(() => {
      const claimed = storedLinks.filter(l => l.claimed);
      if (claimed.length === 0) return null;
@@ -457,7 +476,7 @@ export default function DashboardPage() {
        <div className="flex items-center justify-between mb-6">
         <h3 className="font-extrabold text-slate-900 flex items-center gap-2">
          <CheckCircle2 className="w-5 h-5 text-green-500" />
-         Claimed
+         Claimed (Created by You)
         </h3>
         <span className="text-xs font-bold text-green-500">{claimed.length} total</span>
        </div>
@@ -471,7 +490,19 @@ export default function DashboardPage() {
              <CheckCircle2 className="w-3 h-3" /> Claimed
             </span>
            </div>
-           <span className="text-[10px] text-slate-400 mt-0.5">{new Date(link.createdAt).toLocaleDateString()} {new Date(link.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
+           <span className="text-[10px] text-slate-400 mt-0.5">{link.createdAt ? new Date(link.createdAt).toLocaleDateString() : ''} {link.createdAt ? new Date(link.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : ''}</span>
+           {link.txHash && (
+            <div className="flex items-center gap-1 mt-1">
+             <span className="text-[10px] font-mono text-slate-400 truncate max-w-[150px]">TX: {link.txHash.slice(0, 16)}...</span>
+             <button
+              onClick={() => copyLink(link.txHash!, `tx-${link.id}`)}
+              className="p-1 rounded bg-white border border-slate-200 hover:bg-slate-50 transition-colors shrink-0"
+              title="Copy transaction hash"
+             >
+              {copiedLinkId === `tx-${link.id}` ? <Check className="w-3 h-3 text-green-500" /> : <Copy className="w-3 h-3 text-slate-400" />}
+             </button>
+            </div>
+           )}
           </div>
          </div>
         ))}
@@ -480,6 +511,52 @@ export default function DashboardPage() {
      );
     })()}
 
+   </div>
+  )}
+
+  {/* Links You've Claimed (as recipient) — shown independently even if user has no created links */}
+  {receivedLinks.length > 0 && (
+   <div id="received-links-section" className="space-y-6">
+    {(() => {
+     return (
+      <div className="bg-white rounded-[2rem] p-8 shadow-[0_12px_40px_rgba(0,0,0,0.04)] border border-slate-100">
+       <div className="flex items-center justify-between mb-6">
+        <h3 className="font-extrabold text-slate-900 flex items-center gap-2">
+         <ArrowDownToLine className="w-5 h-5 text-blue-500" />
+         Links You&apos;ve Claimed
+        </h3>
+        <span className="text-xs font-bold text-blue-500">{receivedLinks.length} total</span>
+       </div>
+       <div className="flex flex-col gap-3">
+        {receivedLinks.slice(0, 5).map((link) => (
+         <div key={link.id} className="flex items-center justify-between p-3 rounded-xl bg-blue-50/30 border border-blue-100/60">
+          <div className="flex flex-col min-w-0 flex-1 mr-3">
+           <div className="flex items-center gap-2">
+            <span className="font-bold text-slate-900 text-sm">{link.amount} XLM</span>
+            <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-blue-50 text-blue-600 border border-blue-200 flex items-center gap-1">
+             <ArrowDownToLine className="w-3 h-3" /> Received
+            </span>
+           </div>
+           <span className="text-[10px] text-slate-400 mt-0.5">{new Date(link.createdAt).toLocaleDateString()} {new Date(link.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
+           {link.txHash && (
+            <div className="flex items-center gap-1 mt-1">
+             <span className="text-[10px] font-mono text-slate-400 truncate max-w-[150px]">TX: {link.txHash.slice(0, 16)}...</span>
+             <button
+              onClick={() => copyLink(link.txHash!, `rx-${link.id}`)}
+              className="p-1 rounded bg-white border border-slate-200 hover:bg-slate-50 transition-colors shrink-0"
+              title="Copy transaction hash"
+             >
+              {copiedLinkId === `rx-${link.id}` ? <Check className="w-3 h-3 text-green-500" /> : <Copy className="w-3 h-3 text-slate-400" />}
+             </button>
+            </div>
+           )}
+          </div>
+         </div>
+        ))}
+       </div>
+      </div>
+     );
+    })()}
    </div>
   )}
 
