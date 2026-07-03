@@ -6,11 +6,13 @@ import { loadWallet, getBalance, clearWallet, type StoredWallet } from "@/lib/wa
 import { Copy, Check, Eye, EyeOff, LogOut, Wallet } from "lucide-react";
 import AppHeader from "@/components/AppHeader";
 import EmptyState from "@/components/ui/EmptyState";
+import BalanceCard from "@/components/BalanceCard";
 
 export default function WalletPage() {
   const router = useRouter();
   const [wallet, setWallet] = useState<StoredWallet | null>(null);
   const [balance, setBalance] = useState("0");
+  const [showBalance, setShowBalance] = useState(true);
   const [loading, setLoading] = useState(true);
   const [showMnemonic, setShowMnemonic] = useState(false);
   const [copied, setCopied] = useState<"address" | "mnemonic" | null>(null);
@@ -58,23 +60,21 @@ export default function WalletPage() {
         ) : (
           <div className="max-w-4xl mx-auto space-y-6">
             {/* Balance Panel */}
-            <div className="panel">
-              <div className="panel-header">
-                <h2 className="section-title">Balance</h2>
-                <Wallet className="w-4 h-4 text-accent" />
-              </div>
-              <div className="panel-body">
-                <p className="text-4xl font-extrabold tracking-tight text-primary">
-                  {parseFloat(balance).toFixed(2)}{" "}
-                  <span className="text-lg font-semibold text-secondary">XLM</span>
+            <BalanceCard
+              balance={balance}
+              showBalance={showBalance}
+              onToggleBalance={() => setShowBalance(!showBalance)}
+              onClaimClick={() => router.push("/claim")}
+              onCreateLinkClick={() => router.push("/create")}
+            />
+
+            {wallet.email && (
+              <div className="flex justify-end -mt-4 px-2">
+                <p className="text-xs font-semibold text-slate-500">
+                  Connected as <span className="text-slate-300 font-bold">{wallet.email}</span>
                 </p>
-                {wallet.email && (
-                  <p className="text-sm font-medium mt-2 text-secondary">
-                    Connected as <span className="text-primary">{wallet.email}</span>
-                  </p>
-                )}
               </div>
-            </div>
+            )}
 
             {/* Address Panel */}
             <div className="panel">

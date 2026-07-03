@@ -11,6 +11,7 @@ export type Token = {
   name: string;
   chainId: string;
   address?: string;
+  issuer?: string | null;
   balance?: number;
   usd?: number;
   trending?: boolean;

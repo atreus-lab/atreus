@@ -1,5 +1,6 @@
 "use client";
 import { useEffect, useRef, useState } from "react";
+import dynamic from "next/dynamic";
 import Image from "next/image";
 import Link from "next/link";
 import { motion, AnimatePresence, useInView } from "motion/react";
@@ -13,7 +14,7 @@ import assetsImg from "../media/assets.png";
 import earthImg from "../media/ateruseart.png";
 import clockImg from "../media/clock.png";
 import shieldImg from "../media/lastcard.png";
-import Beams from "../components/Beams";
+const Beams = dynamic(() => import("../components/Beams"), { ssr: false });
 import ShinyText from "../components/ShinyText";
 import BorderGlow from "../components/BorderGlow";
 import Grainient from "../components/Grainient";

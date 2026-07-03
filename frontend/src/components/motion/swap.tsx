@@ -1,7 +1,7 @@
 "use client";
 // beui.dev/components/blocks/swap
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Settings } from "lucide-react";
 import { useReducedMotion } from "motion/react";
 import { cn } from "@/lib/utils";
@@ -22,6 +22,13 @@ export interface MultiChainSwapProps {
   defaultFromId?: string;
   defaultToId?: string;
   className?: string;
+  showDestination?: boolean;
+  feeLabel?: string;
+  slippage?: number;
+  eta?: string;
+  getQuote?: (from: Token, to: Token, amount: number) => Promise<number>;
+  onSwap?: (from: Token, to: Token, amount: number) => void | Promise<void>;
+  swapping?: boolean;
 }
 
 export function MultiChainSwap({
@@ -30,6 +37,13 @@ export function MultiChainSwap({
   defaultFromId = "stellar-xlm",
   defaultToId = "stellar-usdc",
   className,
+  showDestination = true,
+  feeLabel = "$0.42",
+  slippage = 0.5,
+  eta = "≈ 24s",
+  getQuote,
+  onSwap,
+  swapping = false,
 }: MultiChainSwapProps) {
   const reduce = useReducedMotion();
   const [fromId, setFromId] = useState(defaultFromId);
@@ -40,6 +54,7 @@ export function MultiChainSwap({
   const [picking, setPicking] = useState<TokenSide | null>(null);
   const [showDest, setShowDest] = useState(false);
   const [destAddress, setDestAddress] = useState("");
+  const [liveToAmount, setLiveToAmount] = useState<number | null>(null);
 
   const from = findToken(tokens, fromId);
   const to = findToken(tokens, toId);
@@ -47,20 +62,63 @@ export function MultiChainSwap({
   const toChain = findChain(chains, to.chainId);
 
   const numericAmount = Number(amount) || 0;
-  const quoteKey = `${numericAmount}:${fromId}:${toId}`;
-  const rate = useMemo(() => {
+
+  const demoRate = useMemo(() => {
     if (!from.usd || !to.usd) return 1;
     return from.usd / to.usd;
   }, [from.usd, to.usd]);
-  const toAmount = numericAmount * rate;
+
+  const quoteCache = useRef(new Map<string, { amount: number; timestamp: number }>());
 
   useEffect(() => {
-    if (!quoteKey) return;
+    setLiveToAmount(null);
+  }, [fromId, toId]);
+
+  useEffect(() => {
+    if (!getQuote) return;
+    if (numericAmount <= 0) {
+      setQuoting(false);
+      return;
+    }
+
+    const cacheKey = `${fromId}:${toId}:${numericAmount}`;
+    const cached = quoteCache.current.get(cacheKey);
+    if (cached && Date.now() - cached.timestamp < 10000) {
+      setLiveToAmount(cached.amount);
+      return;
+    }
+
+    setQuoting(true);
+    let cancelled = false;
+    const timer = setTimeout(async () => {
+      try {
+        const result = await getQuote(from, to, numericAmount);
+        if (cancelled) return;
+        setLiveToAmount(result);
+        quoteCache.current.set(cacheKey, { amount: result, timestamp: Date.now() });
+      } catch {
+        if (!cancelled) setLiveToAmount(null);
+      } finally {
+        if (!cancelled) setQuoting(false);
+      }
+    }, 500);
+
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
+  }, [getQuote, fromId, toId, numericAmount, from, to]);
+
+  useEffect(() => {
+    if (getQuote) return;
     if (numericAmount === 0) return;
     setQuoting(true);
     const id = setTimeout(() => setQuoting(false), 450);
     return () => clearTimeout(id);
-  }, [numericAmount, quoteKey]);
+  }, [getQuote, numericAmount, fromId, toId]);
+
+  const toAmount = getQuote ? (liveToAmount ?? 0) : numericAmount * demoRate;
+  const rate = numericAmount > 0 && toAmount > 0 ? toAmount / numericAmount : demoRate;
 
   const flip = () => {
     setFlipRot((r) => r + 180);
@@ -80,6 +138,10 @@ export function MultiChainSwap({
     }
 
     setPicking(null);
+  };
+
+  const handleSwapClick = () => {
+    onSwap?.(from, to, numericAmount);
   };
 
   return (
@@ -131,28 +193,32 @@ export function MultiChainSwap({
           from={from}
           to={to}
           rate={rate}
-          fee={0.42}
-          slippage={0.5}
-          eta="≈ 24s"
+          feeLabel={feeLabel}
+          slippage={slippage}
+          eta={eta}
           quoting={quoting}
         />
 
-        <DestinationRow
-          show={showDest}
-          onToggle={() => {
-            if (showDest) setDestAddress("");
-            setShowDest((v) => !v);
-          }}
-          address={destAddress}
-          onAddress={setDestAddress}
-          reduce={!!reduce}
-        />
+        {showDestination ? (
+          <DestinationRow
+            show={showDest}
+            onToggle={() => {
+              if (showDest) setDestAddress("");
+              setShowDest((v) => !v);
+            }}
+            address={destAddress}
+            onAddress={setDestAddress}
+            reduce={!!reduce}
+          />
+        ) : null}
 
         <ActionButton
           from={from}
           to={to}
           amount={numericAmount}
-          destAddress={destAddress}
+          destAddress={showDestination ? destAddress : ""}
+          onClick={handleSwapClick}
+          loading={swapping}
         />
       </div>
 
