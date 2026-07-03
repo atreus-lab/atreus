@@ -31,6 +31,11 @@ export default function ProfilePage() {
  const [storedWallet, setStoredWallet] = useState<StoredWallet | null>(null);
  const [address, setAddress] = useState("");
  const [loading, setLoading] = useState(true);
+ const [copied, setCopied] = useState(false);
+ const [defaultNetwork, setDefaultNetwork] = useState("testnet");
+ const [currency, setCurrency] = useState("USD");
+ const [language, setLanguage] = useState("en");
+ const [exporting, setExporting] = useState(false);
 
  useEffect(() => {
  const wallet = loadWallet();
@@ -41,9 +46,133 @@ export default function ProfilePage() {
  setStoredWallet(wallet);
  setAddress(wallet.publicKey);
  setLoading(false);
- }, [router]);
+ }, [router]); const handleExport = async () => {
+ if (!storedWallet) return;
+ setExporting(true);
+ try {
+ const balances = await getBalances(storedWallet.publicKey);
+ const transactions = await getTransactions(storedWallet.publicKey, 50);
+ const pk = storedWallet.publicKey;
+ const netLabel = defaultNetwork === 'testnet' ? 'Stellar Testnet' : 'Stellar Mainnet';
+ const now = new Date().toLocaleString();    // ── Build per-counterparty summaries ──
+ const counterparties: Record<string, { received: number; sent: number; txs: number; firstSeen: string; lastSeen: string }> = {};
+ let totalReceived = 0, totalSent = 0;
+ for (const tx of transactions) {
+   const counterparty = tx.from === pk ? tx.to : tx.from;
+   if (!counterparty || counterparty === pk) continue;
+   if (!counterparties[counterparty]) {
+     counterparties[counterparty] = { received: 0, sent: 0, txs: 0, firstSeen: tx.created_at, lastSeen: tx.created_at };
+   }
+   const amount = parseFloat(tx.amount) || 0;
+   if (tx.to === pk) {
+     counterparties[counterparty].received += amount;
+     totalReceived += amount;
+   } else if (tx.from === pk) {
+     counterparties[counterparty].sent += amount;
+     totalSent += amount;
+   }
+   counterparties[counterparty].txs += 1;
+   if (tx.created_at < counterparties[counterparty].firstSeen) counterparties[counterparty].firstSeen = tx.created_at;
+   if (tx.created_at > counterparties[counterparty].lastSeen) counterparties[counterparty].lastSeen = tx.created_at;
+ }
 
- if (loading) {
+ // ── Build human-readable report ──
+ const sep = '═'.repeat(72);
+ const sub = '─'.repeat(72);
+
+ let report = `
+${sep}
+  ATREUS ACCOUNT REPORT
+${sep}
+
+Generated: ${now}
+Network:   ${netLabel}
+
+── Account ──────────────────────────────────────────────────────
+  Public Key:  ${pk}
+  Email:       ${storedWallet.email || 'N/A'}
+  Explorer:    https://stellar.expert/explorer/${defaultNetwork === 'testnet' ? 'testnet' : 'public'}/account/${pk}
+`;
+
+ // ── Summary ──
+ report += `── Summary ──────────────────────────────────────────────────────\n`;
+ const xlmBal = balances?.find((b: any) => b.asset_type === 'native')?.balance || '0';
+ report += `  Total XLM Balance:  ${parseFloat(xlmBal).toLocaleString()}\n`;
+ report += `  Total Transactions: ${transactions.length}\n`;
+ report += `  Total Counterparties: ${Object.keys(counterparties).length}\n`;
+ if (totalReceived > 0 || totalSent > 0) {
+   report += `  Total Received:     ${totalReceived.toFixed(2)} XLM\n`;
+   report += `  Total Sent:         ${totalSent.toFixed(2)} XLM\n`;
+ }
+ report += `\n`;
+
+ // Balances
+ report += `── Balances ────────────────────────────────────────────────────\n`;
+ if (balances && balances.length > 0) {
+ for (const b of balances) {
+ const assetName = b.asset_type === 'native' ? 'XLM' : (b.asset_code || b.asset_type);
+ const amt = parseFloat(b.balance).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 7 });
+ report += `  ${assetName.padEnd(10)} ${amt}\n`;
+ }
+ } else {
+ report += `  No balances found.\n`;
+ }
+ report += `\n`;
+
+ // Counterparty summaries
+ const sortedCounterparties = Object.entries(counterparties).sort((a, b) => b[1].txs - a[1].txs);
+ report += `── Activity by Counterparty ────────────────────────────────────\n`;
+ if (sortedCounterparties.length > 0) {
+ report += `\n  ${'Address'.padEnd(40)} ${'Received'.padEnd(12)} ${'Sent'.padEnd(12)} ${'Txs'.padEnd(6)}  Last Activity\n`;
+ report += `  ${sub}\n`;
+ for (const [addr, info] of sortedCounterparties) {
+ const shortAddr = `${addr.slice(0, 8)}...${addr.slice(-6)}`;
+ const lastDate = new Date(info.lastSeen).toLocaleDateString();
+ report += `  ${shortAddr.padEnd(40)} ${info.received.toFixed(2).padEnd(12)} ${info.sent.toFixed(2).padEnd(12)} ${String(info.txs).padEnd(6)}  ${lastDate}\n`;
+ }
+ } else {
+ report += `  No transactions yet.\n`;
+ }
+ report += `\n`;
+
+ // Transaction log
+ report += `── Transaction History ────────────────────────────────────────\n`;
+ if (transactions.length > 0) {
+ report += `\n  ${'Date'.padEnd(14)} ${'Type'.padEnd(16)} ${'Amount'.padEnd(16)} ${'Asset'.padEnd(10)}  ${'With'.padEnd(35)}\n`;
+ report += `  ${sub}\n`;
+ for (const tx of transactions) {
+   const date = new Date(tx.created_at).toLocaleDateString();
+   const type = (tx.type || 'payment').padEnd(16);
+   const amount = (parseFloat(tx.amount) || 0).toFixed(4).padEnd(16);
+   const asset = (tx.asset_code || 'XLM').padEnd(10);
+   const counterparty = tx.from === pk ? tx.to : tx.from;
+   const counterpartyShort = counterparty ? `${counterparty.slice(0, 8)}...${counterparty.slice(-6)}` : '(unknown)';
+   const dir = tx.to === pk ? '← Received from' : '→ Sent to';
+   report += `  ${date.padEnd(14)} ${type} ${amount} ${asset}  ${dir} ${counterpartyShort}\n`;
+ }
+ } else {
+ report += `  No transactions found.\n`;
+ }
+ report += `\n${sep}\n  End of report\n${sep}\n`;
+
+ const blob = new Blob([report], { type: 'text/plain;charset=utf-8' });
+ const url = URL.createObjectURL(blob);
+ const a = document.createElement('a');
+ a.href = url;
+ a.download = `atreus-account-${pk.slice(0, 8)}.txt`;
+ document.body.appendChild(a);
+ a.click();
+ document.body.removeChild(a);
+ URL.revokeObjectURL(url);
+ } catch (err) {
+ console.error('Export failed:', err);
+ alert('Failed to export account data. Please check your connection and try again.');
+ } finally {
+ setExporting(false);
+ }
+ };
+
+if (loading) {
  return (
  <div className="min-h-screen bg-[#FAFBFF] flex items-center justify-center">
  <div className="animate-spin w-8 h-8 border-4 border-indigo-600 border-t-transparent rounded-full"></div>
@@ -295,17 +424,21 @@ export default function ProfilePage() {
  <div className="flex flex-col gap-8 relative z-10">
  <div className="flex flex-col gap-2.5 items-start">
  <span className="text-xs font-bold text-slate-400 uppercase tracking-wider">Wallet Address</span>
- <div className="flex items-center gap-3 bg-slate-50 border border-slate-100 px-4 py-3 rounded-xl shadow-sm hover:shadow-md transition-shadow group cursor-pointer" onClick={() => navigator.clipboard.writeText(address)}>
+ <div className="flex items-center gap-3 bg-slate-50 border border-slate-100 px-4 py-3 rounded-xl shadow-sm hover:shadow-md transition-shadow group cursor-pointer" onClick={() => { navigator.clipboard.writeText(address); setCopied(true); setTimeout(() => setCopied(false), 2000); }}>
  <span className="text-base font-mono font-bold text-slate-800 tracking-tight">{address.slice(0, 12)}...{address.slice(-6)}</span>
- <Copy className="w-5 h-5 text-indigo-400 group-hover:text-indigo-600" />
+ {copied ? (
+   <CheckCircle2 className="w-5 h-5 text-emerald-500" />
+ ) : (
+   <Copy className="w-5 h-5 text-indigo-400 group-hover:text-indigo-600" />
+ )}
  </div>
  </div>
  
  <div className="flex flex-col gap-2.5 items-start">
  <span className="text-xs font-bold text-slate-400 uppercase tracking-wider">Network</span>
  <div className="flex items-center gap-3">
- <span className="text-base font-bold text-slate-700 ">Stellar Testnet</span>
- <div className="w-2.5 h-2.5 rounded-full bg-green-500 shadow-[0_0_8px_rgba(34,197,94,0.6)] animate-pulse"></div>
+ <div className={`w-2.5 h-2.5 rounded-full ${defaultNetwork === 'testnet' ? 'bg-green-500 animate-pulse shadow-[0_0_8px_rgba(34,197,94,0.6)]' : 'bg-amber-500'} shrink-0`}></div>
+ <span className="text-base font-bold text-slate-700">{defaultNetwork === 'testnet' ? 'Stellar Testnet' : 'Stellar Mainnet'}</span>
  </div>
  </div>
 
@@ -332,15 +465,34 @@ export default function ProfilePage() {
  {/* Currency Display */}
  <div className="flex flex-col sm:flex-row sm:items-center justify-between p-4 hover:bg-slate-50 rounded-2xl transition-colors border border-transparent hover:border-slate-100 gap-4">
  <div className="flex items-center gap-5">
- <div className="w-12 h-12 rounded-xl bg-indigo-50 text-indigo-500 flex items-center justify-center shrink-0"><span className="font-bold text-lg">₹</span></div>
+ <div className="w-12 h-12 rounded-xl bg-indigo-50 text-indigo-500 flex items-center justify-center shrink-0"><span className="font-bold text-lg">$</span></div>
  <div className="flex flex-col">
  <span className="font-bold text-slate-900 text-base">Currency Display</span>
  <span className="text-xs font-semibold text-slate-500 mt-0.5">Choose your preferred currency</span>
  </div>
  </div>
- <button className="flex items-center justify-between gap-3 bg-white border border-slate-200 px-5 py-2.5 rounded-xl text-sm font-bold text-slate-700 shadow-sm hover:border-indigo-300 transition-colors w-full sm:w-auto">
- INR (₹) <ChevronDown className="w-5 h-5 text-slate-400 "/>
- </button>
+ <select value={currency} onChange={e => setCurrency(e.target.value)} className="bg-white border border-slate-200 px-5 py-2.5 rounded-xl text-sm font-bold text-slate-700 shadow-sm hover:border-indigo-300 transition-colors appearance-none cursor-pointer outline-none w-full sm:w-auto">
+ <option value="USD">USD ($)</option>
+ <option value="EUR">EUR (€)</option>
+ <option value="GBP">GBP (£)</option>
+ <option value="JPY">JPY (¥)</option>
+ <option value="CNY">CNY (¥)</option>
+ <option value="INR">INR (₹)</option>
+ <option value="NGN">NGN (₦)</option>
+ <option value="KRW">KRW (₩)</option>
+ <option value="BRL">BRL (R$)</option>
+ <option value="AUD">AUD (A$)</option>
+ <option value="CAD">CAD (C$)</option>
+ <option value="CHF">CHF (Fr)</option>
+ <option value="RUB">RUB (₽)</option>
+ <option value="MXN">MXN (Mex$)</option>
+ <option value="ZAR">ZAR (R)</option>
+ <option value="SGD">SGD (S$)</option>
+ <option value="HKD">HKD (HK$)</option>
+ <option value="SEK">SEK (kr)</option>
+ <option value="NOK">NOK (kr)</option>
+ <option value="AED">AED (د.إ)</option>
+ </select>
  </div>
  
  <div className="h-px bg-slate-100 ml-20 my-1.5"></div>
@@ -378,19 +530,33 @@ export default function ProfilePage() {
 
  {/* Language */}
  <div className="flex flex-col sm:flex-row sm:items-center justify-between p-4 hover:bg-slate-50 rounded-2xl transition-colors border border-transparent hover:border-slate-100 gap-4">
- <Link href="/" className="flex items-center gap-3 cursor-pointer hover:opacity-80 transition-opacity">
- <div className="w-10 h-10 rounded-2xl bg-indigo-600 flex items-center justify-center shadow-lg shadow-indigo-600/30">
- <Image src={logo} alt="Atreus" className="w-full h-full object-cover rounded-2xl" />
- </div>
- <span className="font-black text-2xl tracking-tight text-slate-900">Atreus</span>
- </Link>
+ <div className="flex items-center gap-5">
+ <div className="w-12 h-12 rounded-xl bg-blue-50 text-blue-500 flex items-center justify-center shrink-0"><Globe className="w-6 h-6"/></div>
  <div className="flex flex-col">
  <span className="font-bold text-slate-900 text-base">Language</span>
  <span className="text-xs font-semibold text-slate-500 mt-0.5">Choose your preferred language</span>
  </div>
- <button className="flex items-center justify-between gap-3 bg-white border border-slate-200 px-5 py-2.5 rounded-xl text-sm font-bold text-slate-700 shadow-sm hover:border-indigo-300 transition-colors w-full sm:w-auto">
- English <ChevronDown className="w-5 h-5 text-slate-400 "/>
- </button>
+ </div>
+ <select value={language} onChange={e => setLanguage(e.target.value)} className="bg-white border border-slate-200 px-5 py-2.5 rounded-xl text-sm font-bold text-slate-700 shadow-sm hover:border-indigo-300 transition-colors appearance-none cursor-pointer outline-none w-full sm:w-auto">
+ <option value="en">English</option>
+ <option value="es">Español</option>
+ <option value="fr">Français</option>
+ <option value="de">Deutsch</option>
+ <option value="zh">中文</option>
+ <option value="ja">日本語</option>
+ <option value="ar">العربية</option>
+ <option value="pt">Português</option>
+ <option value="hi">हिन्दी</option>
+ <option value="ru">Русский</option>
+ <option value="it">Italiano</option>
+ <option value="ko">한국어</option>
+ <option value="tr">Türkçe</option>
+ <option value="nl">Nederlands</option>
+ <option value="pl">Polski</option>
+ <option value="vi">Tiếng Việt</option>
+ <option value="th">ไทย</option>
+ <option value="id">Bahasa Indonesia</option>
+ </select>
  </div>
 
  <div className="h-px bg-slate-100 ml-20 my-1.5"></div>
@@ -404,9 +570,13 @@ export default function ProfilePage() {
  <span className="text-xs font-semibold text-slate-500 mt-0.5">Select default network</span>
  </div>
  </div>
- <button className="flex items-center justify-between gap-3 bg-white border border-slate-200 px-5 py-2.5 rounded-xl text-sm font-bold text-slate-700 shadow-sm hover:border-indigo-300 transition-colors w-full sm:w-auto">
- Stellar Testnet <ChevronDown className="w-5 h-5 text-slate-400 "/>
- </button>
+ <div className="flex items-center gap-3 w-full sm:w-auto">
+ <div className={`w-2.5 h-2.5 rounded-full ${defaultNetwork === 'testnet' ? 'bg-green-500 animate-pulse shadow-[0_0_8px_rgba(34,197,94,0.6)]' : 'bg-amber-500'} shrink-0`}></div>
+ <select value={defaultNetwork} onChange={e => setDefaultNetwork(e.target.value)} className="bg-white border border-slate-200 px-5 py-2.5 rounded-xl text-sm font-bold text-slate-700 shadow-sm hover:border-indigo-300 transition-colors appearance-none cursor-pointer outline-none">
+ <option value="testnet">Stellar Testnet</option>
+ <option value="mainnet">Stellar Mainnet</option>
+ </select>
+ </div>
  </div>
 
  </div>
@@ -418,16 +588,20 @@ export default function ProfilePage() {
  
  <div className="flex flex-col gap-5">
  {/* Export */}
- <div className="flex items-center justify-between p-5 bg-indigo-50/50 hover:bg-indigo-50 border border-indigo-100 rounded-2xl transition-colors cursor-pointer group">
+ <button onClick={handleExport} className="flex items-center justify-between p-5 bg-indigo-50/50 hover:bg-indigo-50 border border-indigo-100 rounded-2xl transition-colors cursor-pointer group w-full text-left">
  <div className="flex items-center gap-5">
- <Download className="w-6 h-6 text-indigo-500 group-hover:-translate-y-0.5 transition-transform"/>
+ <Download className={`w-6 h-6 text-indigo-500 ${exporting ? 'animate-bounce' : 'group-hover:-translate-y-0.5'} transition-transform`}/>
  <div className="flex flex-col">
- <span className="font-bold text-indigo-900 text-base">Export Account Data</span>
- <span className="text-xs font-semibold text-indigo-500 mt-0.5">Download your account data</span>
+ <span className="font-bold text-indigo-900 text-base">{exporting ? 'Exporting...' : 'Export Account Data'}</span>
+ <span className="text-xs font-semibold text-indigo-500 mt-0.5">{exporting ? 'Gathering your data...' : 'Download your account data'}</span>
  </div>
  </div>
+ {exporting ? (
+ <div className="w-5 h-5 border-2 border-indigo-500 border-t-transparent rounded-full animate-spin"></div>
+ ) : (
  <ChevronRight className="w-5 h-5 text-indigo-400 group-hover:text-indigo-600 transition-colors"/>
- </div>
+ )}
+ </button>
  
  {/* Delete */}
  <div className="flex items-center justify-between p-5 bg-red-50 hover:bg-red-100 border border-red-100 rounded-2xl transition-colors cursor-pointer group">
