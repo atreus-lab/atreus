@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import Image from "next/image";
 import Link from "next/link";
 import { loadWallet, getBalance, getBalances, getTransactions, getExplorerUrl, type StoredWallet } from "@/lib/wallet";
-import { getStoredLinks, refreshLinkStatuses, updateLinkStatus, getClaimedLinks, type StoredLink } from "@/lib/links";
+import { getStoredLinks, refreshLinkStatuses, getClaimedLinks, type StoredLink } from "@/lib/links";
 import { 
  LayoutDashboard, Wallet, Link2, ArrowRightLeft, BarChart3, Activity, Shield, 
  Settings, Search, Bell, ChevronDown, Send, ArrowDownToLine, RefreshCw, 
@@ -47,7 +47,7 @@ export default function DashboardPage() {
  const [copiedLinkId, setCopiedLinkId] = useState("");
  const [showBalance, setShowBalance] = useState(true);
  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
- const [notifications, setNotifications] = useState<{ id: string; title: string; description: string; time: number; read: boolean }[]>([]);
+ const [notifications, setNotifications] = useState<{ id: string; title: string; description: string; time: number; read: boolean; kind: string }[]>([]);
  const [showNotifications, setShowNotifications] = useState(false);
  const notifiedRef = useRef<Set<string>>(new Set());
  const notifRef = useRef<HTMLDivElement>(null);
@@ -62,8 +62,10 @@ export default function DashboardPage() {
  setBalance(bal);
  setBalances(bals);
  setTransactions(txs);
+ return { bals, txs };
  } catch (err: any) {
  console.error(err);
+ return { bals: [], txs: [] };
  }
  }, []);
 
@@ -71,11 +73,6 @@ export default function DashboardPage() {
   navigator.clipboard.writeText(url);
   setCopiedLinkId(id);
   setTimeout(() => setCopiedLinkId(""), 2000);
- };
-
- const markAsClaimed = (secretHex: string) => {
-  updateLinkStatus(secretHex, true);
-  setStoredLinks(getStoredLinks());
  };
 
  const handleClaimLink = () => {
@@ -97,22 +94,96 @@ export default function DashboardPage() {
  // Notification check — run after link status refresh and periodically
  const checkForNotifications = useCallback(() => {
   const links = getStoredLinks();
+  const claimed = getClaimedLinks();
+  const pk = address;
   const notified = notifiedRef.current;
+
+  // 1. Links created by you that got claimed
   for (const link of links) {
-   if (link.claimed && !notified.has(link.secretHex)) {
-    notified.add(link.secretHex);
-    const notif = {
-     id: `link-claimed-${link.secretHex}`,
+   const nid = `link-claimed-${link.secretHex}`;
+   if (link.claimed && !notified.has(nid)) {
+    notified.add(nid);
+    setNotifications(prev => [{
+     id: nid,
      title: "Payment Link Claimed 🎉",
      description: `${link.amount} XLM has been claimed via your payment link.`,
      time: Date.now(),
      read: false,
-    };
-    setNotifications(prev => [notif, ...prev].slice(0, 20));
+     kind: 'link_claimed',
+    }, ...prev].slice(0, 50));
    }
   }
-  localStorage.setItem("atreus_notified", JSON.stringify([...notified]));
- }, []);
+
+  // 2. Links you claimed (as recipient)
+  for (const link of claimed) {
+   const nid = `you-claimed-${link.secretHex}`;
+   if (!notified.has(nid)) {
+    notified.add(nid);
+    setNotifications(prev => [{
+     id: nid,
+     title: "Link Claimed Successfully ✅",
+     description: `You claimed ${link.amount} XLM via a payment link.`,
+     time: Date.now(),
+     read: false,
+     kind: 'you_claimed',
+    }, ...prev].slice(0, 50));
+   }
+  }
+
+  const saveNotified = () => {
+   localStorage.setItem("atreus_notified", JSON.stringify([...notified]));
+  };
+
+  // 3. Check for newly activated assets
+  if (pk) {
+   getBalances(pk).then(bals => {
+    for (const b of bals) {
+     const code = b.asset_type === 'native' ? 'XLM' : b.asset_code;
+     if (!code) continue;
+     const nid = `asset-${code}`;
+     if (!notified.has(nid)) {
+      notified.add(nid);
+      setNotifications(prev => [{
+       id: nid,
+       title: `Asset Activated 💎`,
+       description: `${code} has been activated in your wallet.`,
+       time: Date.now(),
+       read: false,
+       kind: 'asset_added',
+      }, ...prev].slice(0, 50));
+     }
+    }
+   }).catch(() => {});
+  }
+
+  // 4. New transactions
+  if (pk) {
+   getTransactions(pk, 10).then(txs => {
+    for (const tx of txs) {
+     const nid = `tx-${tx.id}`;
+     if (!notified.has(nid)) {
+      notified.add(nid);
+      const isSend = tx.from === pk;
+      const amount = parseFloat(tx.amount).toFixed(2);
+      const asset = tx.asset_code || 'XLM';
+      setNotifications(prev => [{
+       id: nid,
+       title: isSend ? `XLM Sent →` : `XLM Received ←`,
+       description: isSend
+        ? `${amount} ${asset} sent to ${tx.to?.slice(0, 8)}...`
+        : `${amount} ${asset} received from ${tx.from?.slice(0, 8)}...`,
+       time: new Date(tx.created_at).getTime(),
+       read: false,
+       kind: isSend ? 'sent' : 'received',
+      }, ...prev].slice(0, 50));
+     }
+    }
+    saveNotified();
+   }).catch(() => saveNotified());
+  } else {
+   saveNotified();
+  }
+ }, [address]);
 
  // Periodic notification check
  useEffect(() => {
@@ -141,12 +212,17 @@ export default function DashboardPage() {
   return () => document.removeEventListener("mousedown", handleClick);
  }, []);
 
- // Mark all as read when dropdown opens
- useEffect(() => {
-  if (showNotifications) {
-   setNotifications(prev => prev.map(n => ({ ...n, read: true })));
-  }
- }, [showNotifications]);
+ const markAllAsRead = () => {
+  setNotifications(prev => prev.map(n => ({ ...n, read: true })));
+ };
+
+ const deleteNotification = (id: string) => {
+  setNotifications(prev => prev.filter(n => n.id !== id));
+ };
+
+ const deleteAllNotifications = () => {
+  setNotifications([]);
+ };
 
  // Auto-refresh after a claim (claimed timestamp set in localStorage)
  useEffect(() => {
@@ -178,7 +254,22 @@ export default function DashboardPage() {
  setLoading(true);
  setStoredLinks(getStoredLinks());
  setReceivedLinks(getClaimedLinks());
- loadData(pk).finally(() => setLoading(false));
+ loadData(pk).then((result) => {
+   // Seed notifiedRef with existing data so past events don't trigger notifications
+   const notified = notifiedRef.current;
+   if (result) {
+    for (const tx of result.txs) {
+     notified.add(`tx-${tx.id}`);
+    }
+    for (const b of result.bals) {
+     const code = b.asset_type === 'native' ? 'XLM' : b.asset_code;
+     if (code) notified.add(`asset-${code}`);
+    }
+   }
+   for (const link of getClaimedLinks()) {
+    notified.add(`you-claimed-${link.secretHex}`);
+   }
+  }).finally(() => setLoading(false));
  refreshLinkStatuses().then(() => {
    setStoredLinks(getStoredLinks());
    setReceivedLinks(getClaimedLinks());
@@ -260,46 +351,8 @@ export default function DashboardPage() {
  {/* Main Content */}
  <main className="flex-1 flex flex-col min-w-0">
  
- {/* Notification Dropdown */}
- {showNotifications && (
- <div ref={notifRef} className="absolute top-[5.5rem] right-8 sm:right-10 lg:right-12 z-50 w-[380px] max-w-[calc(100vw-3rem)] bg-white rounded-2xl shadow-[0_20px_60px_rgba(0,0,0,0.12)] border border-slate-100 overflow-hidden animate-[fadeSlideIn_0.2s_ease-out]">
- <div className="flex items-center justify-between px-5 py-4 border-b border-slate-100">
-  <h3 className="font-extrabold text-slate-900 text-base">Notifications</h3>
-  <button onClick={() => setShowNotifications(false)} className="p-1.5 hover:bg-slate-100 rounded-lg transition-colors">
-   <X className="w-4 h-4 text-slate-400" />
-  </button>
- </div>
- <div className="max-h-[420px] overflow-y-auto">
-  {notifications.length === 0 ? (
-   <div className="flex flex-col items-center gap-3 py-12 px-5">
-    <Bell className="w-10 h-10 text-slate-300" />
-    <div className="text-center">
-     <p className="text-sm font-bold text-slate-700">No notifications yet</p>
-     <p className="text-xs font-semibold text-slate-400 mt-1">You'll be notified when your payment links are claimed.</p>
-    </div>
-   </div>
-  ) : (
-   notifications.map((n) => (
-    <div key={n.id} className={`flex items-start gap-4 px-5 py-4 border-b border-slate-50 hover:bg-slate-50/50 transition-colors ${n.read ? '' : 'bg-indigo-50/20'}`}>
-     <div className="w-10 h-10 rounded-xl bg-green-50 text-green-600 flex items-center justify-center shrink-0 shadow-sm">
-      <CheckCircle2 className="w-5 h-5" />
-     </div>
-     <div className="flex flex-col min-w-0 flex-1">
-      <p className="text-sm font-bold text-slate-900">{n.title}</p>
-      <p className="text-xs font-semibold text-slate-500 mt-0.5 leading-snug">{n.description}</p>
-      <span className="text-[10px] font-semibold text-slate-400 mt-1">
-       {new Date(n.time).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-      </span>
-     </div>
-    </div>
-   ))
-  )}
- </div>
- </div>
- )}
-
  {/* Top Header */}
- <header className="w-full flex items-center justify-between py-6 px-8 sm:px-10 lg:px-12 bg-[#FAFBFF] sticky top-0 z-30 backdrop-blur-md border-b border-slate-100/50">
+ <header className="relative w-full flex items-center justify-between py-6 px-8 sm:px-10 lg:px-12 bg-[#FAFBFF] sticky top-0 z-30 backdrop-blur-md border-b border-slate-100/50">
  <div className="flex flex-col">
  <h1 className="text-2xl sm:text-[28px] font-extrabold tracking-tight">Good afternoon, {emailName} <span className="inline-block animate-wave">👋</span></h1>
  <p className="text-sm font-medium text-slate-500 mt-1">Here's what's happening with your wallet today.</p>
@@ -332,6 +385,72 @@ export default function DashboardPage() {
  <Menu className="w-5 h-5 text-slate-600" />
  </button>
  </div>
+
+ {/* Notification Dropdown — inside sticky header so it follows scroll */}
+ {showNotifications && (
+ <div ref={notifRef} className="absolute top-full right-8 sm:right-10 lg:right-12 z-50 w-[380px] max-w-[calc(100vw-3rem)] mt-2 bg-white rounded-2xl shadow-[0_20px_60px_rgba(0,0,0,0.12)] border border-slate-100 overflow-hidden animate-[fadeSlideIn_0.2s_ease-out]">
+ <div className="flex items-center justify-between px-5 py-4 border-b border-slate-100">
+  <h3 className="font-extrabold text-slate-900 text-base">Notifications</h3>
+  <div className="flex items-center gap-2">
+   {notifications.some(n => !n.read) && (
+    <button onClick={markAllAsRead} className="text-[11px] font-bold text-indigo-600 hover:text-indigo-700 bg-indigo-50 hover:bg-indigo-100 px-2.5 py-1.5 rounded-lg transition-colors">
+     Mark all read
+    </button>
+   )}
+   <button onClick={() => setShowNotifications(false)} className="p-1.5 hover:bg-slate-100 rounded-lg transition-colors">
+    <X className="w-4 h-4 text-slate-400" />
+   </button>
+  </div>
+ </div>
+ <div className="max-h-[420px] overflow-y-auto">
+  {notifications.length === 0 ? (
+   <div className="flex flex-col items-center gap-3 py-12 px-5">
+    <Bell className="w-10 h-10 text-slate-300" />
+    <div className="text-center">
+     <p className="text-sm font-bold text-slate-700">No notifications yet</p>
+     <p className="text-xs font-semibold text-slate-400 mt-1">Notifications for claims, sends, and receives will appear here.</p>
+    </div>
+   </div>
+  ) : (
+   <>
+    {notifications.map((n) => {
+     let iconColor = 'bg-green-50 text-green-600';
+     if (n.kind === 'sent') iconColor = 'bg-orange-50 text-orange-500';
+     else if (n.kind === 'received') iconColor = 'bg-blue-50 text-blue-500';
+     else if (n.kind === 'you_claimed') iconColor = 'bg-purple-50 text-purple-500';
+     return (
+     <div key={n.id} className={`flex items-start gap-3 px-5 py-4 border-b border-slate-50 hover:bg-slate-50/50 transition-colors group ${n.read ? '' : 'bg-indigo-50/20'}`}>
+      <div className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 shadow-sm ${iconColor}`}>
+       <CheckCircle2 className="w-5 h-5" />
+      </div>
+      <div className="flex flex-col min-w-0 flex-1">
+       <div className="flex items-center gap-2">
+        <p className="text-sm font-bold text-slate-900">{n.title}</p>
+        {n.read && <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 shrink-0" title="Read"></span>}
+       </div>
+       <p className="text-xs font-semibold text-slate-500 mt-0.5 leading-snug">{n.description}</p>
+       <span className="text-[10px] font-semibold text-slate-400 mt-1">
+        {new Date(n.time).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+       </span>
+      </div>
+      <button onClick={() => deleteNotification(n.id)} className="p-1 rounded-lg opacity-0 group-hover:opacity-100 hover:bg-red-50 hover:text-red-500 text-slate-300 transition-all shrink-0 self-start mt-1" title="Delete">
+       <X className="w-4 h-4" />
+      </button>
+     </div>
+     );
+    })}
+    {notifications.length > 0 && (
+     <div className="px-5 py-3 border-t border-slate-100">
+      <button onClick={deleteAllNotifications} className="text-xs font-bold text-red-500 hover:text-red-600 hover:bg-red-50 px-3 py-1.5 rounded-lg transition-colors w-full text-center">
+       Delete all notifications
+      </button>
+     </div>
+    )}
+   </>
+  )}
+ </div>
+ </div>
+ )}
  </header>
 
  <div className="px-8 sm:px-10 lg:px-12 pb-12 flex-1 flex flex-col gap-6">
@@ -681,13 +800,6 @@ export default function DashboardPage() {
            <span className="text-[10px] text-slate-400 mt-0.5">{new Date(link.createdAt).toLocaleDateString()} {new Date(link.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
           </div>
           <div className="flex items-center gap-1.5">
-           <button
-            onClick={() => markAsClaimed(link.secretHex)}
-            className="p-2 rounded-lg bg-white border border-green-200 hover:bg-green-50 hover:border-green-300 transition-colors shrink-0 group"
-            title="Mark as claimed"
-           >
-            <CheckCircle2 className="w-4 h-4 text-green-400 group-hover:text-green-600" />
-           </button>
            <button
             onClick={() => copyLink(link.url, link.id)}
             className="p-2 rounded-lg bg-white border border-amber-200 hover:bg-amber-50 hover:border-amber-300 transition-colors shrink-0"
