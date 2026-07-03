@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { loadWallet, swapTokens, getSwapEstimate, getBalances, getExplorerUrl, type StoredWallet } from "@/lib/wallet";
 import { ChevronDown, Loader2, ExternalLink, RefreshCw, CheckCircle2, ArrowRightLeft, Shield } from "lucide-react";
@@ -58,16 +58,40 @@ export default function SwapPage() {
     return () => document.removeEventListener("keydown", handler);
   }, []);
 
+  const estimateCache = useRef(new Map<string, { estimate: string; timestamp: number }>());
+  const cancelRef = useRef(false);
+
   useEffect(() => {
     if (!amount || parseFloat(amount) <= 0 || !storedWallet) { setDisplayEstimate(null); return; }
     setDisplayEstimate(null);
+
+    const cacheKey = `${fromToken.code}:${fromToken.issuer}:${toToken.code}:${toToken.issuer}:${amount}`;
+    const cached = estimateCache.current.get(cacheKey);
+    if (cached && Date.now() - cached.timestamp < 10000) {
+      setDisplayEstimate(cached.estimate);
+      return;
+    }
+
     setEstimating(true);
+
     const timer = setTimeout(async () => {
-      try { const est = await getSwapEstimate(fromToken.code === "XLM" ? null : fromToken.code, fromToken.code === "XLM" ? null : fromToken.issuer, toToken.code, toToken.issuer!, amount); if (parseFloat(est) > 0) setDisplayEstimate(est); }
-      catch { /* fallback */ }
-      finally { setEstimating(false); }
-    }, 150);
-    return () => { clearTimeout(timer); setEstimating(false); };
+      cancelRef.current = false;
+      const cancelled = () => cancelRef.current;
+      try {
+        const est = await getSwapEstimate(fromToken.code === "XLM" ? null : fromToken.code, fromToken.code === "XLM" ? null : fromToken.issuer, toToken.code, toToken.issuer!, amount);
+        if (cancelled()) return;
+        if (parseFloat(est) > 0) {
+          setDisplayEstimate(est);
+          estimateCache.current.set(cacheKey, { estimate: est, timestamp: Date.now() });
+        }
+      } catch {
+        /* fallback */
+      } finally {
+        if (!cancelled()) setEstimating(false);
+      }
+    }, 500);
+
+    return () => { clearTimeout(timer); cancelRef.current = true; setEstimating(false); };
   }, [amount, fromToken, toToken, storedWallet]);
 
   const handleFromChange = (code: string) => {
