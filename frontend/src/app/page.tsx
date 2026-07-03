@@ -19,6 +19,7 @@ import Grainient from "../components/Grainient";
 import { InteractiveHowItWorks } from "../components/InteractiveHowItWorks";
 
 import { MultiChainSwap } from "@/components/motion/swap";
+import { motion } from "framer-motion";
 
 export default function Home() {
   const [hasWallet, setHasWallet] = useState(false);
@@ -48,12 +49,22 @@ export default function Home() {
 
   return (
     <div className="fixed inset-0 w-full h-full bg-black text-white overflow-y-auto font-sans flex flex-col z-[100]">
-      <div className="absolute top-0 left-0 w-full h-[100vh] max-h-[900px] z-0 pointer-events-none overflow-hidden">
-        <Beams beamWidth={3} beamHeight={30} beamNumber={20} lightColor="#ffffff" speed={2} noiseIntensity={1.75} scale={0.2} rotation={30} />
+      <motion.div 
+        initial={{ opacity: 0 }}
+        animate={{ opacity: 1 }}
+        transition={{ duration: 4, delay: 2, ease: "easeInOut" }}
+        className="absolute top-0 left-0 w-full h-[100vh] max-h-[900px] z-0 pointer-events-none overflow-hidden"
+      >
+        <Beams beamWidth={3} beamHeight={30} beamNumber={20} lightColor="#ffffff" speed={2} noiseIntensity={1.75} scale={0.15} rotation={30} />
         <div className="absolute inset-0 bg-gradient-to-b from-transparent from-50% to-black pointer-events-none"></div>
-      </div>
+      </motion.div>
       {/* Navbar */}
-      <nav className="w-full max-w-4xl mx-auto px-8 py-3 mt-4 flex items-center justify-between z-20 relative bg-white/5 backdrop-blur-xl border border-white/10 rounded-full shadow-xl">
+      <motion.nav 
+        initial={{ opacity: 0, y: -10 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 2, delay: 0.5, ease: "easeOut" }}
+        className="w-full max-w-4xl mx-auto px-8 py-3 mt-4 flex items-center justify-between z-20 relative bg-white/5 backdrop-blur-xl border border-white/10 rounded-full shadow-xl"
+      >
         {/* Mobile layout: logo left, buttons right */}
         <div className="flex lg:hidden items-center justify-between w-full">
           <div className="flex items-center gap-2.5">
@@ -105,13 +116,18 @@ export default function Home() {
             </Link>
           </div>
         </div>
-      </nav>
+      </motion.nav>
 
       <main className="flex-1 w-full max-w-7xl mx-auto px-6 pt-12 pb-24 flex flex-col relative">
         <div className="flex flex-col lg:flex-row items-center justify-between w-full h-full gap-16 lg:gap-8">
           
           {/* Hero Left Content */}
-          <div className="w-full lg:w-1/2 flex flex-col items-start gap-6 z-10 pt-8 lg:pt-0">
+          <motion.div 
+            initial={{ opacity: 0, y: 10 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 2, ease: "easeOut" }}
+            className="w-full lg:w-1/2 flex flex-col items-start gap-6 z-10 pt-8 lg:pt-0"
+          >
             <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-white/10 text-white font-bold text-[10px] tracking-widest shadow-lg border border-white/20 backdrop-blur-md">
               <div className="relative flex h-1.5 w-1.5">
                 <div className="absolute inset-0 rounded-full bg-white/50 animate-ping opacity-75"></div>
@@ -160,10 +176,15 @@ export default function Home() {
                 Built on Stellar & Soroban
               </div>
             </div>
-          </div>
+          </motion.div>
 
           {/* Right Column / Visuals */}
-          <div className="relative w-full lg:w-1/2 flex items-center justify-center lg:justify-end mt-16 lg:mt-0 min-h-[550px]">
+          <motion.div 
+            initial={{ opacity: 0, x: 10 }}
+            animate={{ opacity: 1, x: 0 }}
+            transition={{ duration: 2.5, delay: 1, ease: "easeOut" }}
+            className="relative w-full lg:w-1/2 flex items-center justify-center lg:justify-end mt-16 lg:mt-0 min-h-[550px]"
+          >
             
             {/* Abstract Background Shapes Removed for cleaner dark look */}
 
@@ -174,7 +195,7 @@ export default function Home() {
 
 {/* Floating Badges Removed */}
 
-          </div>
+          </motion.div>
         </div>
 
         {/* Features Section */}
@@ -450,13 +471,8 @@ export default function Home() {
       </main>
 
       {/* Footer Section */}
-      <footer className="w-full relative overflow-hidden pt-12 pb-16 bg-black z-10 mt-0 flex flex-col items-center shrink-0">
+      <footer className="w-full relative overflow-hidden pt-12 bg-black z-10 mt-0 flex flex-col items-center shrink-0">
         
-        {/* Massive watermark text behind the card */}
-        <div className="absolute bottom-0 left-0 right-0 w-full flex justify-center pointer-events-none select-none overflow-hidden z-0">
-          <h1 className="text-[25vw] font-black text-white/[0.08] leading-[0.75] tracking-tighter whitespace-nowrap">ATREUS</h1>
-        </div>
-
         {/* Floating Footer Card */}
         <div className="w-full max-w-7xl mx-auto px-6 relative z-10">
           <div className="bg-white/5 border border-white/10 backdrop-blur-2xl rounded-[2rem] p-8 md:p-12 shadow-2xl">
@@ -521,6 +537,11 @@ export default function Home() {
             </div>
 
           </div>
+        </div>
+
+        {/* Massive watermark text touching the card */}
+        <div className="w-full flex justify-center pointer-events-none select-none overflow-hidden z-0 mt-[-2vw]">
+          <h1 className="text-[23vw] font-black text-white/[0.08] leading-none tracking-tighter whitespace-nowrap translate-y-4">ATREUS</h1>
         </div>
       </footer>
 

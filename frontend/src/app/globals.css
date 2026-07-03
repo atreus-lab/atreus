@@ -9,8 +9,8 @@
     --background-elevated: #1a1a1a;
     --foreground-primary: #ffffff;
     --foreground-secondary: #94a3b8;
-    --accent-primary: #3b82f6;
-    --accent-hover: #2563eb;
+    --accent-primary: #ffffff;
+    --accent-hover: #e2e8f0;
     --border-default: #1a1a1a;
     --border-subtle: #0d0d0d;
     --success: #22c55e;
@@ -78,12 +78,19 @@
   }
 
   .btn-primary {
-    @apply w-full p-4 rounded-lg font-bold transition;
-    background: var(--accent-primary);
+    @apply w-full p-4 rounded-lg font-bold transition flex items-center justify-center gap-2;
+    background: linear-gradient(135deg, rgba(255, 255, 255, 0.12), rgba(255, 255, 255, 0.06));
+    color: var(--foreground-primary);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+    border: 1px solid rgba(255, 255, 255, 0.15);
+    border-top: 1px solid rgba(255, 255, 255, 0.35);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.05);
   }
 
   .btn-primary:hover {
-    background: var(--accent-hover);
+    background: rgba(255, 255, 255, 0.12);
+    border-color: rgba(255, 255, 255, 0.2);
   }
 
   .btn-primary:active {
@@ -91,7 +98,9 @@
   }
 
   .btn-primary:disabled {
-    background: var(--background-elevated);
+    background: rgba(255, 255, 255, 0.03);
+    color: var(--foreground-secondary);
+    border-color: rgba(255, 255, 255, 0.05);
   }
 
   .btn-secondary {
@@ -110,11 +119,12 @@
 
   .btn-ghost {
     @apply px-6 py-3 rounded-lg font-semibold transition;
-    background: var(--accent-primary);
+    background: rgba(255, 255, 255, 0.1);
+    color: var(--foreground-primary);
   }
 
   .btn-ghost:hover {
-    background: var(--accent-hover);
+    background: rgba(255, 255, 255, 0.15);
   }
 
   .btn-ghost:active {
@@ -185,15 +195,23 @@
 
   .btn-claim {
     @apply w-full p-4 rounded-lg font-bold transition flex items-center justify-center gap-2;
-    background: var(--accent-primary);
+    background: rgba(255, 255, 255, 0.08);
+    color: var(--foreground-primary);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+    border: 1px solid rgba(255, 255, 255, 0.15);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.05);
   }
 
   .btn-claim:hover:not(:disabled) {
-    background: var(--accent-hover);
+    background: rgba(255, 255, 255, 0.12);
+    border-color: rgba(255, 255, 255, 0.2);
   }
 
   .btn-claim:disabled {
-    background: var(--background-elevated);
+    background: rgba(255, 255, 255, 0.03);
+    color: var(--foreground-secondary);
+    border-color: rgba(255, 255, 255, 0.05);
   }
 
   .back-link {
@@ -381,17 +399,22 @@
     display: flex;
     min-height: 100vh;
     background: var(--background-primary);
+    padding: 1rem;
+    gap: 1rem;
   }
 
   .app-sidebar {
     width: 280px;
     display: none;
     flex-direction: column;
-    background: var(--background-card);
-    border-right: 1px solid var(--border-default);
-    height: 100vh;
+    background: rgba(10, 10, 10, 0.4);
+    backdrop-filter: blur(24px);
+    -webkit-backdrop-filter: blur(24px);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: 1.5rem;
+    height: calc(100vh - 2rem);
     position: sticky;
-    top: 0;
+    top: 1rem;
     overflow: hidden;
     z-index: 20;
     transition: width 250ms var(--ease-out);
@@ -436,11 +459,12 @@
     display: flex;
     align-items: center;
     justify-content: space-between;
-    padding: 1rem 2rem;
-    background: rgba(0, 0, 0, 0.8);
-    backdrop-filter: blur(12px);
-    -webkit-backdrop-filter: blur(12px);
-    border-bottom: 1px solid var(--border-default);
+    padding: 1rem 1.5rem;
+    background: rgba(10, 10, 10, 0.4);
+    backdrop-filter: blur(24px);
+    -webkit-backdrop-filter: blur(24px);
+    border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: 1.5rem 1.5rem 0 0;
     z-index: 40;
   }
 
@@ -483,36 +507,47 @@
   .sidebar-item {
     display: flex;
     align-items: center;
-    gap: 0.75rem;
-    padding: 0.625rem 0.75rem;
+    gap: 1rem;
+    padding: 0.875rem 1rem;
     border-radius: 0.75rem;
+    margin-bottom: 0.5rem;
     color: var(--foreground-secondary);
-    font-size: 0.875rem;
+    font-size: 0.9375rem;
     font-weight: 500;
-    transition: all 150ms var(--ease-out);
+    transition: all 250ms var(--ease-out);
     cursor: pointer;
     text-decoration: none;
+    border: 1px solid transparent;
   }
 
   .sidebar-item:hover {
-    background: var(--background-elevated);
+    background: rgba(255, 255, 255, 0.05);
+    border-color: rgba(255, 255, 255, 0.08);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
     color: var(--foreground-primary);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.05);
   }
 
   .sidebar-item-active {
     display: flex;
     align-items: center;
-    gap: 0.75rem;
-    padding: 0.625rem 0.75rem;
+    gap: 1rem;
+    padding: 0.875rem 1rem;
     border-radius: 0.75rem;
-    font-size: 0.875rem;
+    margin-bottom: 0.5rem;
+    font-size: 0.9375rem;
     font-weight: 600;
     color: var(--foreground-primary);
-    background: var(--background-elevated);
+    background: linear-gradient(135deg, rgba(255, 255, 255, 0.12), rgba(255, 255, 255, 0.04));
+    backdrop-filter: blur(16px);
+    -webkit-backdrop-filter: blur(16px);
+    border: 1px solid rgba(255, 255, 255, 0.15);
+    border-top: 1px solid rgba(255, 255, 255, 0.25);
+    box-shadow: 0 8px 16px rgba(0, 0, 0, 0.2);
     cursor: pointer;
     text-decoration: none;
-    transition: all 150ms var(--ease-out);
-    box-shadow: inset 2px 0 0 var(--accent-primary);
+    transition: all 250ms var(--ease-out);
   }
 
   .sidebar-section {
@@ -614,10 +649,14 @@
   }
 
   .panel {
-    background: var(--background-card);
-    border: 1px solid var(--border-default);
+    background: linear-gradient(135deg, rgba(255, 255, 255, 0.03), rgba(255, 255, 255, 0.01));
+    backdrop-filter: blur(16px);
+    -webkit-backdrop-filter: blur(16px);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    border-top: 1px solid rgba(255, 255, 255, 0.25);
     border-radius: 1rem;
     overflow: hidden;
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.2);
   }
 
   .panel-header {
