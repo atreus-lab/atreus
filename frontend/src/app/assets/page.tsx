@@ -6,7 +6,7 @@ import Image from "next/image";
 import Link from "next/link";
 import { loadWallet, getBalances, addTrustline, type StoredWallet } from "@/lib/wallet";
 import { Loader2, Check, Plus, ArrowLeft } from "lucide-react";
-import stellarlogo from "../media/stellarlogo.webp";
+import stellarlogo from "../../media/stellarlogo.webp";
 import AppSidebar from "@/components/AppSidebar";
 import AppHeader from "@/components/AppHeader";
 import SearchDialog from "@/components/SearchDialog";

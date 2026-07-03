@@ -32,10 +32,10 @@ export default function AppHeader({ title, subtitle, onSearchOpen, onBellClick, 
       {rightContent || (
         <div className="hidden md:flex items-center gap-6">
           {onSearchOpen && (
-            <button onClick={onSearchOpen} className="flex items-center gap-3 pl-10 pr-4 py-2.5 bg-white border border-slate-200 rounded-full text-sm font-medium hover:border-blue-300 transition-all w-64 shadow-sm group">
-              <Search className="w-4 h-4 text-slate-400 group-hover:text-blue-500 transition-colors" />
-              <span className="text-slate-400 group-hover:text-slate-600 transition-colors">Search anything...</span>
-              <div className="ml-auto flex items-center gap-1">
+            <button onClick={onSearchOpen} className="flex items-center gap-3 px-4 py-2.5 bg-white border border-slate-200 rounded-full text-sm font-medium hover:border-blue-300 transition-all w-72 shadow-sm group">
+              <Search className="w-4 h-4 text-slate-400 group-hover:text-blue-500 transition-colors shrink-0" />
+              <span className="text-slate-400 group-hover:text-slate-600 transition-colors truncate">Search anything...</span>
+              <div className="ml-auto flex items-center gap-1 shrink-0">
                 <span className="bg-slate-100 text-slate-500 px-1.5 py-0.5 rounded text-[10px] font-bold">⌘</span>
                 <span className="bg-slate-100 text-slate-500 px-1.5 py-0.5 rounded text-[10px] font-bold">K</span>
               </div>
