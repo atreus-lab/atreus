@@ -75,12 +75,12 @@ export default function PaymentLinksPage() {
         backHref="/dashboard"
         onSearchOpen={() => setSearchOpen(true)}
         rightContent={
-          <Link href="/create" className="btn-primary px-4 py-2 rounded-lg text-sm font-bold inline-flex items-center gap-2">
+          <Link href="/create" className="btn-primary w-fit px-4 py-2 rounded-lg text-sm font-bold inline-flex items-center gap-2">
             <Plus className="w-4 h-4" /> Create Link
           </Link>
         }
       />
-      <div className="app-content max-w-5xl mx-auto">
+      <div className="app-content max-w-2xl mx-auto">
         {!mounted ? (
           <div className="flex-1 flex items-center justify-center p-8">
             <div className="animate-spin w-6 h-6 border-2 border-[var(--accent-primary)] border-t-transparent rounded-full" />
