@@ -76,9 +76,11 @@ export function Field({
               </AnimatePresence>
             </div>
           )}
-          <p className="mt-1 text-[11px] text-muted-foreground tabular-nums">
-            ≈ ${formatAmount(usdValue, 2)}
-          </p>
+          {token.usd !== undefined ? (
+            <p className="mt-1 text-[11px] text-muted-foreground tabular-nums">
+              ≈ ${formatAmount(usdValue, 2)}
+            </p>
+          ) : null}
         </div>
 
         <button

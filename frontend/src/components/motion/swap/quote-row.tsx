@@ -6,7 +6,7 @@ export function QuoteRow({
   from,
   to,
   rate,
-  fee,
+  feeLabel,
   slippage,
   eta,
   quoting,
@@ -14,7 +14,7 @@ export function QuoteRow({
   from: Token;
   to: Token;
   rate: number;
-  fee: number;
+  feeLabel: string;
   slippage: number;
   eta: string;
   quoting: boolean;
@@ -33,7 +33,7 @@ export function QuoteRow({
       </span>
       <span className="text-muted-foreground">Network fee</span>
       <span className="text-right tabular-nums text-foreground">
-        ${fee.toFixed(2)}
+        {feeLabel}
       </span>
       <span className="text-muted-foreground">Slippage</span>
       <span className="text-right tabular-nums text-foreground">

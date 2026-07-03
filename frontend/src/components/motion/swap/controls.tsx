@@ -2,7 +2,7 @@
 
 import { useEffect, useRef } from "react";
 import { AnimatePresence, motion, useReducedMotion } from "motion/react";
-import { ArrowDownUp, Check, ChevronDown, Send, X } from "lucide-react";
+import { ArrowDownUp, Check, ChevronDown, Loader2, Send, X } from "lucide-react";
 import { SPRING_PRESS } from "@/lib/ease";
 import { cn } from "@/lib/utils";
 import type { Token } from "./types";
@@ -40,38 +40,46 @@ export function ActionButton({
   to,
   amount,
   destAddress,
+  onClick,
+  loading,
 }: {
   from: Token;
   to: Token;
   amount: number;
   destAddress: string;
+  onClick?: () => void;
+  loading?: boolean;
 }) {
   const reduce = useReducedMotion();
   const noAmount = amount <= 0;
   const overBalance = from.balance !== undefined && amount > from.balance;
   const validDest = destAddress && isValidAddress(destAddress);
-  const label = noAmount
-    ? "Enter an amount"
-    : overBalance
-      ? `Insufficient ${from.symbol}`
-      : validDest
-        ? `Swap + Send to ${truncateAddress(destAddress)}`
-        : `Swap ${from.symbol} → ${to.symbol}`;
-  const disabled = noAmount || overBalance;
+  const label = loading
+    ? "Swapping…"
+    : noAmount
+      ? "Enter an amount"
+      : overBalance
+        ? `Insufficient ${from.symbol}`
+        : validDest
+          ? `Swap + Send to ${truncateAddress(destAddress)}`
+          : `Swap ${from.symbol} → ${to.symbol}`;
+  const disabled = noAmount || overBalance || !!loading;
 
   return (
     <motion.button
       type="button"
+      onClick={onClick}
       whileTap={disabled || reduce ? undefined : { scale: 0.97 }}
       transition={SPRING_PRESS}
       disabled={disabled}
       className={cn(
-        "mt-3 inline-flex h-12 w-full items-center justify-center rounded-2xl text-sm font-semibold transition-colors",
+        "mt-3 inline-flex h-12 w-full items-center justify-center gap-2 rounded-2xl text-sm font-semibold transition-colors",
         disabled
           ? "cursor-not-allowed bg-primary/10 text-muted-foreground"
           : "bg-primary text-primary-foreground hover:bg-primary/90",
       )}
     >
+      {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
       <AnimatePresence mode="wait" initial={false}>
         <motion.span
           key={label}
