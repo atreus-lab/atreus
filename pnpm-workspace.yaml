@@ -1,3 +1,9 @@
 packages:
   - 'frontend'
   - 'backend'
+
+allowBuilds:
+  esbuild: true
+  core-js: true
+  msgpackr-extract: true
+  sharp: true

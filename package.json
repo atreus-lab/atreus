@@ -12,8 +12,5 @@
   },
   "engines": {
     "node": ">=18"
-  },
-  "pnpm": {
-    "onlyBuiltDependencies": ["esbuild", "core-js", "msgpackr-extract", "sharp"]
   }
 }
