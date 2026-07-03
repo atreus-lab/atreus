@@ -3,7 +3,7 @@ import { useEffect, useState } from "react";
 import Image from "next/image";
 import Link from "next/link";
 import { loadWallet } from "@/lib/wallet";
-import { ArrowUpRight, Rocket, Link as LinkIcon, DollarSign, CheckCircle2, Shield, Layers, Zap, Lock, Wallet, Percent, Bell, ArrowDown, ArrowUp, ArrowRightLeft, RefreshCw, Home as HomeIcon, History, Settings } from "lucide-react";
+import { ArrowUpRight, Rocket, Link as LinkIcon, DollarSign, CheckCircle2, Shield, Layers, Zap, Lock, Wallet, Percent, Bell, ArrowDown, ArrowUp, ArrowRightLeft, RefreshCw, Home as HomeIcon, History, Settings, Menu, X } from "lucide-react";
 import logo from "../media/ateruslogo.jpeg";
 import mobileImg from "../media/ateruslandpto.png";
 import boltImg from "../media/bolt.png";
@@ -165,6 +165,7 @@ function WalletMockup() {
 
 export default function Home() {
   const [hasWallet, setHasWallet] = useState(false);
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
   useEffect(() => {
     const checkWallet = async () => {
@@ -178,23 +179,37 @@ export default function Home() {
     checkWallet();
   }, []);
 
+  // Body scroll lock when mobile drawer is open
+  useEffect(() => {
+    if (mobileMenuOpen) {
+      document.body.style.overflow = 'hidden';
+    } else {
+      document.body.style.overflow = '';
+    }
+    return () => { document.body.style.overflow = ''; };
+  }, [mobileMenuOpen]);
+
   return (
     <div className="fixed inset-0 w-full h-full bg-[#FAFBFF] text-slate-900 overflow-y-auto font-sans flex flex-col z-[100]">
       {/* Navbar */}
       <nav className="w-full max-w-7xl mx-auto px-6 py-6 flex items-center justify-between z-20 relative">
-        {/* Mobile layout: logo left, button right */}
+        {/* Mobile layout: logo left, buttons right */}
         <div className="flex lg:hidden items-center justify-between w-full">
           <div className="flex items-center gap-2.5">
             <Image src={logo} alt="Atreus Logo" width={28} height={28} className="rounded-lg shadow-sm" />
             <span className="text-[19px] font-extrabold text-slate-900 tracking-tight">Atreus</span>
           </div>
-          <Link
-            href={hasWallet ? "/dashboard" : "/wallet"}
-            className="inline-flex items-center gap-2 bg-slate-900/80 backdrop-blur-md border border-slate-700/50 hover:bg-slate-800/90 text-white px-5 py-2.5 rounded-full text-[13px] font-semibold transition-all shadow-[0_4px_12px_-4px_rgba(0,0,0,0.3)]"
-          >
-            {hasWallet ? "Dashboard" : "Launch Wallet"}
-            <ArrowUpRight className="w-3.5 h-3.5 text-slate-300" />
-          </Link>
+          <div className="flex items-center gap-2">
+            <Link
+              href={hasWallet ? "/dashboard" : "/wallet"}
+              className="inline-flex items-center gap-2 bg-slate-900/80 backdrop-blur-md border border-slate-700/50 hover:bg-slate-800/90 text-white px-4 py-2.5 rounded-full text-[13px] font-semibold transition-all shadow-[0_4px_12px_-4px_rgba(0,0,0,0.3)]"
+            >
+              {hasWallet ? "Dashboard" : "Launch"}
+            </Link>
+            <button onClick={() => setMobileMenuOpen(true)} className="p-2.5 bg-white border border-slate-200 rounded-full hover:bg-slate-50 transition-colors shadow-sm">
+              <Menu className="w-5 h-5 text-slate-600" />
+            </button>
+          </div>
         </div>
         
         {/* Desktop layout: links left, logo center, links + button right */}
@@ -341,8 +356,8 @@ export default function Home() {
           </div>
         </div>
 
-        {/* Bottom Features Row */}
-        <div className="w-full mt-24 mb-8">
+        {/* Features Section */}
+        <div id="features" className="w-full mt-24 mb-8">
           <div className="bg-white rounded-[2rem] shadow-xl shadow-slate-200/30 border border-slate-100 p-8 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-8 lg:gap-4 divide-y md:divide-y-0 lg:divide-x divide-slate-100/80">
             
             <div className="flex flex-col gap-3 px-4 pt-4 md:pt-0 lg:border-l-0">
@@ -387,7 +402,253 @@ export default function Home() {
 
           </div>
         </div>
+
+        {/* How It Works Section */}
+        <div id="how-it-works" className="w-full mt-32 mb-8 scroll-mt-20">
+          <div className="flex flex-col items-center text-center mb-16">
+            <div className="inline-flex items-center gap-2 bg-blue-50/80 border border-blue-100 text-blue-600 px-4 py-2 rounded-full text-xs font-bold tracking-widest mb-6">
+              HOW IT WORKS
+            </div>
+            <h2 className="text-4xl lg:text-5xl font-extrabold text-slate-900 tracking-tight mb-4">
+              Receive funds in <span className="text-blue-600">3 simple steps</span>
+            </h2>
+            <p className="text-lg text-slate-500 max-w-xl font-medium">
+              No wallet needed for the recipient. Just create, share, and they claim.
+            </p>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
+            <div className="bg-white rounded-[2rem] p-8 shadow-lg shadow-slate-200/20 border border-slate-100 flex flex-col items-center text-center gap-5 relative">
+              <div className="absolute -top-4 -right-4 w-10 h-10 rounded-full bg-blue-600 text-white flex items-center justify-center font-extrabold text-lg shadow-lg">1</div>
+              <div className="w-16 h-16 rounded-2xl bg-blue-50 border border-blue-100/50 flex items-center justify-center mt-2">
+                <LinkIcon className="w-7 h-7 text-blue-600" />
+              </div>
+              <h3 className="font-extrabold text-xl text-slate-900">Create a Payment Link</h3>
+              <p className="text-sm text-slate-500 font-medium leading-relaxed">
+                Set the amount and generate a secure payment link. Funds are locked in a smart contract on the Stellar network.
+              </p>
+            </div>
+
+            <div className="bg-white rounded-[2rem] p-8 shadow-lg shadow-slate-200/20 border border-slate-100 flex flex-col items-center text-center gap-5 relative">
+              <div className="absolute -top-4 -right-4 w-10 h-10 rounded-full bg-blue-600 text-white flex items-center justify-center font-extrabold text-lg shadow-lg">2</div>
+              <div className="w-16 h-16 rounded-2xl bg-blue-50 border border-blue-100/50 flex items-center justify-center mt-2">
+                <ArrowRightLeft className="w-7 h-7 text-blue-600" />
+              </div>
+              <h3 className="font-extrabold text-xl text-slate-900">Share the Link</h3>
+              <p className="text-sm text-slate-500 font-medium leading-relaxed">
+                Send the link to anyone via SMS, email, or chat. No app download or wallet setup required on their end.
+              </p>
+            </div>
+
+            <div className="bg-white rounded-[2rem] p-8 shadow-lg shadow-slate-200/20 border border-slate-100 flex flex-col items-center text-center gap-5 relative">
+              <div className="absolute -top-4 -right-4 w-10 h-10 rounded-full bg-blue-600 text-white flex items-center justify-center font-extrabold text-lg shadow-lg">3</div>
+              <div className="w-16 h-16 rounded-2xl bg-blue-50 border border-blue-100/50 flex items-center justify-center mt-2">
+                <Wallet className="w-7 h-7 text-blue-600" />
+              </div>
+              <h3 className="font-extrabold text-xl text-slate-900">Recipient Claims Funds</h3>
+              <p className="text-sm text-slate-500 font-medium leading-relaxed">
+                Recipient opens the link, confirms with a passkey, and the funds are transferred instantly to their wallet.
+              </p>
+            </div>
+          </div>
+        </div>
+
+        {/* Security Section */}
+        <div id="security" className="w-full mt-32 mb-8 scroll-mt-20">
+          <div className="flex flex-col lg:flex-row items-center gap-16 bg-white rounded-[2rem] p-10 lg:p-16 shadow-xl shadow-slate-200/20 border border-slate-100">
+            <div className="flex-1 flex flex-col gap-6">
+              <div className="inline-flex items-center gap-2 bg-green-50/80 border border-green-100 text-green-600 px-4 py-2 rounded-full text-xs font-bold tracking-widest self-start">
+                <Shield className="w-3.5 h-3.5" />
+                SECURITY
+              </div>
+              <h2 className="text-4xl lg:text-5xl font-extrabold text-slate-900 tracking-tight">
+                Your funds are <span className="text-blue-600">protected</span> by ZK proofs
+              </h2>
+              <p className="text-lg text-slate-500 font-medium leading-relaxed">
+                Atreus uses zero-knowledge proofs to ensure that only the intended recipient can claim the funds. 
+                Your privacy is preserved at every step.
+              </p>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mt-4">
+                <div className="flex items-start gap-3">
+                  <CheckCircle2 className="w-5 h-5 text-green-500 mt-0.5 shrink-0" />
+                  <div>
+                    <h4 className="font-bold text-slate-900 text-sm">Non-Custodial</h4>
+                    <p className="text-xs text-slate-500">You maintain full control of your private keys at all times.</p>
+                  </div>
+                </div>
+                <div className="flex items-start gap-3">
+                  <CheckCircle2 className="w-5 h-5 text-green-500 mt-0.5 shrink-0" />
+                  <div>
+                    <h4 className="font-bold text-slate-900 text-sm">On-Chain Verification</h4>
+                    <p className="text-xs text-slate-500">All transactions are verifiable on the Stellar blockchain.</p>
+                  </div>
+                </div>
+                <div className="flex items-start gap-3">
+                  <CheckCircle2 className="w-5 h-5 text-green-500 mt-0.5 shrink-0" />
+                  <div>
+                    <h4 className="font-bold text-slate-900 text-sm">ZK-Enabled</h4>
+                    <p className="text-xs text-slate-500">Prove ownership without revealing your secret.</p>
+                  </div>
+                </div>
+                <div className="flex items-start gap-3">
+                  <CheckCircle2 className="w-5 h-5 text-green-500 mt-0.5 shrink-0" />
+                  <div>
+                    <h4 className="font-bold text-slate-900 text-sm">Audited Contracts</h4>
+                    <p className="text-xs text-slate-500">Smart contracts built on Soroban, Stellar's secure contract platform.</p>
+                  </div>
+                </div>
+              </div>
+            </div>
+            <div className="flex-1 flex items-center justify-center">
+              <div className="w-64 h-64 rounded-[3rem] bg-gradient-to-br from-blue-50 to-indigo-50 border border-blue-100/50 flex items-center justify-center shadow-inner">
+                <Shield className="w-32 h-32 text-blue-600/30" />
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* About Section */}
+        <div id="about" className="w-full mt-32 mb-8 scroll-mt-20">
+          <div className="flex flex-col items-center text-center mb-16">
+            <div className="inline-flex items-center gap-2 bg-purple-50/80 border border-purple-100 text-purple-600 px-4 py-2 rounded-full text-xs font-bold tracking-widest mb-6">
+              ABOUT
+            </div>
+            <h2 className="text-4xl lg:text-5xl font-extrabold text-slate-900 tracking-tight mb-4">
+              Built for <span className="text-blue-600">real-world</span> payments
+            </h2>
+            <p className="text-lg text-slate-500 max-w-2xl font-medium">
+              Atreus is a non-custodial payment platform built on the Stellar network and Soroban smart contracts. 
+              We make it easy to send and receive funds securely — no wallet required for the recipient.
+            </p>
+          </div>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
+            <div className="flex flex-col items-center text-center gap-4 p-8">
+              <div className="w-16 h-16 rounded-2xl bg-blue-50 border border-blue-100/50 flex items-center justify-center">
+                <Layers className="w-7 h-7 text-blue-600" />
+              </div>
+              <h3 className="font-extrabold text-lg text-slate-900">Stellar-Powered</h3>
+              <p className="text-sm text-slate-500 font-medium">Leveraging Stellar's fast, low-cost network for borderless transactions.</p>
+            </div>
+            <div className="flex flex-col items-center text-center gap-4 p-8">
+              <div className="w-16 h-16 rounded-2xl bg-blue-50 border border-blue-100/50 flex items-center justify-center">
+                <Lock className="w-7 h-7 text-blue-600" />
+              </div>
+              <h3 className="font-extrabold text-lg text-slate-900">Privacy First</h3>
+              <p className="text-sm text-slate-500 font-medium">ZK proofs ensure only the intended recipient can access the funds.</p>
+            </div>
+            <div className="flex flex-col items-center text-center gap-4 p-8">
+              <div className="w-16 h-16 rounded-2xl bg-blue-50 border border-blue-100/50 flex items-center justify-center">
+                <Zap className="w-7 h-7 text-blue-600" />
+              </div>
+              <h3 className="font-extrabold text-lg text-slate-900">Instant Settlement</h3>
+              <p className="text-sm text-slate-500 font-medium">Transactions settle in seconds, not days. Funds arrive fast.</p>
+            </div>
+          </div>
+        </div>
+
+        {/* Docs Section */}
+        <div id="docs" className="w-full mt-32 mb-8 scroll-mt-20">
+          <div className="bg-gradient-to-br from-slate-900 to-slate-800 rounded-[2rem] p-10 lg:p-16 text-white flex flex-col lg:flex-row items-center justify-between gap-8 shadow-xl">
+            <div className="flex flex-col gap-4">
+              <div className="inline-flex items-center gap-2 bg-white/10 border border-white/10 text-slate-300 px-4 py-2 rounded-full text-xs font-bold tracking-widest self-start">
+                DOCUMENTATION
+              </div>
+              <h2 className="text-3xl lg:text-4xl font-extrabold tracking-tight">
+                Ready to build with Atreus?
+              </h2>
+              <p className="text-base text-slate-300 max-w-lg font-medium">
+                Explore our documentation, API references, and integration guides to start building on Atreus today.
+              </p>
+              <div className="flex flex-wrap gap-4 mt-2">
+                <a href="https://github.com/atreus-lab/atreus" target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-2 bg-white/10 hover:bg-white/20 border border-white/20 text-white px-6 py-3 rounded-full text-sm font-semibold transition-all">
+                  GitHub Repository
+                  <ArrowUpRight className="w-4 h-4" />
+                </a>
+                <a href="/docs/architecture.md" target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-2 bg-blue-600 hover:bg-blue-500 text-white px-6 py-3 rounded-full text-sm font-semibold transition-all shadow-lg">
+                  Architecture Docs
+                  <ArrowUpRight className="w-4 h-4" />
+                </a>
+              </div>
+            </div>
+            <div className="w-32 h-32 rounded-[2rem] bg-white/5 border border-white/10 flex items-center justify-center shrink-0">
+              <Image src={logo} alt="Atreus" width={64} height={64} className="rounded-2xl opacity-80" />
+            </div>
+          </div>
+        </div>
+
       </main>
+
+      {/* Mobile Drawer */}
+      {mobileMenuOpen && (
+        <div className="fixed inset-0 z-50 lg:hidden">
+          {/* Backdrop */}
+          <div className="absolute inset-0 bg-black/40 backdrop-blur-sm" onClick={() => setMobileMenuOpen(false)} />
+          {/* Drawer */}
+          <div className="absolute left-0 top-0 bottom-0 w-[280px] bg-white shadow-2xl flex flex-col animate-slide-in">
+            {/* Drawer Header */}
+            <div className="px-6 pt-8 pb-4 shrink-0 flex items-center justify-between">
+              <div className="flex items-center gap-2.5">
+                <Image src={logo} alt="Atreus Logo" width={28} height={28} className="rounded-lg shadow-sm" />
+                <span className="text-[19px] font-extrabold text-slate-900 tracking-tight">Atreus</span>
+              </div>
+              <button onClick={() => setMobileMenuOpen(false)} className="p-2 hover:bg-slate-100 rounded-xl transition-colors">
+                <X className="w-5 h-5 text-slate-400" />
+              </button>
+            </div>
+
+            {/* Nav Items */}
+            <nav className="flex-1 min-h-0 overflow-y-auto px-6 flex flex-col gap-1.5 py-4">
+              <Link href="/" onClick={() => setMobileMenuOpen(false)} className="flex items-center gap-4 px-4 py-3.5 rounded-2xl transition-all font-bold text-sm bg-indigo-50/80 text-indigo-700 shadow-sm">
+                <HomeIcon className="w-5 h-5 text-indigo-600" />
+                Home
+              </Link>
+              <Link href="#features" onClick={() => setMobileMenuOpen(false)} className="flex items-center gap-4 px-4 py-3.5 rounded-2xl transition-all font-bold text-sm text-slate-500 hover:bg-slate-50 hover:text-slate-900">
+                <Layers className="w-5 h-5 text-slate-400" />
+                Features
+              </Link>
+              <Link href="#how-it-works" onClick={() => setMobileMenuOpen(false)} className="flex items-center gap-4 px-4 py-3.5 rounded-2xl transition-all font-bold text-sm text-slate-500 hover:bg-slate-50 hover:text-slate-900">
+                <ArrowRightLeft className="w-5 h-5 text-slate-400" />
+                How It Works
+              </Link>
+              <Link href="#security" onClick={() => setMobileMenuOpen(false)} className="flex items-center gap-4 px-4 py-3.5 rounded-2xl transition-all font-bold text-sm text-slate-500 hover:bg-slate-50 hover:text-slate-900">
+                <Shield className="w-5 h-5 text-slate-400" />
+                Security
+              </Link>
+              <Link href="#about" onClick={() => setMobileMenuOpen(false)} className="flex items-center gap-4 px-4 py-3.5 rounded-2xl transition-all font-bold text-sm text-slate-500 hover:bg-slate-50 hover:text-slate-900">
+                <Lock className="w-5 h-5 text-slate-400" />
+                About
+              </Link>
+              <Link href="#docs" onClick={() => setMobileMenuOpen(false)} className="flex items-center gap-4 px-4 py-3.5 rounded-2xl transition-all font-bold text-sm text-slate-500 hover:bg-slate-50 hover:text-slate-900">
+                <Wallet className="w-5 h-5 text-slate-400" />
+                Docs
+              </Link>
+
+              <div className="h-px bg-slate-100 my-4"></div>
+
+              <Link
+                href={hasWallet ? "/dashboard" : "/wallet"}
+                onClick={() => setMobileMenuOpen(false)}
+                className="flex items-center justify-center gap-2 bg-slate-900 text-white px-5 py-3.5 rounded-2xl text-sm font-bold transition-all hover:bg-slate-800 shadow-md mt-2"
+              >
+                {hasWallet ? "Go to Dashboard" : "Launch Wallet"}
+                <ArrowUpRight className="w-4 h-4" />
+              </Link>
+            </nav>
+
+            {/* Bottom Section */}
+            <div className="px-6 pb-6 pt-3 shrink-0">
+              <div className="p-4 bg-slate-50 border border-slate-100 rounded-2xl">
+                <div className="flex items-center gap-2 mb-1">
+                  <Shield className="w-4 h-4 text-slate-400" />
+                  <span className="text-[11px] font-extrabold text-slate-600 uppercase tracking-wider">Built on Stellar</span>
+                  <div className="w-2 h-2 rounded-full bg-green-500 shadow-[0_0_8px_rgba(34,197,94,0.6)] animate-pulse ml-auto"></div>
+                </div>
+                <p className="text-[12px] font-medium text-slate-500 leading-snug">Fast. Low cost. Borderless payments.</p>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
