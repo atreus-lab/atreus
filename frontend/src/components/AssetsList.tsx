@@ -1,107 +1,114 @@
 "use client";
 
+import { memo } from "react";
 import Image from "next/image";
 import Link from "next/link";
 import { ArrowRight } from "lucide-react";
+import WalletAssetRow from "./ui/WalletAssetRow";
 
 interface AssetsListProps {
   balances: any[];
 }
 
-export default function AssetsList({ balances }: AssetsListProps) {
+function AssetLogo({ code, isNative }: { code: string; isNative: boolean }) {
+  if (isNative || code === 'XLM') {
+    return <Image src="/media/stellarlogo.webp" alt="XLM" width={24} height={24} className="w-full h-full object-contain rounded-full bg-black p-0.5 border border-[rgba(255,255,255,0.2)]" />;
+  }
+  if (code === 'USDC') {
+    return <img src="https://cryptologos.cc/logos/usd-coin-usdc-logo.svg?v=029" alt="USDC" className="w-full h-full object-contain p-1 border border-[rgba(255,255,255,0.2)] rounded-full" />;
+  }
+  if (code === 'EURT') {
+    return <div className="w-full h-full rounded-full flex items-center justify-center font-bold text-[10px] bg-[rgba(255,255,255,0.1)] text-primary border border-[rgba(255,255,255,0.2)]">€</div>;
+  }
+  return <div className="w-full h-full rounded-full flex items-center justify-center font-bold text-[10px] bg-[rgba(255,255,255,0.05)] text-secondary border border-[rgba(255,255,255,0.2)]">{code?.slice(0, 2)}</div>;
+}
+
+// Generate random sparkline data
+const generateSparkline = (base: number) => {
+  return Array.from({ length: 15 }, (_, i) => ({
+    value: base + Math.sin(i * 0.5) * (base * 0.2) + Math.random() * (base * 0.1)
+  }));
+};
+
+const AssetsList = memo(function AssetsList({ balances }: AssetsListProps) {
+  const myAssets = balances.filter((b: any) => {
+    if (b.asset_type === 'native') return true;
+    if (!b.asset_code) return false;
+    return parseFloat(b.balance) > 0;
+  });
+
+  const existingCodes = balances.map((b: any) => b.asset_code).filter(Boolean);
+  const allAvailable = [
+    { code: 'USDC', name: 'USD Coin', sparkBase: 100 },
+    { code: 'EURT', name: 'Euro Token', sparkBase: 110 },
+    { code: 'yUSDC', name: 'Yield USDC', sparkBase: 105 },
+  ];
+  const available = allAvailable.filter(a => !existingCodes.includes(a.code));
+
   return (
-    <div className="bg-white rounded-[2rem] p-8 shadow-[0_12px_40px_rgba(0,0,0,0.04)] border border-slate-100 flex flex-col">
-      <div className="flex items-center justify-between mb-6">
-        <h3 className="font-extrabold text-slate-900">Assets</h3>
-        <Link href="/assets" className="text-sm font-bold text-indigo-600 hover:text-indigo-700">View all</Link>
+    <div className="panel flex flex-col h-full">
+      <div className="panel-header border-b border-[rgba(255,255,255,0.05)] pb-3">
+        <h3 className="text-lg font-extrabold text-primary">Assets</h3>
+        <Link href="/assets" className="text-xs font-semibold text-secondary hover:text-primary transition-colors flex items-center gap-1">View all <ArrowRight className="w-3 h-3"/></Link>
       </div>
 
-      {/* My Assets */}
-      <div className="flex flex-col gap-3 mb-4">
-        <h4 className="text-xs font-extrabold text-slate-400 uppercase tracking-wider">My Assets</h4>
-        {(() => {
-          const myAssets = balances.filter((b: any) => {
-            if (b.asset_type === 'native') return true;
-            if (!b.asset_code) return false;
-            if (parseFloat(b.balance) > 0) return true;
-            return false;
-          });
-          if (myAssets.length === 0) {
-            return <div className="text-xs text-slate-400 italic py-2">No assets activated yet</div>;
-          }
-          return myAssets.slice(0, 3).map((b: any, i: number) => {
-            const isNative = b.asset_type === "native";
-            const code = isNative ? "XLM" : b.asset_code;
-            const balanceVal = parseFloat(b.balance);
-            let logoContent = null;
-            if (isNative || code === 'XLM') {
-              logoContent = <Image src="/media/stellarlogo.webp" alt="XLM" width={28} height={28} className="w-full h-full object-contain rounded-full bg-black p-0.5" />;
-            } else if (code === 'USDC') {
-              logoContent = <img src="https://cryptologos.cc/logos/usd-coin-usdc-logo.svg?v=029" alt="USDC" className="w-full h-full object-contain p-1" />;
-            } else if (code === 'EURT') {
-              logoContent = <div className="w-full h-full bg-blue-100 text-blue-600 rounded-full flex items-center justify-center font-bold text-[10px]">€</div>;
-            } else {
-              logoContent = <div className="w-full h-full bg-slate-100 text-slate-500 rounded-full flex items-center justify-center font-bold text-[10px]">{code?.slice(0, 2)}</div>;
-            }
-            return (
-              <div key={i} className="flex items-center justify-between p-3 rounded-xl bg-slate-50/30 border border-slate-100/60">
-                <div className="flex items-center gap-3">
-                  <div className="w-9 h-9 rounded-full border border-slate-200 flex items-center justify-center shrink-0 overflow-hidden bg-white shadow-sm">
-                    {logoContent}
-                  </div>
-                  <span className="font-bold text-slate-900 text-sm">{code}</span>
-                </div>
-                <span className="font-bold text-slate-900 text-sm">{balanceVal.toLocaleString(undefined, { maximumFractionDigits: 4 })}</span>
-              </div>
-            );
-          });
-        })()}
+      <div className="panel-body flex flex-col gap-2 pt-4">
+        {/* My Assets */}
+        <span className="text-[10px] font-bold text-secondary uppercase tracking-widest mb-1">My Assets</span>
+        <div className="flex flex-col gap-1.5 stagger-children">
+          {myAssets.length === 0 ? (
+            <div className="text-xs italic py-2 text-secondary">No assets activated yet</div>
+          ) : (
+            myAssets.slice(0, 3).map((b: any, i: number) => {
+              const isNative = b.asset_type === "native";
+              const code = isNative ? "XLM" : b.asset_code;
+              return (
+                <WalletAssetRow
+                  key={i}
+                  code={code}
+                  subtitle={isNative ? "Stellar Lumens" : code}
+                  balance={parseFloat(b.balance)}
+                  logo={<AssetLogo code={code} isNative={isNative} />}
+                  sparklineData={generateSparkline(100)}
+                />
+              );
+            })
+          )}
+        </div>
+
+        {/* Divider */}
+        {available.length > 0 && <div className="h-px bg-[rgba(255,255,255,0.05)] my-3" />}
+
+        {/* Available Assets */}
+        {available.length > 0 && (
+          <>
+            <span className="text-[10px] font-bold text-secondary uppercase tracking-widest mb-1">Available</span>
+            <div className="flex flex-col gap-1.5">
+              {available.map((asset, i) => (
+                <WalletAssetRow
+                  key={i}
+                  code={asset.code}
+                  subtitle={asset.name}
+                  logo={<AssetLogo code={asset.code} isNative={false} />}
+                  sparklineData={generateSparkline(asset.sparkBase)}
+                  balance={asset.code === 'USDC' ? 1250 : asset.code === 'EURT' ? 500 : 250}
+                  action={
+                    <Link href="/assets" className="text-[10px] font-semibold px-3 py-1 rounded border border-[rgba(255,255,255,0.1)] text-secondary hover:text-primary transition-colors bg-[rgba(255,255,255,0.03)] hover:bg-[rgba(255,255,255,0.08)]">
+                      Activate
+                    </Link>
+                  }
+                />
+              ))}
+            </div>
+          </>
+        )}
+
+        <Link href="/assets" className="mt-4 self-start text-xs font-semibold text-secondary hover:text-primary transition-colors flex items-center gap-1">
+          Manage assets <ArrowRight className="w-3 h-3" />
+        </Link>
       </div>
-
-      <div className="h-px bg-slate-100 my-2"></div>
-
-      {/* Available Assets */}
-      {(() => {
-        const existingCodes = balances.map((b: any) => b.asset_code).filter(Boolean);
-        const allAvailable = [
-          { code: 'USDC', name: 'USD Coin' },
-          { code: 'EURT', name: 'Euro Token' },
-          { code: 'yUSDC', name: 'Your USDC' },
-        ];
-        const available = allAvailable.filter(a => !existingCodes.includes(a.code));
-        if (available.length === 0) return null;
-        return (
-          <div className="flex flex-col gap-3 mb-2">
-            <h4 className="text-xs font-extrabold text-slate-400 uppercase tracking-wider pt-2">Available</h4>
-            {available.map((asset, i) => (
-              <div key={i} className="flex items-center justify-between p-3 rounded-xl bg-slate-50/30 border border-slate-100/60">
-                <div className="flex items-center gap-3">
-                  <div className="w-9 h-9 rounded-full border border-slate-200 flex items-center justify-center shrink-0 overflow-hidden bg-white shadow-sm">
-                    {asset.code === 'USDC' ? (
-                      <img src="https://cryptologos.cc/logos/usd-coin-usdc-logo.svg?v=029" alt="USDC" className="w-full h-full object-contain p-1" />
-                    ) : asset.code === 'EURT' ? (
-                      <div className="w-full h-full bg-blue-100 text-blue-600 rounded-full flex items-center justify-center font-bold text-[10px]">€</div>
-                    ) : (
-                      <div className="w-full h-full bg-slate-100 text-slate-500 rounded-full flex items-center justify-center font-bold text-[10px]">{asset.code.slice(0, 3)}</div>
-                    )}
-                  </div>
-                  <div className="flex flex-col">
-                    <span className="font-bold text-slate-900 text-sm">{asset.code}</span>
-                    <span className="text-[10px] text-slate-400">{asset.name}</span>
-                  </div>
-                </div>
-                <Link href="/assets" className="text-[10px] font-bold text-indigo-600 bg-indigo-50 px-3 py-1.5 rounded-lg border border-indigo-100 hover:bg-indigo-100 transition-colors">
-                  Activate
-                </Link>
-              </div>
-            ))}
-          </div>
-        );
-      })()}
-
-      <Link href="/assets" className="mt-4 self-start text-sm font-bold text-indigo-600 hover:text-indigo-700 flex items-center gap-1">
-        Manage assets <ArrowRight className="w-4 h-4" />
-      </Link>
     </div>
   );
-}
+});
+
+export default AssetsList;

@@ -3,24 +3,10 @@
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
-  Search,
-  LayoutDashboard,
-  Wallet,
-  Link2,
-  ArrowRightLeft,
-  BarChart3,
-  Activity,
-  Shield,
-  Settings,
-  Send,
-  ArrowDownToLine,
-  PlusCircle,
-  RefreshCw,
-  ExternalLink,
-  ArrowUpRight,
-  ArrowDownLeft,
+  Search, LayoutDashboard, Wallet, Link2, ArrowRightLeft,
+  BarChart3, Activity, Shield, Settings, Send, ArrowDownToLine,
+  PlusCircle, RefreshCw, ExternalLink, ArrowUpRight, ArrowDownLeft,
   CheckCircle2,
-  X,
 } from "lucide-react";
 
 interface SearchResult {
@@ -80,9 +66,7 @@ export default function SearchDialog({ open, onClose, links, receivedLinks, tran
         if (!open) return;
         onClose();
       }
-      if (e.key === "Escape" && open) {
-        onClose();
-      }
+      if (e.key === "Escape" && open) onClose();
     };
     document.addEventListener("keydown", handler);
     return () => document.removeEventListener("keydown", handler);
@@ -90,22 +74,20 @@ export default function SearchDialog({ open, onClose, links, receivedLinks, tran
 
   const allResults: SearchResult[] = [
     ...NAV_ACTIONS,
-    ...(links || []).flatMap(l => [
-      {
-        id: `link-${l.id}`,
-        label: `${l.amount} XLM Link`,
-        description: l.claimed ? "Already claimed" : "Pending — click to view",
-        href: l.url,
-        icon: l.claimed ? <CheckCircle2 className="w-4 h-4 text-green-500" /> : <Link2 className="w-4 h-4 text-amber-500" />,
-        category: "Payment Links",
-      },
-    ]),
+    ...(links || []).flatMap(l => [{
+      id: `link-${l.id}`,
+      label: `${l.amount} XLM Link`,
+      description: l.claimed ? "Already claimed" : "Pending — click to view",
+      href: l.url,
+      icon: l.claimed ? <CheckCircle2 className="w-4 h-4 text-success" /> : <Link2 className="w-4 h-4 text-amber-500" />,
+      category: "Payment Links",
+    }]),
     ...(receivedLinks || []).map(l => ({
       id: `received-${l.id}`,
       label: `${l.amount} XLM Received`,
       description: "Claimed via payment link",
       href: "/activity",
-      icon: <ArrowDownToLine className="w-4 h-4 text-blue-500" />,
+      icon: <ArrowDownToLine className="w-4 h-4 text-accent" />,
       category: "Payment Links",
     })),
     ...(transactions || []).filter((tx: any) => tx.id).map((tx: any) => {
@@ -113,11 +95,9 @@ export default function SearchDialog({ open, onClose, links, receivedLinks, tran
       return {
         id: `tx-${tx.id}`,
         label: isSend ? `Sent ${parseFloat(tx.amount).toFixed(2)} ${tx.asset_code || "XLM"}` : `Received ${parseFloat(tx.amount).toFixed(2)} ${tx.asset_code || "XLM"}`,
-        description: isSend
-          ? `To ${tx.to?.slice(0, 8)}...`
-          : `From ${tx.from?.slice(0, 8)}...`,
+        description: isSend ? `To ${tx.to?.slice(0, 8)}...` : `From ${tx.from?.slice(0, 8)}...`,
         href: "/activity",
-        icon: isSend ? <ArrowUpRight className="w-4 h-4 text-orange-500" /> : <ArrowDownLeft className="w-4 h-4 text-green-500" />,
+        icon: isSend ? <ArrowUpRight className="w-4 h-4 text-amber-500" /> : <ArrowDownLeft className="w-4 h-4 text-success" />,
         category: "Transactions",
       };
     }),
@@ -125,11 +105,7 @@ export default function SearchDialog({ open, onClose, links, receivedLinks, tran
 
   const q = query.toLowerCase().trim();
   const filtered = q
-    ? allResults.filter(r =>
-        r.label.toLowerCase().includes(q) ||
-        r.description.toLowerCase().includes(q) ||
-        r.category.toLowerCase().includes(q)
-      )
+    ? allResults.filter(r => r.label.toLowerCase().includes(q) || r.description.toLowerCase().includes(q) || r.category.toLowerCase().includes(q))
     : allResults.slice(0, 8);
 
   const grouped: { category: string; items: SearchResult[] }[] = [];
@@ -139,34 +115,20 @@ export default function SearchDialog({ open, onClose, links, receivedLinks, tran
       seenCategories.add(r.category);
       grouped.push({ category: r.category, items: [r] });
     } else {
-      const group = grouped.find(g => g.category === r.category)!;
-      group.items.push(r);
+      grouped.find(g => g.category === r.category)!.items.push(r);
     }
   }
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
-    if (e.key === "ArrowDown") {
-      e.preventDefault();
-      setSelectedIndex(i => Math.min(i + 1, filtered.length - 1));
-    } else if (e.key === "ArrowUp") {
-      e.preventDefault();
-      setSelectedIndex(i => Math.max(i - 1, 0));
-    } else if (e.key === "Enter") {
-      e.preventDefault();
-      const selected = filtered[selectedIndex];
-      if (selected) {
-        navigateTo(selected);
-      }
-    }
+    if (e.key === "ArrowDown") { e.preventDefault(); setSelectedIndex(i => Math.min(i + 1, filtered.length - 1)); }
+    else if (e.key === "ArrowUp") { e.preventDefault(); setSelectedIndex(i => Math.max(i - 1, 0)); }
+    else if (e.key === "Enter") { e.preventDefault(); const s = filtered[selectedIndex]; if (s) navigateTo(s); }
   };
 
   const navigateTo = (result: SearchResult) => {
     onClose();
-    if (result.href) {
-      router.push(result.href);
-    } else if (result.onClick) {
-      result.onClick();
-    }
+    if (result.href) router.push(result.href);
+    else if (result.onClick) result.onClick();
   };
 
   useEffect(() => {
@@ -177,12 +139,13 @@ export default function SearchDialog({ open, onClose, links, receivedLinks, tran
 
   if (!open) return null;
 
+  // No entry animation — keyboard-triggered (⌘K), must open instantly per Emil's rule
   return (
     <div className="fixed inset-0 z-[100] flex items-start justify-center pt-[15vh]">
       <div className="absolute inset-0 bg-black/40 backdrop-blur-sm" onClick={onClose} />
-      <div className="relative w-full max-w-sm mx-4 bg-white rounded-xl shadow-[0_30px_80px_rgba(0,0,0,0.2)] border border-slate-100 overflow-hidden animate-[fadeSlideIn_0.15s_ease-out]">
-        <div className="flex items-center gap-2 px-4 py-3 border-b border-slate-100">
-          <Search className="w-4 h-4 text-slate-400 shrink-0" />
+      <div className="relative w-full max-w-sm mx-4 modal-content overflow-hidden">
+        <div className="flex items-center gap-2 px-4 py-3" style={{ borderBottom: '1px solid var(--border-default)' }}>
+          <Search className="w-4 h-4 text-secondary shrink-0" />
           <input
             ref={inputRef}
             type="text"
@@ -190,26 +153,22 @@ export default function SearchDialog({ open, onClose, links, receivedLinks, tran
             onChange={e => { setQuery(e.target.value); setSelectedIndex(0); }}
             onKeyDown={handleKeyDown}
             placeholder="Search pages, links, transactions..."
-            className="flex-1 text-sm font-medium text-slate-900 placeholder-slate-400 outline-none bg-transparent"
+            className="flex-1 text-sm font-medium outline-none bg-transparent text-primary"
           />
-          <kbd className="hidden sm:inline-flex items-center gap-1 px-1.5 py-0.5 bg-slate-100 text-slate-400 rounded text-[10px] font-bold">
-            ESC
-          </kbd>
+          <span className="kbd hidden sm:inline-flex">ESC</span>
         </div>
 
         <div ref={listRef} className="max-h-[360px] overflow-y-auto py-1">
           {filtered.length === 0 ? (
             <div className="flex flex-col items-center gap-2 py-10 px-4">
-              <Search className="w-8 h-8 text-slate-300" />
-              <p className="text-sm font-bold text-slate-500">No results for &ldquo;{query}&rdquo;</p>
-              <p className="text-xs font-semibold text-slate-400">Try searching for a page, link, or transaction.</p>
+              <Search className="w-8 h-8 text-secondary" />
+              <p className="text-sm font-bold text-secondary">No results for &ldquo;{query}&rdquo;</p>
+              <p className="text-xs text-secondary">Try searching for a page, link, or transaction.</p>
             </div>
           ) : (
             grouped.map((group, gi) => (
               <div key={group.category}>
-                <div className="px-4 py-1.5 text-[10px] font-extrabold text-slate-400 uppercase tracking-wider">
-                  {group.category}
-                </div>
+                <div className="px-4 py-1.5 section-label">{group.category}</div>
                 {group.items.map((result, ri) => {
                   const globalIndex = grouped.slice(0, gi).reduce((acc, g) => acc + g.items.length, 0) + ri;
                   const isSelected = globalIndex === selectedIndex;
@@ -219,20 +178,15 @@ export default function SearchDialog({ open, onClose, links, receivedLinks, tran
                       data-index={globalIndex}
                       onClick={() => navigateTo(result)}
                       onMouseEnter={() => setSelectedIndex(globalIndex)}
-                      className={`w-full flex items-start gap-3 px-4 py-2.5 text-left transition-colors ${
-                        isSelected ? "bg-indigo-50/80" : "hover:bg-slate-50"
-                      }`}
+                      className={`w-full flex items-start gap-3 px-4 py-2.5 text-left transition-colors ${isSelected ? "bg-[rgba(255,255,255,0.06)]" : "hover:bg-[rgba(255,255,255,0.03)]"}`}
                     >
-                      <div className="w-8 h-8 rounded-lg bg-slate-100 text-slate-500 flex items-center justify-center shrink-0 mt-0.5">
+                      <div className="w-8 h-8 rounded-lg flex items-center justify-center shrink-0 mt-0.5 bg-elevated text-secondary">
                         {result.icon}
                       </div>
                       <div className="flex flex-col min-w-0 flex-1">
-                        <span className="text-sm font-bold text-slate-900 truncate">{result.label}</span>
-                        <span className="text-xs font-semibold text-slate-500 mt-0.5 truncate">{result.description}</span>
+                        <span className="text-sm font-bold text-primary truncate">{result.label}</span>
+                        <span className="text-xs text-secondary mt-0.5 truncate">{result.description}</span>
                       </div>
-                      {result.href && (
-                        <ExternalLink className="w-3 h-3 text-slate-300 shrink-0 mt-1.5 opacity-0 group-hover:opacity-100" />
-                      )}
                     </button>
                   );
                 })}
@@ -241,18 +195,15 @@ export default function SearchDialog({ open, onClose, links, receivedLinks, tran
           )}
         </div>
 
-        <div className="flex items-center gap-3 px-4 py-2.5 border-t border-slate-100 bg-slate-50/50">
-          <div className="flex items-center gap-1.5 text-[10px] font-semibold text-slate-400">
-            <kbd className="px-1 py-0.5 bg-white border border-slate-200 rounded text-[9px] font-bold">↑↓</kbd>
-            <span>Navigate</span>
+        <div className="flex items-center gap-3 px-4 py-2 bg-elevated" style={{ borderTop: '1px solid var(--border-default)' }}>
+          <div className="flex items-center gap-1.5 text-[10px] font-semibold text-secondary">
+            <span className="kbd">↑↓</span> Navigate
           </div>
-          <div className="flex items-center gap-1.5 text-[10px] font-semibold text-slate-400">
-            <kbd className="px-1 py-0.5 bg-white border border-slate-200 rounded text-[9px] font-bold">↵</kbd>
-            <span>Open</span>
+          <div className="flex items-center gap-1.5 text-[10px] font-semibold text-secondary">
+            <span className="kbd">↵</span> Open
           </div>
-          <div className="flex items-center gap-1.5 text-[10px] font-semibold text-slate-400">
-            <kbd className="px-1 py-0.5 bg-white border border-slate-200 rounded text-[9px] font-bold">ESC</kbd>
-            <span>Close</span>
+          <div className="flex items-center gap-1.5 text-[10px] font-semibold text-secondary">
+            <span className="kbd">ESC</span> Close
           </div>
         </div>
       </div>

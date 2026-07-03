@@ -1,62 +1,70 @@
 "use client";
 
+import { memo } from "react";
 import Link from "next/link";
-import { Eye, EyeOff, ArrowUpRight, ArrowDownLeft, Link2, PlusCircle, ChevronDown } from "lucide-react";
+import { Eye, EyeOff, ArrowUpRight, ArrowDownLeft, Link2, PlusCircle } from "lucide-react";
+import { NumberTicker } from "./motion/number-ticker";
+import { motion } from "motion/react";
+import { SPRING_PRESS } from "@/lib/ease";
 
 interface BalanceCardProps {
   balance: string;
   showBalance: boolean;
   onToggleBalance: () => void;
   onClaimClick: () => void;
+  onCreateLinkClick: () => void;
 }
 
-export default function BalanceCard({ balance, showBalance, onToggleBalance, onClaimClick }: BalanceCardProps) {
-  return (
-    <div className="lg:col-span-2 relative bg-gradient-to-br from-indigo-500 via-blue-600 to-indigo-700 rounded-[2rem] p-8 text-white shadow-[0_20px_40px_-15px_rgba(79,70,229,0.5),inset_0_2px_4px_rgba(255,255,255,0.3)] overflow-hidden flex flex-col justify-between min-h-[300px]">
-      <svg className="absolute bottom-16 left-0 w-full h-[150px] opacity-40 mix-blend-overlay pointer-events-none" preserveAspectRatio="none" viewBox="0 0 100 100">
-        <path d="M0 100 L0 70 Q10 80, 20 60 T40 50 T60 30 T80 40 T100 10 L100 100 Z" fill="rgba(255,255,255,0.1)" />
-        <path d="M0 70 Q10 80, 20 60 T40 50 T60 30 T80 40 T100 10" fill="none" stroke="white" strokeWidth="1.5" />
-        <circle cx="100" cy="10" r="2" fill="white" />
-      </svg>
+const BalanceCard = memo(function BalanceCard({ balance, showBalance, onToggleBalance, onClaimClick, onCreateLinkClick }: BalanceCardProps) {
+  const numericBalance = parseFloat(balance);
 
-      <div className="flex items-start justify-between relative z-10">
-        <div className="flex flex-col">
-          <div className="flex items-center gap-2 mb-2 text-blue-100 font-semibold text-sm">
-            Total Balance
-            <button onClick={onToggleBalance} className="p-1 hover:bg-white/10 rounded-lg transition-colors">
-              {showBalance ? <Eye className="w-4 h-4 opacity-70" /> : <EyeOff className="w-4 h-4 opacity-70" />}
-            </button>
-          </div>
-          <div className="text-4xl sm:text-5xl font-extrabold tracking-tight mb-2 drop-shadow-sm">
-            {showBalance ? parseFloat(balance).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : '********'}
-            <span className="text-2xl font-bold opacity-80"> XLM</span>
-          </div>
-          <div className="flex items-center gap-3">
-            <span className="bg-white/20 backdrop-blur-md text-white px-2.5 py-1 rounded-lg text-xs font-bold flex items-center gap-1 border border-white/20">
-              <ArrowUpRight className="w-3 h-3" /> 7.07%
-            </span>
-            <span className="text-sm font-semibold text-blue-100">+$660.00 today</span>
-          </div>
-        </div>
-        <button className="bg-white/20 hover:bg-white/30 backdrop-blur-md border border-white/20 text-white px-3 py-1.5 rounded-xl text-xs font-bold flex items-center gap-2 transition-colors">
-          1D <ChevronDown className="w-3 h-3" />
+  return (
+    <div className="lg:col-span-2 balance-hero">
+      <div className="flex items-center justify-between mb-2">
+        <span className="inline-flex items-center gap-1.5 text-xs font-semibold text-secondary uppercase tracking-wider">
+          <span className="live-dot" />
+          Total Balance
+        </span>
+        <button onClick={onToggleBalance} className="p-1.5 rounded-lg hover:bg-[rgba(255,255,255,0.05)] transition-colors">
+          {showBalance ? <Eye className="w-4 h-4 text-secondary" /> : <EyeOff className="w-4 h-4 text-secondary" />}
         </button>
       </div>
 
-      <div className="flex flex-wrap items-center gap-3 relative z-10 mt-12">
-        <Link href="/send" className="flex-1 min-w-[120px] bg-white text-blue-700 hover:bg-slate-50 py-3 rounded-2xl text-sm font-bold flex items-center justify-center gap-2 shadow-[0_4px_12px_rgba(0,0,0,0.1)] transition-transform hover:-translate-y-0.5">
-          <ArrowUpRight className="w-4 h-4 text-blue-500" /> Send
+      <div className="flex items-baseline gap-2">
+        <span className="text-4xl sm:text-5xl font-extrabold tracking-tight text-primary tabular-nums">
+          {showBalance ? (
+            <NumberTicker value={numericBalance} duration={1.2} locale />
+          ) : '••••••'}
+        </span>
+        <span className="text-lg font-semibold text-secondary">XLM</span>
+      </div>
+
+      <div className="balance-hero-actions">
+        <Link href="/send" className="balance-hero-btn">
+          <ArrowUpRight className="w-4 h-4 text-accent" /> Send
         </Link>
-        <Link href="/receive" className="flex-1 min-w-[120px] bg-white text-blue-700 hover:bg-slate-50 py-3 rounded-2xl text-sm font-bold flex items-center justify-center gap-2 shadow-[0_4px_12px_rgba(0,0,0,0.1)] transition-transform hover:-translate-y-0.5">
-          <ArrowDownLeft className="w-4 h-4 text-blue-500" /> Receive
+        <Link href="/receive" className="balance-hero-btn">
+          <ArrowDownLeft className="w-4 h-4 text-accent" /> Receive
         </Link>
-        <Link href="/create" className="flex-1 min-w-[120px] bg-white text-blue-700 hover:bg-slate-50 py-3 rounded-2xl text-sm font-bold flex items-center justify-center gap-2 shadow-[0_4px_12px_rgba(0,0,0,0.1)] transition-transform hover:-translate-y-0.5">
-          <Link2 className="w-4 h-4 text-blue-500" /> Create Link
-        </Link>
-        <button onClick={onClaimClick} className="flex-1 min-w-[120px] bg-white text-blue-700 hover:bg-slate-50 py-3 rounded-2xl text-sm font-bold flex items-center justify-center gap-2 shadow-[0_4px_12px_rgba(0,0,0,0.1)] transition-transform hover:-translate-y-0.5">
-          <PlusCircle className="w-4 h-4 text-blue-500" /> Claim Link
-        </button>
+        <motion.button
+          whileTap={{ scale: 0.97 }}
+          transition={SPRING_PRESS}
+          onClick={onCreateLinkClick}
+          className="balance-hero-btn"
+        >
+          <Link2 className="w-4 h-4 text-accent" /> Create Link
+        </motion.button>
+        <motion.button
+          whileTap={{ scale: 0.97 }}
+          transition={SPRING_PRESS}
+          onClick={onClaimClick}
+          className="balance-hero-btn"
+        >
+          <PlusCircle className="w-4 h-4 text-accent" /> Claim
+        </motion.button>
       </div>
     </div>
   );
-}
+});
+
+export default BalanceCard;

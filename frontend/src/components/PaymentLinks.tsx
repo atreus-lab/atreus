@@ -1,7 +1,8 @@
 "use client";
 
-import { CheckCircle2, ArrowDownToLine, Copy, Check, Undo2, Loader2 } from "lucide-react";
+import { CheckCircle2, ArrowDownToLine } from "lucide-react";
 import { useState } from "react";
+import LinkRow from "./ui/LinkRow";
 
 interface StoredLink {
   id: string;
@@ -31,56 +32,38 @@ function PendingLinks({ links, onCopyLink, onRefund, copiedLinkId }: { links: St
   const handleRefund = async (link: StoredLink) => {
     if (!link.linkHashHex) return;
     setRefundingId(link.id);
-    try {
-      await onRefund(link.linkHashHex, link.secretHex);
-    } finally {
-      setRefundingId(null);
-    }
+    try { await onRefund(link.linkHashHex, link.secretHex); } finally { setRefundingId(null); }
   };
 
   return (
-    <div className="bg-white rounded-[2rem] p-8 shadow-[0_12px_40px_rgba(0,0,0,0.04)] border border-slate-100">
-      <div className="flex items-center justify-between mb-6">
-        <h3 className="font-extrabold text-slate-900 flex items-center gap-2">
-          <span className="w-2 h-2 rounded-full bg-amber-400 shadow-[0_0_8px_rgba(251,191,36,0.6)]"></span>
+    <div className="panel">
+      <div className="panel-header">
+        <h3 className="section-title flex items-center gap-2">
+          <span className="w-2 h-2 rounded-full bg-amber-400" />
           Pending Links
         </h3>
-        <span className="text-xs font-bold text-slate-400">{pending.length} active</span>
+        <span className="text-xs font-bold text-secondary">{pending.length} active</span>
       </div>
-      <div className="flex flex-col gap-3">
+      <div className="panel-body flex flex-col gap-2">
         {pending.slice(0, 10).map((link) => {
           const isExpired = Date.now() > link.expiresAt * 1000;
           return (
-            <div key={link.id} className={`flex items-center justify-between p-3 rounded-xl border ${isExpired ? 'bg-red-50/40 border-red-100/60' : 'bg-amber-50/40 border-amber-100/60'}`}>
-              <div className="flex flex-col min-w-0 flex-1 mr-3">
-                <div className="flex items-center gap-2 flex-wrap">
-                  <span className="font-bold text-slate-900 text-sm">{link.amount} XLM</span>
-                  {isExpired ? (
-                    <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-red-50 text-red-600 border border-red-200">Expired</span>
-                  ) : (
-                    <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-amber-50 text-amber-600 border border-amber-200">Pending</span>
-                  )}
-                </div>
-                <span className="text-[10px] text-slate-400 mt-0.5">
-                  {new Date(link.createdAt).toLocaleDateString()} - {link.expiresAt >= 4102444800 ? 'No expiry' : `Expires ${new Date(link.expiresAt * 1000).toLocaleDateString()}`}
+            <LinkRow
+              key={link.id}
+              linkId={link.id}
+              amount={link.amount}
+              status={isExpired ? "expired" : "pending"}
+              badge={
+                <span className={`badge ${isExpired ? 'badge-error' : 'badge-warning'}`}>
+                  {isExpired ? 'Expired' : 'Pending'}
                 </span>
-              </div>
-              <div className="flex items-center gap-2 shrink-0">
-                {isExpired && (
-                  <button
-                    onClick={() => handleRefund(link)}
-                    disabled={refundingId === link.id}
-                    className="p-2 rounded-lg bg-white border border-red-200 hover:bg-red-50 hover:border-red-300 transition-colors disabled:opacity-50"
-                    title="Refund"
-                  >
-                    {refundingId === link.id ? <Loader2 className="w-4 h-4 text-red-500 animate-spin" /> : <Undo2 className="w-4 h-4 text-red-500" />}
-                  </button>
-                )}
-                <button onClick={() => onCopyLink(link.url, link.id)} className="p-2 rounded-lg bg-white border border-amber-200 hover:bg-amber-50 hover:border-amber-300 transition-colors" title="Copy link">
-                  {copiedLinkId === link.id ? <Check className="w-4 h-4 text-green-500" /> : <Copy className="w-4 h-4 text-amber-500" />}
-                </button>
-              </div>
-            </div>
+              }
+              date={`${new Date(link.createdAt).toLocaleDateString()} — ${link.expiresAt >= 4102444800 ? 'No expiry' : `Expires ${new Date(link.expiresAt * 1000).toLocaleDateString()}`}`}
+              copiedId={copiedLinkId}
+              onCopy={() => onCopyLink(link.url, link.id)}
+              onRefund={isExpired ? () => handleRefund(link) : undefined}
+              refunding={refundingId === link.id}
+            />
           );
         })}
       </div>
@@ -93,35 +76,31 @@ function ClaimedByYouLinks({ links, onCopyLink, copiedLinkId }: { links: StoredL
   if (claimed.length === 0) return null;
 
   return (
-    <div className="bg-white rounded-[2rem] p-8 shadow-[0_12px_40px_rgba(0,0,0,0.04)] border border-slate-100">
-      <div className="flex items-center justify-between mb-6">
-        <h3 className="font-extrabold text-slate-900 flex items-center gap-2">
-          <CheckCircle2 className="w-5 h-5 text-green-500" />
+    <div className="panel">
+      <div className="panel-header">
+        <h3 className="section-title flex items-center gap-2">
+          <CheckCircle2 className="w-4 h-4 text-success" />
           Claimed (Created by You)
         </h3>
-        <span className="text-xs font-bold text-green-500">{claimed.length} total</span>
+        <span className="text-xs font-bold text-success">{claimed.length} total</span>
       </div>
-      <div className="flex flex-col gap-3">
+      <div className="panel-body flex flex-col gap-2">
         {claimed.slice(0, 5).map((link) => (
-          <div key={link.id} className="flex items-center justify-between p-3 rounded-xl bg-green-50/30 border border-green-100/60">
-            <div className="flex flex-col min-w-0 flex-1 mr-3">
-              <div className="flex items-center gap-2">
-                <span className="font-bold text-slate-900 text-sm">{link.amount} XLM</span>
-                <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-green-50 text-green-600 border border-green-200 flex items-center gap-1">
-                  <CheckCircle2 className="w-3 h-3" /> Claimed
-                </span>
-              </div>
-              <span className="text-[10px] text-slate-400 mt-0.5">{link.createdAt ? new Date(link.createdAt).toLocaleDateString() : ''} {link.createdAt ? new Date(link.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : ''}</span>
-              {link.txHash && (
-                <div className="flex items-center gap-1 mt-1">
-                  <span className="text-[10px] font-mono text-slate-400 truncate max-w-[150px]">TX: {link.txHash.slice(0, 16)}...</span>
-                  <button onClick={() => onCopyLink(link.txHash!, `tx-${link.id}`)} className="p-1 rounded bg-white border border-slate-200 hover:bg-slate-50 transition-colors shrink-0" title="Copy transaction hash">
-                    {copiedLinkId === `tx-${link.id}` ? <Check className="w-3 h-3 text-green-500" /> : <Copy className="w-3 h-3 text-slate-400" />}
-                  </button>
-                </div>
-              )}
-            </div>
-          </div>
+          <LinkRow
+            key={link.id}
+            linkId={link.id}
+            amount={link.amount}
+            status="claimed"
+            badge={
+              <span className="badge badge-success flex items-center gap-1">
+                <CheckCircle2 className="w-3 h-3" /> Claimed
+              </span>
+            }
+            date={link.createdAt ? `${new Date(link.createdAt).toLocaleDateString()} ${new Date(link.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}` : ''}
+            txHash={link.txHash}
+            copiedId={copiedLinkId}
+            onCopy={link.txHash ? () => onCopyLink(link.txHash!, `tx-${link.id}`) : undefined}
+          />
         ))}
       </div>
     </div>
@@ -132,35 +111,31 @@ function ReceivedLinks({ links, onCopyLink, copiedLinkId }: { links: StoredLink[
   if (links.length === 0) return null;
 
   return (
-    <div id="received-links-section" className="bg-white rounded-[2rem] p-8 shadow-[0_12px_40px_rgba(0,0,0,0.04)] border border-slate-100">
-      <div className="flex items-center justify-between mb-6">
-        <h3 className="font-extrabold text-slate-900 flex items-center gap-2">
-          <ArrowDownToLine className="w-5 h-5 text-blue-500" />
+    <div id="received-links-section" className="panel">
+      <div className="panel-header">
+        <h3 className="section-title flex items-center gap-2">
+          <ArrowDownToLine className="w-4 h-4 text-accent" />
           Links You&apos;ve Claimed
         </h3>
-        <span className="text-xs font-bold text-blue-500">{links.length} total</span>
+        <span className="text-xs font-bold text-accent">{links.length} total</span>
       </div>
-      <div className="flex flex-col gap-3">
+      <div className="panel-body flex flex-col gap-2">
         {links.slice(0, 5).map((link) => (
-          <div key={link.id} className="flex items-center justify-between p-3 rounded-xl bg-blue-50/30 border border-blue-100/60">
-            <div className="flex flex-col min-w-0 flex-1 mr-3">
-              <div className="flex items-center gap-2">
-                <span className="font-bold text-slate-900 text-sm">{link.amount} XLM</span>
-                <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-blue-50 text-blue-600 border border-blue-200 flex items-center gap-1">
-                  <ArrowDownToLine className="w-3 h-3" /> Received
-                </span>
-              </div>
-              <span className="text-[10px] text-slate-400 mt-0.5">{new Date(link.createdAt).toLocaleDateString()} {new Date(link.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
-              {link.txHash && (
-                <div className="flex items-center gap-1 mt-1">
-                  <span className="text-[10px] font-mono text-slate-400 truncate max-w-[150px]">TX: {link.txHash.slice(0, 16)}...</span>
-                  <button onClick={() => onCopyLink(link.txHash!, `rx-${link.id}`)} className="p-1 rounded bg-white border border-slate-200 hover:bg-slate-50 transition-colors shrink-0" title="Copy transaction hash">
-                    {copiedLinkId === `rx-${link.id}` ? <Check className="w-3 h-3 text-green-500" /> : <Copy className="w-3 h-3 text-slate-400" />}
-                  </button>
-                </div>
-              )}
-            </div>
-          </div>
+          <LinkRow
+            key={link.id}
+            linkId={link.id}
+            amount={link.amount}
+            status="received"
+            badge={
+              <span className="badge badge-info flex items-center gap-1">
+                <ArrowDownToLine className="w-3 h-3" /> Received
+              </span>
+            }
+            date={`${new Date(link.createdAt).toLocaleDateString()} ${new Date(link.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`}
+            txHash={link.txHash}
+            copiedId={copiedLinkId}
+            onCopy={link.txHash ? () => onCopyLink(link.txHash!, `rx-${link.id}`) : undefined}
+          />
         ))}
       </div>
     </div>

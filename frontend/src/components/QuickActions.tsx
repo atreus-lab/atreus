@@ -1,64 +1,41 @@
 "use client";
 
-import Link from "next/link";
+import { memo } from "react";
 import { ArrowDownToLine, Send, Link2, PlusCircle, RefreshCw } from "lucide-react";
+import QuickActionCard from "./ui/QuickActionCard";
 
 interface QuickActionsProps {
   onClaimClick: () => void;
+  onCreateLinkClick: () => void;
 }
 
-export default function QuickActions({ onClaimClick }: QuickActionsProps) {
+const ACTIONS = [
+  { href: "/send", icon: Send, label: "Send Payment", desc: "Send crypto or tokens" },
+  { href: "/receive", icon: ArrowDownToLine, label: "Receive Payment", desc: "Receive crypto or tokens" },
+  { key: "create", icon: Link2, label: "Create Payment Link", desc: "Create rules & share" },
+  { key: "claim", icon: PlusCircle, label: "Claim Payment Link", desc: "Claim funds from a link" },
+  { href: "/swap", icon: RefreshCw, label: "Swap Tokens", desc: "Instant token swaps" },
+];
+
+const QuickActions = memo(function QuickActions({ onClaimClick, onCreateLinkClick }: QuickActionsProps) {
   return (
-    <div className="mt-4">
-      <h3 className="font-extrabold text-slate-900 mb-1">Quick Actions</h3>
-      <p className="text-[12px] font-semibold text-slate-500 mb-4">Do more with Atreus</p>
-      <div className="flex items-center gap-4 overflow-x-auto pb-4 no-scrollbar">
-        <Link href="/send" className="flex items-center gap-3 bg-white border border-slate-100 shadow-sm rounded-2xl p-4 min-w-[220px] hover:shadow-md hover:border-indigo-100 transition-all group">
-          <div className="w-10 h-10 rounded-xl bg-indigo-50 text-indigo-600 flex items-center justify-center group-hover:scale-110 transition-transform">
-            <Send className="w-5 h-5" />
-          </div>
-          <div className="flex flex-col">
-            <span className="text-sm font-extrabold text-slate-900">Send Payment</span>
-            <span className="text-[10px] font-bold text-slate-400">Send crypto or tokens</span>
-          </div>
-        </Link>
-        <Link href="/receive" className="flex items-center gap-3 bg-white border border-slate-100 shadow-sm rounded-2xl p-4 min-w-[220px] hover:shadow-md hover:border-blue-100 transition-all group">
-          <div className="w-10 h-10 rounded-xl bg-blue-50 text-blue-600 flex items-center justify-center group-hover:scale-110 transition-transform">
-            <ArrowDownToLine className="w-5 h-5" />
-          </div>
-          <div className="flex flex-col">
-            <span className="text-sm font-extrabold text-slate-900">Receive Payment</span>
-            <span className="text-[10px] font-bold text-slate-400">Receive crypto or tokens</span>
-          </div>
-        </Link>
-        <Link href="/create" className="flex items-center gap-3 bg-white border border-slate-100 shadow-sm rounded-2xl p-4 min-w-[220px] hover:shadow-md hover:border-purple-100 transition-all group">
-          <div className="w-10 h-10 rounded-xl bg-purple-50 text-purple-600 flex items-center justify-center group-hover:scale-110 transition-transform">
-            <Link2 className="w-5 h-5" />
-          </div>
-          <div className="flex flex-col">
-            <span className="text-sm font-extrabold text-slate-900">Create Payment Link</span>
-            <span className="text-[10px] font-bold text-slate-400">Create rules & share</span>
-          </div>
-        </Link>
-        <button onClick={onClaimClick} className="flex items-center gap-3 bg-white border border-slate-100 shadow-sm rounded-2xl p-4 min-w-[220px] hover:shadow-md hover:border-purple-100 transition-all group text-left">
-          <div className="w-10 h-10 rounded-xl bg-purple-50 text-purple-600 flex items-center justify-center group-hover:scale-110 transition-transform">
-            <PlusCircle className="w-5 h-5" />
-          </div>
-          <div className="flex flex-col">
-            <span className="text-sm font-extrabold text-slate-900">Claim Payment Link</span>
-            <span className="text-[10px] font-bold text-slate-400">Claim funds from a link</span>
-          </div>
-        </button>
-        <Link href="/swap" className="flex items-center gap-3 bg-white border border-slate-100 shadow-sm rounded-2xl p-4 min-w-[220px] hover:shadow-md hover:border-emerald-100 transition-all group">
-          <div className="w-10 h-10 rounded-xl bg-emerald-50 text-emerald-600 flex items-center justify-center group-hover:scale-110 transition-transform">
-            <RefreshCw className="w-5 h-5" />
-          </div>
-          <div className="flex flex-col">
-            <span className="text-sm font-extrabold text-slate-900">Swap Tokens</span>
-            <span className="text-[10px] font-bold text-slate-400">Instant token swaps</span>
-          </div>
-        </Link>
+    <div className="app-section">
+      <h3 className="section-title">Quick Actions</h3>
+      <p className="section-description">Do more with Atreus</p>
+      <div className="quick-action-grid mt-4">
+        {ACTIONS.map((item, i) => (
+          <QuickActionCard
+            key={i}
+            icon={<item.icon className="w-[18px] h-[18px]" />}
+            label={item.label}
+            description={item.desc}
+            href={item.href}
+            onClick={item.key === "claim" ? onClaimClick : item.key === "create" ? onCreateLinkClick : undefined}
+          />
+        ))}
       </div>
     </div>
   );
-}
+});
+
+export default QuickActions;
