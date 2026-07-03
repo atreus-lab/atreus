@@ -21,7 +21,7 @@
 | Manage Assets (trustlines) | ✅ Working | Add USDC, EURT, or custom assets |
 | Google OAuth sign-in | ✅ Working | Sign in with Google, email stored in wallet |
 | Wallet restore (seed phrase) | ✅ Working | BIP39 mnemonic validation + recovery |
-| Create payment link | Needs test | localStorage wallet + Soroban contract call |
+| Create payment link | ✅ Working | localStorage wallet + Soroban contract call |
 | Claim payment link | ✅ Working | Real ZK proof (client-side UltraHonk) → backend attestation → on-chain `claim_link` gated on `is_attested` |
 | VerifierContract | ✅ Deployed (redeployed) | Real attestation oracle (`attest`/`is_attested`), not just a receipt service — testnet |
 | AtreusContract | ✅ Deployed (redeployed) | Escrow + claim, now gated on ZK attestation — testnet |
@@ -87,6 +87,20 @@ atreus/
 ├── docker-compose.yml Docker services for nargo commands
 ├── package.json       Root pnpm workspace config
 └── pnpm-workspace.yaml
+
+### Frontend structure
+
+```
+frontend/
+├── src/
+│   ├── app/           13 pages (dashboard, wallet, send, receive, swap, assets, create,
+│   │                  claim, activity, analytics, profile, security, settings)
+│   ├── components/    15 reusable components (AppSidebar, AppHeader, SearchDialog,
+│   │                  BalanceCard, PaymentLinks, NotificationDropdown, etc.)
+│   ├── constants/     Shared nav items with getNavItems() helper
+│   └── lib/           Wallet, Stellar/Soroban, ZK proof, passkey, links utilities
+└── public/circuits/   Compiled Noir circuit (served to browser for proof gen)
+```
 ```
 
 ## Getting Started
@@ -155,12 +169,15 @@ funded testnet keypair used to sign attestations. Never commit this file (alread
 | `/assets` | Add trustlines (USDC, EURT, custom) | localStorage |
 | `/create` | Create payment link | localStorage |
 | `/claim` | Claim payment link | localStorage |
+| `/activity` | Transaction history | localStorage |
+| `/analytics` | Wallet analytics | localStorage |
+| `/profile` | User profile | localStorage |
+| `/security` | Security settings | localStorage |
+| `/settings` | Network, address book, notifications | localStorage |
 
 ## Design System
 
-**Semantic CSS classes only — no raw Tailwind utilities in components.** 30+ classes defined in `globals.css` at `@layer components`.
-
-Key classes: `.page`, `.card`, `.btn-primary`, `.btn-secondary`, `.input`, `.status-error`, `.status-success`, `.icon-sm`, `.icon-md`, `.icon-lg`, `.mnemonic-grid`, `.mnemonic-word`, `.action-grid`, `.divider`, `.divider-hr`, `.divider-line`, `.balance-value`, `.inline-link`.
+Tailwind CSS with lucide-react icons. Reusable layout components: `AppSidebar`, `AppHeader`, `SearchDialog` (in `frontend/src/components/`). Navigation items centralized in `frontend/src/constants/navigation.ts`.
 
 ## Deployed Contracts (Testnet)
 
