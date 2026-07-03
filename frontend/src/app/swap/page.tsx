@@ -4,7 +4,7 @@ import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import Image from "next/image";
 import Link from "next/link";
-import { loadWallet, swapXLM, getBalances, getExplorerUrl, type StoredWallet } from "@/lib/wallet";
+import { loadWallet, swapTokens, getSwapEstimate, getBalances, getExplorerUrl, type StoredWallet } from "@/lib/wallet";
 import { 
  LayoutDashboard, Wallet, Link2, ArrowRightLeft, BarChart3, Activity, Shield, 
  Settings, Search, Bell, ChevronDown, ArrowLeft, Loader2, ExternalLink, RefreshCw, CheckCircle2
@@ -12,9 +12,12 @@ import {
 import logo from "../../media/ateruslogo.jpeg";
 
 const ALL_TOKENS = [
+  { code: "XLM", issuer: null } as const,
   { code: "USDC", issuer: "GA2BYV7QJ75ZAZXQBEDX5CAYXIRMXELJYRK5O6IHF2RLCDKVQU2ZSKBU" },
   { code: "EURT", issuer: "GBLETQF7AAB2DPWP3LU6DYXYF3CZX7RVH3PB6IHQWECTOKZL7EENGO2U" },
 ];
+
+type Token = typeof ALL_TOKENS[number];
 
 const navItems = [
  { icon: LayoutDashboard, label: "Overview", href: "/dashboard" },
@@ -27,18 +30,35 @@ const navItems = [
  { icon: Settings, label: "Settings", href: "/settings" },
 ];
 
+function tokenColor(token: Token): string {
+  switch (token.code) {
+    case "XLM": return "bg-black text-white";
+    case "USDC": return "bg-blue-500 text-white";
+    case "EURT": return "bg-emerald-500 text-white";
+    default: return "bg-slate-500 text-white";
+  }
+}
+
 export default function SwapPage() {
   const router = useRouter();
   const [storedWallet, setStoredWallet] = useState<StoredWallet | null>(null);
   const [loading, setLoading] = useState(true);
   const [amount, setAmount] = useState("");
   const [balances, setBalances] = useState<any[]>([]);
-  const [token, setToken] = useState(ALL_TOKENS[0]);
+  const [fromToken, setFromToken] = useState<Token>(ALL_TOKENS[0]);
+  const [toToken, setToToken] = useState<Token>(ALL_TOKENS[1]);
   const [status, setStatus] = useState<"idle" | "swapping" | "success" | "error">("idle");
   const [errorMsg, setErrorMsg] = useState("");
   const [txHash, setTxHash] = useState("");
-  const activatedTokens = ALL_TOKENS.filter(t => balances.some(b => b.asset_code === t.code));
-  const swappableTokens = activatedTokens.length > 0 ? activatedTokens : ALL_TOKENS;
+  const [estimating, setEstimating] = useState(false);
+  const [displayEstimate, setDisplayEstimate] = useState<string | null>(null);
+
+  // XLM is always activated; issued tokens need a trustline
+  const activatedTokens = ALL_TOKENS.filter(t =>
+    t.code === "XLM" || balances.some(b => b.asset_code === t.code)
+  );
+  // To dropdown excludes the selected fromToken
+  const toOptions = activatedTokens.filter(t => t.code !== fromToken.code);
 
   useEffect(() => {
     const wallet = loadWallet();
@@ -46,13 +66,65 @@ export default function SwapPage() {
     setStoredWallet(wallet);
     getBalances(wallet.publicKey).then(bals => {
       setBalances(bals);
-      // Default to first activated token
       const activatedCodes = bals.map((b: any) => b.asset_code).filter(Boolean);
-      const firstActivated = ALL_TOKENS.find(t => activatedCodes.includes(t.code));
-      if (firstActivated) setToken(firstActivated);
+      const firstNonNative = ALL_TOKENS.find(t => t.code !== "XLM" && activatedCodes.includes(t.code));
+      if (firstNonNative) setToToken(firstNonNative);
       setLoading(false);
     }).catch(() => setLoading(false));
   }, [router]);
+
+  // Show immediate fallback estimate + background DEX query
+  useEffect(() => {
+    if (!amount || parseFloat(amount) <= 0 || !storedWallet) {
+      setDisplayEstimate(null);
+      return;
+    }
+
+    // Immediate fallback so user always sees an estimate as they type
+    const val = parseFloat(amount);
+    const from = fromToken.code;
+    const to = toToken.code;
+    let fallback = val * 0.9;
+    if (from === "XLM" && to === "USDC") fallback = val * 0.85;
+    else if (from === "XLM" && to === "EURT") fallback = val * 0.72;
+    else if (from === "USDC" && to === "XLM") fallback = val * 1.15;
+    else if (from === "USDC" && to === "EURT") fallback = val * 0.84;
+    else if (from === "EURT" && to === "XLM") fallback = val * 1.35;
+    else if (from === "EURT" && to === "USDC") fallback = val * 1.18;
+    setDisplayEstimate(fallback.toFixed(4));
+
+    // Background DEX query — overrides fallback when real rate arrives
+    setEstimating(true);
+    const timer = setTimeout(async () => {
+      try {
+        const est = await getSwapEstimate(
+          fromToken.code === "XLM" ? null : fromToken.code,
+          fromToken.code === "XLM" ? null : fromToken.issuer,
+          toToken.code,
+          toToken.issuer!,
+          amount
+        );
+        if (parseFloat(est) > 0) setDisplayEstimate(est);
+      } catch { /* fallback stays visible */ }
+      finally { setEstimating(false); }
+    }, 150);
+    return () => { clearTimeout(timer); setEstimating(false); };
+  }, [amount, fromToken, toToken, storedWallet]);
+
+  const handleFromChange = (code: string) => {
+    const newToken = ALL_TOKENS.find(t => t.code === code)!;
+    setFromToken(newToken);
+    if (newToken.code === toToken.code) {
+      const available = activatedTokens.filter(t => t.code !== code);
+      if (available.length > 0) setToToken(available[0]);
+    }
+  };
+
+  const handleSwapDirection = () => {
+    const temp = fromToken;
+    setFromToken(toToken);
+    setToToken(temp);
+  };
 
   const handleSwap = async () => {
     try {
@@ -62,10 +134,22 @@ export default function SwapPage() {
       if (!storedWallet) { router.push("/wallet"); return; }
       if (!amount || parseFloat(amount) <= 0) throw new Error("Enter a valid amount");
 
-      const xlmBal = balances.find(b => b.asset_type === "native")?.balance || "0";
-      if (parseFloat(xlmBal) < parseFloat(amount) + 0.005) throw new Error("Insufficient XLM");
+      // Check source balance
+      let sourceBalance = "0";
+      if (fromToken.code === "XLM") {
+        sourceBalance = balances.find(b => b.asset_type === "native")?.balance || "0";
+      } else {
+        sourceBalance = balances.find(b => b.asset_code === fromToken.code)?.balance || "0";
+      }
+      if (parseFloat(sourceBalance) < parseFloat(amount)) throw new Error(`Insufficient ${fromToken.code} balance`);
 
-      const hash = await swapXLM(token.code, token.issuer, amount);
+      const hash = await swapTokens(
+        fromToken.code === "XLM" ? null : fromToken.code,
+        fromToken.code === "XLM" ? null : fromToken.issuer,
+        toToken.code,
+        toToken.issuer!,
+        amount
+      );
       setTxHash(hash);
       // Refresh balances after successful swap
       const bals = await getBalances(storedWallet.publicKey);
@@ -148,7 +232,7 @@ export default function SwapPage() {
       <header className="w-full flex items-center justify-between py-6 px-8 sm:px-10 lg:px-12 bg-[#FAFBFF] sticky top-0 z-30 backdrop-blur-md border-b border-slate-100/50">
        <div className="flex flex-col">
         <h1 className="text-2xl sm:text-[28px] font-extrabold tracking-tight text-slate-900">Swap</h1>
-        <p className="text-sm font-medium text-slate-500 mt-1">Swap XLM for supported tokens on Stellar DEX</p>
+        <p className="text-sm font-medium text-slate-500 mt-1">Swap tokens on the Stellar DEX</p>
        </div>
        <div className="hidden md:flex items-center gap-6">
         <div className="relative">
@@ -179,7 +263,7 @@ export default function SwapPage() {
          </div>
          <h3 className="text-2xl font-extrabold text-slate-900 mb-2">Swap Successful</h3>
          <p className="text-sm text-slate-500 font-medium mb-8">
-          Successfully swapped XLM for {token.code}
+          Successfully swapped {fromToken.code} for {toToken.code}
          </p>
          <div className="flex items-center gap-4">
           <button onClick={() => router.push("/dashboard")} className="px-6 py-3 bg-indigo-600 text-white rounded-2xl text-sm font-bold hover:bg-indigo-700 transition-colors shadow-[0_4px_12px_rgba(79,70,229,0.3)]">
@@ -196,31 +280,41 @@ export default function SwapPage() {
          
          {/* Swap Card */}
          <div className="lg:col-span-2 bg-white rounded-[2rem] p-8 sm:p-10 shadow-[0_12px_40px_rgba(0,0,0,0.04)] border border-slate-100 flex flex-col">
-          <h3 className="font-extrabold text-slate-900 text-xl mb-8">Swap XLM for Tokens</h3>
+          <h3 className="font-extrabold text-slate-900 text-xl mb-8">Swap Tokens</h3>
 
           {/* Swap Pair */}
-          <div className="flex items-center gap-4 mb-8 p-4 bg-slate-50/50 rounded-2xl border border-slate-100">
-           <div className="flex-1 flex flex-col gap-1">
+          <div className="flex flex-col sm:flex-row items-center gap-3 sm:gap-4 mb-8 p-5 sm:p-4 bg-slate-50/50 rounded-2xl border border-slate-100">
+           {/* From */}
+           <div className="w-full sm:flex-1 flex flex-col gap-1.5 sm:gap-1">
             <span className="text-xs font-bold text-slate-400 uppercase tracking-wider">From</span>
             <div className="flex items-center gap-3">
-             <div className="w-10 h-10 rounded-full bg-black flex items-center justify-center">
-              <span className="text-white font-bold text-xs">XLM</span>
-             </div>
-             <span className="font-extrabold text-lg text-slate-900">XLM</span>
-            </div>
-           </div>
-           <div className="w-12 h-12 rounded-2xl bg-indigo-50 border border-indigo-100 flex items-center justify-center shrink-0">
-            <ArrowRightLeft className="w-5 h-5 text-indigo-500" />
-           </div>
-           <div className="flex-1 flex flex-col gap-1">
-            <span className="text-xs font-bold text-slate-400 uppercase tracking-wider">To</span>
-            <div className="flex items-center gap-3">
-             <div className="w-10 h-10 rounded-full bg-blue-50 border border-blue-100 flex items-center justify-center">
-              <span className="text-blue-600 font-bold text-xs">{token.code.slice(0, 2)}</span>
+             <div className={`w-10 h-10 rounded-full ${tokenColor(fromToken)} flex items-center justify-center`}>
+              <span className="font-bold text-xs">{fromToken.code.slice(0, 2)}</span>
              </div>
              <div className="relative">
-              <select value={token.code} onChange={e => setToken(ALL_TOKENS.find(t => t.code === e.target.value)!)} className="font-extrabold text-lg text-slate-900 bg-transparent border-none outline-none cursor-pointer focus:text-indigo-600 appearance-none pr-5">
-               {swappableTokens.map(t => <option key={t.code} value={t.code}>{t.code}</option>)}
+              <select value={fromToken.code} onChange={e => handleFromChange(e.target.value)} className="font-extrabold text-lg text-slate-900 bg-transparent border-none outline-none cursor-pointer focus:text-indigo-600 appearance-none pr-5">
+               {activatedTokens.map(t => <option key={t.code} value={t.code}>{t.code}</option>)}
+              </select>
+              <ChevronDown className="w-4 h-4 text-slate-400 absolute right-0 top-1/2 -translate-y-1/2 pointer-events-none" />
+             </div>
+            </div>
+           </div>
+
+           {/* Swap Direction Button */}
+           <button onClick={handleSwapDirection} className="w-11 h-11 sm:w-12 sm:h-12 rounded-2xl bg-indigo-50 border border-indigo-100 flex items-center justify-center shrink-0 rotate-90 sm:rotate-0 hover:bg-indigo-100 transition-colors cursor-pointer">
+            <ArrowRightLeft className="w-5 h-5 text-indigo-500" />
+           </button>
+
+           {/* To */}
+           <div className="w-full sm:flex-1 flex flex-col gap-1.5 sm:gap-1">
+            <span className="text-xs font-bold text-slate-400 uppercase tracking-wider">To</span>
+            <div className="flex items-center gap-3">
+             <div className={`w-10 h-10 rounded-full ${tokenColor(toToken)} flex items-center justify-center`}>
+              <span className="font-bold text-xs">{toToken.code.slice(0, 2)}</span>
+             </div>
+             <div className="relative">
+              <select value={toToken.code} onChange={e => setToToken(ALL_TOKENS.find(t => t.code === e.target.value)!)} className="font-extrabold text-lg text-slate-900 bg-transparent border-none outline-none cursor-pointer focus:text-indigo-600 appearance-none pr-5">
+               {toOptions.map(t => <option key={t.code} value={t.code}>{t.code}</option>)}
               </select>
               <ChevronDown className="w-4 h-4 text-slate-400 absolute right-0 top-1/2 -translate-y-1/2 pointer-events-none" />
              </div>
@@ -230,20 +324,23 @@ export default function SwapPage() {
 
           {/* Amount */}
           <div className="flex flex-col gap-2 mb-6">
-           <label className="text-xs font-bold text-slate-500 uppercase tracking-wider">Amount (XLM)</label>
+           <label className="text-xs font-bold text-slate-500 uppercase tracking-wider">Amount ({fromToken.code})</label>
            <input value={amount} onChange={e => setAmount(e.target.value)} placeholder="0.00" type="number" step="0.01" className="w-full p-4 rounded-xl border border-slate-200 text-lg font-bold focus:outline-none focus:border-indigo-500 focus:ring-4 focus:ring-indigo-500/10 transition-all" />
-           {parseFloat(amount) > 0 && (
+           {displayEstimate && parseFloat(displayEstimate) > 0 && (
             <div className="flex items-center justify-between p-4 bg-indigo-50/50 rounded-xl border border-indigo-100 mt-2">
-             <span className="text-sm font-semibold text-slate-600">≈ You receive</span>
+             <span className="text-sm font-semibold text-slate-600 flex items-center gap-2">
+              ≈ You receive
+              {estimating && <Loader2 className="w-3 h-3 animate-spin text-slate-400" />}
+             </span>
              <span className="text-lg font-extrabold text-indigo-700">
-              {(parseFloat(amount) * 0.98).toFixed(2)} {token.code}
+              {parseFloat(displayEstimate).toFixed(4)} {toToken.code}
             </span>
             </div>
            )}
           </div>
 
           <p className="text-xs font-semibold text-slate-400 mb-6 flex items-center gap-1">
-            <RefreshCw className="w-3 h-3" /> Swap via Stellar DEX. 2% slippage buffer.
+            <RefreshCw className="w-3 h-3" /> Swap via Stellar DEX. Rate determined at time of execution.
           </p>
 
           {status === "error" && (
@@ -253,7 +350,7 @@ export default function SwapPage() {
           )}
 
           <button onClick={handleSwap} disabled={status === "swapping" || !amount || parseFloat(amount) <= 0} className="w-full py-4 bg-indigo-600 text-white hover:bg-indigo-700 disabled:opacity-40 disabled:cursor-not-allowed rounded-2xl text-sm font-bold transition-all shadow-[0_4px_12px_rgba(79,70,229,0.3)] flex items-center justify-center gap-2">
-           {status === "swapping" ? <><Loader2 className="w-4 h-4 animate-spin" /> Swapping...</> : <>Swap to {token.code}</>}
+           {status === "swapping" ? <><Loader2 className="w-4 h-4 animate-spin" /> Swapping...</> : <>Swap {fromToken.code} for {toToken.code}</>}
           </button>
          </div>
 
@@ -274,7 +371,7 @@ export default function SwapPage() {
             </div>
             <div className="flex items-center justify-between">
              <span className="text-sm font-semibold text-indigo-100">Slippage</span>
-             <span className="text-sm font-bold text-white">2%</span>
+             <span className="text-sm font-bold text-white">5%</span>
             </div>
            </div>
           </div>
