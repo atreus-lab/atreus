@@ -1,11 +1,9 @@
-import { Keypair, TransactionBuilder, Networks, BASE_FEE, Operation, Asset, Horizon, rpc } from "@stellar/stellar-sdk";
+import { Keypair, TransactionBuilder, Networks, BASE_FEE, Operation, Asset, Horizon } from "@stellar/stellar-sdk";
 import * as bip39 from "bip39";
 
 const STORAGE_KEY = "atreus_wallet";
 const HORIZON_URL = "https://horizon-testnet.stellar.org";
-const SOROBAN_RPC_URL = "https://soroban-testnet.stellar.org";
 const server = new Horizon.Server(HORIZON_URL);
-const rpcServer = new rpc.Server(SOROBAN_RPC_URL);
 const networkPassphrase = Networks.TESTNET;
 
 export interface StoredWallet {
@@ -126,13 +124,7 @@ export async function sendXLM(destination: string, amount: string): Promise<stri
     .build();
 
   tx.sign(kp);
-  const result = await rpcServer.sendTransaction(tx as any);
-
-  if (result.status === "ERROR") {
-    const errMsg = JSON.stringify((result as any).errorResultXdr || "unknown error");
-    throw new Error(`Transaction failed: ${errMsg}`);
-  }
-
+  const result = await server.submitTransaction(tx);
   return result.hash;
 }
 
@@ -163,42 +155,116 @@ export async function addTrustline(assetCode: string, assetIssuer: string): Prom
     .build();
 
   tx.sign(kp);
-  const result = await rpcServer.sendTransaction(tx as any);
-  if (result.status === "ERROR") throw new Error("Failed to add asset");
+  const result = await server.submitTransaction(tx);
   return result.hash;
 }
 
-export async function swapXLM(destCode: string, destIssuer: string, destAmount: string): Promise<string> {
+function assetFromPathEntry(entry: any): Asset {
+  if (entry.asset_type === "native") return Asset.native();
+  return new Asset(entry.asset_code, entry.asset_issuer);
+}
+
+function buildAsset(code: string | null, issuer: string | null): Asset {
+  if (!code || code === "XLM") return Asset.native();
+  return new Asset(code, issuer!);
+}
+
+export async function getSwapEstimate(
+  sourceCode: string | null,
+  sourceIssuer: string | null,
+  destCode: string,
+  destIssuer: string,
+  amount: string
+): Promise<string> {
+  const sourceAsset = buildAsset(sourceCode, sourceIssuer);
+  const destAsset = buildAsset(destCode, destIssuer);
+  try {
+    const pathsResult = await server.strictSendPaths(
+      sourceAsset,
+      amount,
+      [destAsset]
+    ).call();
+    if (pathsResult.records.length === 0) return "0";
+    return pathsResult.records[0].destination_amount;
+  } catch {
+    return "0";
+  }
+}
+
+export async function swapTokens(
+  sourceCode: string | null,
+  sourceIssuer: string | null,
+  destCode: string,
+  destIssuer: string,
+  amount: string
+): Promise<string> {
   const kp = getKeypair();
   const source = kp.publicKey();
   const account = await server.loadAccount(source);
-  const xlmAmount = (parseFloat(destAmount) * 1.02).toFixed(7);
 
-  const hasTrust = await hasTrustline(source, destCode, destIssuer);
+  const sourceAsset = buildAsset(sourceCode, sourceIssuer);
+  const destAsset = buildAsset(destCode, destIssuer);
 
-  const tx = new TransactionBuilder(account, {
-    fee: BASE_FEE,
-    networkPassphrase,
-  });
+  // Query the Stellar DEX for the best path and estimated rate
+  const pathsResult = await server.strictSendPaths(
+    sourceAsset,
+    amount,
+    [destAsset]
+  ).call();
 
-  if (!hasTrust) {
-    tx.addOperation(Operation.changeTrust({
-      asset: new Asset(destCode, destIssuer),
-    }));
+  if (pathsResult.records.length === 0) {
+    throw new Error("No liquidity path found. This swap pair may not have enough trading volume on the testnet DEX.");
   }
 
-  tx.addOperation(Operation.pathPaymentStrictSend({
-    sendAsset: Asset.native(),
-    sendAmount: xlmAmount,
-    destination: source,
-    destAsset: new Asset(destCode, destIssuer),
-    destMin: destAmount,
-    path: [],
-  }));
+  const bestPath = pathsResult.records[0];
+  const estimatedOutput = bestPath.destination_amount;
+  // Guard against negligible liquidity
+  if (parseFloat(estimatedOutput) < 0.0001) {
+    throw new Error("Insufficient liquidity on the Stellar DEX for this pair.");
+  }
+  // 5% slippage protection on the estimated receive amount
+  const destMin = (parseFloat(estimatedOutput) * 0.95).toFixed(7);
+  // Convert path entries back to Asset objects
+  const path = bestPath.path.map(assetFromPathEntry);
 
-  const builtTx = tx.setTimeout(30).build();
-  builtTx.sign(kp);
-  const result = await server.submitTransaction(builtTx);
+  // Add dest trustline if needed (issued asset and not already trusted)
+  if (destCode !== "XLM") {
+    const hasTrust = await hasTrustline(source, destCode, destIssuer);
+    if (!hasTrust) {
+      const trustTx = new TransactionBuilder(account, {
+        fee: BASE_FEE,
+        networkPassphrase,
+      })
+        .addOperation(Operation.changeTrust({ asset: destAsset }))
+        .setTimeout(30)
+        .build();
+
+      trustTx.sign(kp);
+      await server.submitTransaction(trustTx);
+    }
+  }
+
+  // Reload account after potential trustline transaction
+  const freshAccount = await server.loadAccount(source);
+
+  // Execute the path payment
+  const swapTx = new TransactionBuilder(freshAccount, {
+    fee: BASE_FEE,
+    networkPassphrase,
+  })
+    .addOperation(Operation.pathPaymentStrictSend({
+      sendAsset: sourceAsset,
+      sendAmount: amount,
+      destination: source,
+      destAsset,
+      destMin,
+      path,
+    }))
+    .setTimeout(30)
+    .build();
+
+  swapTx.sign(kp);
+  const result = await server.submitTransaction(swapTx);
   return result.hash;
 }
 
