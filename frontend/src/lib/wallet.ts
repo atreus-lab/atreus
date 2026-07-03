@@ -198,8 +198,7 @@ export async function swapXLM(destCode: string, destIssuer: string, destAmount: 
 
   const builtTx = tx.setTimeout(30).build();
   builtTx.sign(kp);
-  const result = await rpcServer.sendTransaction(builtTx as any);
-  if (result.status === "ERROR") throw new Error("Swap failed");
+  const result = await server.submitTransaction(builtTx);
   return result.hash;
 }
 
