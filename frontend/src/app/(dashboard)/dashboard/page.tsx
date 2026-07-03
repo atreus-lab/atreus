@@ -15,9 +15,11 @@ import QuickActions from "@/components/QuickActions";
 import ClaimLinkModal from "@/components/ClaimLinkModal";
 import NotificationDropdown from "@/components/NotificationDropdown";
 import SearchDialog from "@/components/SearchDialog";
+import { useCreateLink } from "@/components/sidebar-context";
 
 export default function DashboardPage() {
   const router = useRouter();
+  const { setCreateLinkOpen } = useCreateLink();
   const [storedWallet, setStoredWallet] = useState<StoredWallet | null>(null);
   const [address, setAddress] = useState("");
   const [balance, setBalance] = useState("0");
@@ -296,7 +298,7 @@ export default function DashboardPage() {
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
             {/* Left Column (spans 2) */}
             <div className="lg:col-span-2 flex flex-col gap-6">
-              <BalanceCard balance={balance} showBalance={showBalance} onToggleBalance={() => setShowBalance(!showBalance)} onClaimClick={() => setShowClaimModal(true)} />
+              <BalanceCard balance={balance} showBalance={showBalance} onToggleBalance={() => setShowBalance(!showBalance)} onClaimClick={() => setShowClaimModal(true)} onCreateLinkClick={() => setCreateLinkOpen(true)} />
               <AssetsList balances={balances} />
               <PaymentLinks storedLinks={storedLinks} receivedLinks={receivedLinks} copiedLinkId={copiedLinkId} onCopyLink={copyLink} onRefund={handleRefund} />
             </div>
@@ -305,7 +307,7 @@ export default function DashboardPage() {
             <div className="flex flex-col gap-6">
               <PrivacyScoreCard />
               <RecentActivity storedLinks={storedLinks} receivedLinks={receivedLinks} transactions={transactions} address={address} />
-              <QuickActions onClaimClick={() => setShowClaimModal(true)} />
+              <QuickActions onClaimClick={() => setShowClaimModal(true)} onCreateLinkClick={() => setCreateLinkOpen(true)} />
             </div>
           </div>
         </div>

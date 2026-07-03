@@ -9,16 +9,12 @@ interface QuickActionCardProps {
   description: string;
   href?: string;
   onClick?: () => void;
-  iconColor?: string;
 }
 
-export default function QuickActionCard({ icon, label, description, href, onClick, iconColor }: QuickActionCardProps) {
+export default function QuickActionCard({ icon, label, description, href, onClick }: QuickActionCardProps) {
   const content = (
     <>
-      <div
-        className="w-9 h-9 rounded-lg flex items-center justify-center shrink-0"
-        style={{ background: iconColor ? `${iconColor}15` : 'rgba(255,255,255,0.05)', color: iconColor || 'var(--foreground-secondary)' }}
-      >
+      <div className="quick-action-icon w-9 h-9 rounded-lg flex items-center justify-center shrink-0">
         {icon}
       </div>
       <div className="flex flex-col min-w-0">

@@ -6,6 +6,7 @@ import { useState } from "react";
 import { AnimatePresence, motion } from "motion/react";
 import { useSidebar } from "./sidebar-context";
 import { loadWallet, clearWallet } from "@/lib/wallet";
+import { ActionSwapIcon } from "./motion/action-swap";
 
 export default function ProfileModal() {
   const router = useRouter();
@@ -33,7 +34,7 @@ export default function ProfileModal() {
     <>
       <div className="fixed inset-0 z-50" onClick={() => setProfileOpen(false)} style={{ background: 'rgba(0,0,0,0.5)' }} />
       <motion.div
-        className="fixed left-[calc(280px+1rem)] bottom-24 z-50 w-[300px] modal-content"
+        className="fixed left-[260px] bottom-24 z-50 w-[300px] modal-content"
         initial={{ opacity: 0, scale: 0.95, y: 8 }}
         animate={{ opacity: 1, scale: 1, y: 0 }}
         transition={{ duration: 0.15, ease: [0.23, 1, 0.32, 1] }}
@@ -55,7 +56,9 @@ export default function ProfileModal() {
 
         <div className="p-2.5 space-y-0.5">
           <button onClick={copyAddress} className="flex items-center gap-3 w-full p-2.5 rounded-lg hover:bg-[var(--background-elevated)] transition-colors text-left">
-            {copied ? <Check className="w-4 h-4 text-success" /> : <Copy className="w-4 h-4 text-secondary" />}
+            <ActionSwapIcon value={copied ? "check" : "copy"} animation="roll" className="h-4 w-4">
+              {copied ? <Check className="w-4 h-4 text-success" /> : <Copy className="w-4 h-4 text-secondary" />}
+            </ActionSwapIcon>
             <div className="flex flex-col">
               <span className="text-sm font-medium text-primary">{copied ? 'Copied!' : 'Copy Address'}</span>
               <span className="text-[10px] text-secondary">{wallet.publicKey.slice(0, 12)}...</span>

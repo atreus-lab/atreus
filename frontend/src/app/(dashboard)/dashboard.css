@@ -32,7 +32,6 @@
   }
 
   /* ─── Input (shared across all forms) ─── */
-
   .input {
     width: 100%;
     padding: 0.75rem 1rem;
@@ -63,28 +62,21 @@
     align-items: center;
     justify-content: center;
     gap: 0.5rem;
-    background: rgba(255, 255, 255, 0.08);
-    color: var(--foreground-primary);
-    backdrop-filter: blur(12px);
-    -webkit-backdrop-filter: blur(12px);
-    border: 1px solid rgba(255, 255, 255, 0.15);
-    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.05);
+    background: var(--accent-primary);
+    color: white;
     font-weight: 700;
+    border: none;
     cursor: pointer;
-    border-radius: 0.5rem;
-    transition: all 150ms ease-out;
+    transition: opacity 150ms, transform 100ms ease-out;
   }
   .btn-primary:hover {
-    background: rgba(255, 255, 255, 0.12);
-    border-color: rgba(255, 255, 255, 0.2);
+    opacity: 0.9;
   }
   .btn-primary:active {
     transform: scale(0.97);
   }
   .btn-primary:disabled {
-    background: rgba(255, 255, 255, 0.03);
-    color: var(--foreground-secondary);
-    border-color: rgba(255, 255, 255, 0.05);
+    opacity: 0.4;
     cursor: not-allowed;
     transform: none;
   }
@@ -93,10 +85,12 @@
   .badge {
     display: inline-flex;
     align-items: center;
-    padding: 0.125rem 0.5rem;
+    padding: 0.125rem 0.4375rem;
     border-radius: 0.375rem;
     font-size: 0.625rem;
     font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
     white-space: nowrap;
   }
   .badge-success {
@@ -117,7 +111,6 @@
   }
 
   /* ─── Modal Overlay (ClaimLink, Search, Profile) ─── */
-
   .modal-overlay {
     position: fixed;
     inset: 0;
@@ -131,10 +124,8 @@
   }
 
   .modal-content {
-    background: rgba(10, 10, 10, 0.85);
-    backdrop-filter: blur(24px);
-    -webkit-backdrop-filter: blur(24px);
-    border: 1px solid rgba(255, 255, 255, 0.1);
+    background: var(--background-card);
+    border: 1px solid var(--border-default);
     border-radius: 1rem;
     box-shadow: 0 16px 48px rgba(0, 0, 0, 0.4);
     width: 100%;
@@ -168,7 +159,7 @@
     border-radius: 0.75rem;
     background: rgba(255, 255, 255, 0.03);
     border: 1px solid var(--border-default);
-    transition: background 150ms var(--ease-out);
+    transition: background 120ms var(--ease-out);
   }
   .asset-row:hover {
     background: rgba(255, 255, 255, 0.06);
@@ -211,10 +202,8 @@
     margin-top: 0.5rem;
     border-radius: 1rem;
     overflow: hidden;
-    background: rgba(10, 10, 10, 0.85);
-    backdrop-filter: blur(24px);
-    -webkit-backdrop-filter: blur(24px);
-    border: 1px solid rgba(255, 255, 255, 0.1);
+    background: var(--background-card);
+    border: 1px solid var(--border-default);
     box-shadow: 0 16px 48px rgba(0, 0, 0, 0.4);
   }
 
@@ -225,6 +214,52 @@
     text-transform: uppercase;
     letter-spacing: 0.05em;
     color: var(--foreground-secondary);
+  }
+
+  /* ─── Panel header — denser padding than the globals.css default ─── */
+  .panel-header {
+    padding: 1.125rem 1.375rem;
+  }
+
+  /* ─── Section Title (panel headings) — calmer weight/size for a denser, tool-like feel ─── */
+  .section-title {
+    font-family: var(--font-manrope), -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    font-size: 1rem;
+    font-weight: 700;
+    letter-spacing: -0.01em;
+    color: var(--foreground-primary);
+  }
+
+  /* ─── Live indicator (BalanceCard) — truthful, not decorative ─── */
+  .live-dot {
+    width: 6px;
+    height: 6px;
+    border-radius: 9999px;
+    background: var(--success);
+    flex-shrink: 0;
+    animation: live-pulse 2s var(--ease-in-out) infinite;
+  }
+
+  @keyframes live-pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.35; }
+  }
+
+  /* ─── Environment badge (sidebar) — real network context, e.g. Testnet ─── */
+  .env-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.3125rem;
+    padding: 0.1875rem 0.5rem;
+    border-radius: 9999px;
+    font-size: 0.625rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    background: rgba(245, 158, 11, 0.1);
+    color: #f59e0b;
+    border: 1px solid rgba(245, 158, 11, 0.2);
+    white-space: nowrap;
   }
 
   /* ─── Asset Logo Container ─── */
@@ -253,16 +288,6 @@
     transition: background 150ms var(--ease-out);
     flex-shrink: 0;
   }
-  /* Metric Cards (glassmorphic) */
-  .metric-card {
-    background: rgba(255, 255, 255, 0.03);
-    backdrop-filter: blur(24px);
-    -webkit-backdrop-filter: blur(24px);
-    border: 1px solid rgba(255, 255, 255, 0.1);
-    border-radius: 1rem;
-    padding: 1.5rem;
-    transition: transform 200ms var(--ease-out), box-shadow 200ms var(--ease-out), border-color 200ms var(--ease-out);
-  }
   .toggle[data-checked="true"] {
     background: var(--accent-primary);
     border-color: var(--accent-primary);
@@ -281,12 +306,10 @@
     transform: translateX(1.125rem);
   }
 
-  /* ─── Balance Hero (glassmorphic) ─── */
+  /* ─── Balance Hero (flat, typography-driven) ─── */
   .balance-hero {
-    background: rgba(255, 255, 255, 0.03);
-    backdrop-filter: blur(24px);
-    -webkit-backdrop-filter: blur(24px);
-    border: 1px solid rgba(255, 255, 255, 0.1);
+    background: var(--background-card);
+    border: 1px solid var(--border-default);
     border-radius: 1rem;
     padding: 2rem;
     position: relative;
@@ -324,25 +347,40 @@
     transform: scale(0.97);
   }
 
-  /* ─── Quick Action Card ─── */
+  /* ─── Quick Action Grid ─── */
+  .quick-action-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+    gap: 0.75rem;
+  }
+
+  /* ─── Quick Action Card — neutral by default, accent only on hover ─── */
   .quick-action-card {
     display: flex;
     align-items: center;
     gap: 0.75rem;
     padding: 0.875rem 1rem;
     border-radius: 0.75rem;
-    background: rgba(255, 255, 255, 0.03);
-    border: 1px solid rgba(255, 255, 255, 0.1);
-    min-width: 200px;
-    transition: border-color 150ms var(--ease-out), transform 100ms ease-out;
+    background: var(--background-card);
+    border: 1px solid var(--border-default);
+    transition: border-color 150ms var(--ease-out), background 150ms var(--ease-out), transform 100ms ease-out;
     cursor: pointer;
     text-decoration: none;
   }
   .quick-action-card:hover {
-    border-color: var(--foreground-secondary);
+    border-color: var(--accent-primary);
+    background: rgba(59, 130, 246, 0.04);
   }
   .quick-action-card:active {
     transform: scale(0.98);
+  }
+  .quick-action-icon {
+    background: var(--background-elevated);
+    color: var(--foreground-secondary);
+    transition: color 150ms var(--ease-out);
+  }
+  .quick-action-card:hover .quick-action-icon {
+    color: var(--accent-primary);
   }
 
   /* ─── Empty State ─── */
@@ -387,6 +425,11 @@
     align-items: flex-start;
     gap: 1rem;
     padding: 0.75rem 0;
+    border-radius: 0.5rem;
+    transition: background 120ms var(--ease-out);
+  }
+  .activity-item:hover {
+    background: rgba(255, 255, 255, 0.025);
   }
   .activity-dot {
     width: 10px;
@@ -434,10 +477,18 @@
     height: 100%;
     padding: 1rem 0.75rem;
   }
+  /* height + negative margin cancel out .sidebar's own padding so this border-bottom
+     lands at the exact same y as .app-header's border-bottom on the main column */
   .sidebar-header {
-    padding: 0 0.25rem 1rem;
+    height: 5rem;
+    flex-shrink: 0;
+    margin: -1rem -0.75rem 1rem;
+    padding: 0 1.25rem;
     border-bottom: 1px solid var(--border-default);
-    margin-bottom: 1rem;
+  }
+
+  .app-sidebar.collapsed .sidebar-header {
+    padding: 0;
   }
   .sidebar-nav {
     display: flex;
@@ -447,48 +498,27 @@
     min-height: 0;
     overflow-y: auto;
   }
-  .sidebar-item {
-    display: flex;
-    align-items: center;
-    gap: 1rem;
-    padding: 0.875rem 1rem;
-    border-radius: 0.75rem;
-    margin-bottom: 0.5rem;
-    color: var(--foreground-secondary);
-    font-size: 0.9375rem;
-    font-weight: 500;
-    transition: all 250ms var(--ease-out);
-    cursor: pointer;
-    text-decoration: none;
-    border: 1px solid transparent;
-  }
-  .sidebar-item:hover {
-    background: rgba(255, 255, 255, 0.05);
-    border-color: rgba(255, 255, 255, 0.08);
-    backdrop-filter: blur(12px);
-    -webkit-backdrop-filter: blur(12px);
-    color: var(--foreground-primary);
-    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.05);
-  }
+  .sidebar-item,
   .sidebar-item-active {
     display: flex;
     align-items: center;
-    gap: 1rem;
-    padding: 0.875rem 1rem;
-    border-radius: 0.75rem;
-    margin-bottom: 0.5rem;
-    font-size: 0.9375rem;
-    font-weight: 600;
-    color: var(--foreground-primary);
-    background: linear-gradient(135deg, rgba(255, 255, 255, 0.12), rgba(255, 255, 255, 0.04));
-    backdrop-filter: blur(16px);
-    -webkit-backdrop-filter: blur(16px);
-    border: 1px solid rgba(255, 255, 255, 0.15);
-    border-top: 1px solid rgba(255, 255, 255, 0.25);
-    box-shadow: 0 8px 16px rgba(0, 0, 0, 0.2);
-    cursor: pointer;
+    gap: 0.75rem;
+    padding: 0.4375rem 0.75rem;
+    border-radius: 0.5rem;
+    font-size: 0.8125rem;
+    font-weight: 500;
+    color: var(--foreground-secondary);
     text-decoration: none;
-    transition: all 250ms var(--ease-out);
+    transition: background 100ms, color 100ms;
+  }
+  .sidebar-item:hover {
+    color: var(--foreground-primary);
+    background: rgba(255, 255, 255, 0.04);
+  }
+  .sidebar-item-active {
+    color: var(--foreground-primary);
+    font-weight: 600;
+    background: rgba(255, 255, 255, 0.06);
   }
   .sidebar-footer {
     padding-top: 0.75rem;

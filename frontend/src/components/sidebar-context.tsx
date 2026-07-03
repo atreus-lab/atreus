@@ -9,11 +9,21 @@ interface SidebarContextType {
   setProfileOpen: (open: boolean) => void;
 }
 
+interface CreateLinkContextType {
+  createLinkOpen: boolean;
+  setCreateLinkOpen: (open: boolean) => void;
+}
+
 const SidebarContext = createContext<SidebarContextType>({
   collapsed: false,
   toggleCollapsed: () => {},
   profileOpen: false,
   setProfileOpen: () => {},
+});
+
+const CreateLinkContext = createContext<CreateLinkContextType>({
+  createLinkOpen: false,
+  setCreateLinkOpen: () => {},
 });
 
 export function SidebarProvider({ children }: { children: ReactNode }) {
@@ -31,6 +41,20 @@ export function SidebarProvider({ children }: { children: ReactNode }) {
   );
 }
 
+export function CreateLinkProvider({ children }: { children: ReactNode }) {
+  const [createLinkOpen, setCreateLinkOpen] = useState(false);
+
+  return (
+    <CreateLinkContext.Provider value={{ createLinkOpen, setCreateLinkOpen }}>
+      {children}
+    </CreateLinkContext.Provider>
+  );
+}
+
 export function useSidebar() {
   return useContext(SidebarContext);
+}
+
+export function useCreateLink() {
+  return useContext(CreateLinkContext);
 }
