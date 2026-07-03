@@ -182,27 +182,12 @@ export default function Home() {
     <div className="fixed inset-0 w-full h-full bg-[#FAFBFF] text-slate-900 overflow-y-auto font-sans flex flex-col z-[100]">
       {/* Navbar */}
       <nav className="w-full max-w-7xl mx-auto px-6 py-6 flex items-center justify-between z-20 relative">
-        {/* Left Links */}
-        <div className="hidden lg:flex items-center gap-8 flex-1">
-          <Link href="/" className="text-[13px] font-semibold text-slate-900 tracking-wide hover:text-blue-600 transition-colors">Home</Link>
-          <Link href="#features" className="text-[13px] font-semibold text-slate-500 hover:text-slate-900 transition-colors tracking-wide">Features</Link>
-          <Link href="#how-it-works" className="text-[13px] font-semibold text-slate-500 hover:text-slate-900 transition-colors tracking-wide">How It Works</Link>
-          <Link href="#security" className="text-[13px] font-semibold text-slate-500 hover:text-slate-900 transition-colors tracking-wide">Security</Link>
-        </div>
-        
-        {/* Center Logo */}
-        <div className="flex items-center justify-center gap-2.5 absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2">
-          <Image src={logo} alt="Atreus Logo" width={28} height={28} className="rounded-lg shadow-sm" />
-          <span className="text-[19px] font-extrabold text-slate-900 tracking-tight">Atreus</span>
-        </div>
-
-        {/* Right Links & Action */}
-        <div className="flex items-center justify-end gap-8 flex-1">
-          <div className="hidden lg:flex items-center gap-8">
-            <Link href="#about" className="text-[13px] font-semibold text-slate-500 hover:text-slate-900 transition-colors tracking-wide">About</Link>
-            <Link href="#docs" className="text-[13px] font-semibold text-slate-500 hover:text-slate-900 transition-colors tracking-wide">Docs</Link>
+        {/* Mobile layout: logo left, button right */}
+        <div className="flex lg:hidden items-center justify-between w-full">
+          <div className="flex items-center gap-2.5">
+            <Image src={logo} alt="Atreus Logo" width={28} height={28} className="rounded-lg shadow-sm" />
+            <span className="text-[19px] font-extrabold text-slate-900 tracking-tight">Atreus</span>
           </div>
-
           <Link
             href={hasWallet ? "/dashboard" : "/wallet"}
             className="inline-flex items-center gap-2 bg-slate-900/80 backdrop-blur-md border border-slate-700/50 hover:bg-slate-800/90 text-white px-5 py-2.5 rounded-full text-[13px] font-semibold transition-all shadow-[0_4px_12px_-4px_rgba(0,0,0,0.3)]"
@@ -210,6 +195,39 @@ export default function Home() {
             {hasWallet ? "Dashboard" : "Launch Wallet"}
             <ArrowUpRight className="w-3.5 h-3.5 text-slate-300" />
           </Link>
+        </div>
+        
+        {/* Desktop layout: links left, logo center, links + button right */}
+        <div className="hidden lg:flex items-center justify-between w-full">
+          {/* Left Links */}
+          <div className="flex items-center gap-8 flex-1">
+            <Link href="/" className="text-[13px] font-semibold text-slate-900 tracking-wide hover:text-blue-600 transition-colors">Home</Link>
+            <Link href="#features" className="text-[13px] font-semibold text-slate-500 hover:text-slate-900 transition-colors tracking-wide">Features</Link>
+            <Link href="#how-it-works" className="text-[13px] font-semibold text-slate-500 hover:text-slate-900 transition-colors tracking-wide">How It Works</Link>
+            <Link href="#security" className="text-[13px] font-semibold text-slate-500 hover:text-slate-900 transition-colors tracking-wide">Security</Link>
+          </div>
+          
+          {/* Center Logo */}
+          <div className="absolute left-1/2 -translate-x-1/2 flex items-center gap-2.5">
+            <Image src={logo} alt="Atreus Logo" width={28} height={28} className="rounded-lg shadow-sm" />
+            <span className="text-[19px] font-extrabold text-slate-900 tracking-tight">Atreus</span>
+          </div>
+
+          {/* Right Links & Action */}
+          <div className="flex items-center justify-end gap-8 flex-1">
+            <div className="flex items-center gap-8">
+              <Link href="#about" className="text-[13px] font-semibold text-slate-500 hover:text-slate-900 transition-colors tracking-wide">About</Link>
+              <Link href="#docs" className="text-[13px] font-semibold text-slate-500 hover:text-slate-900 transition-colors tracking-wide">Docs</Link>
+            </div>
+
+            <Link
+              href={hasWallet ? "/dashboard" : "/wallet"}
+              className="inline-flex items-center gap-2 bg-slate-900/80 backdrop-blur-md border border-slate-700/50 hover:bg-slate-800/90 text-white px-5 py-2.5 rounded-full text-[13px] font-semibold transition-all shadow-[0_4px_12px_-4px_rgba(0,0,0,0.3)]"
+            >
+              {hasWallet ? "Dashboard" : "Launch Wallet"}
+              <ArrowUpRight className="w-3.5 h-3.5 text-slate-300" />
+            </Link>
+          </div>
         </div>
       </nav>
 

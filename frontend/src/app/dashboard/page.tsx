@@ -10,7 +10,7 @@ import {
  LayoutDashboard, Wallet, Link2, ArrowRightLeft, BarChart3, Activity, Shield, 
  Settings, Search, Bell, ChevronDown, Send, ArrowDownToLine, RefreshCw, 
  ExternalLink, ArrowUpRight, ArrowDownLeft, Lock, PlusCircle, CheckCircle2,
- ChevronRight, Eye, ArrowRight, X, Copy, Check
+ ChevronRight, Eye, EyeOff, ArrowRight, X, Copy, Check, Menu
 } from "lucide-react";
 import logo from "../../media/ateruslogo.jpeg";
 import shieldImg from "../../media/Shield1.png";
@@ -46,6 +46,7 @@ export default function DashboardPage() {
  const [receivedLinks, setReceivedLinks] = useState<StoredLink[]>([]);
  const [copiedLinkId, setCopiedLinkId] = useState("");
  const [showBalance, setShowBalance] = useState(true);
+ const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
  const loadData = useCallback(async (addr: string) => {
  try {
@@ -88,6 +89,16 @@ export default function DashboardPage() {
    loadData(address);
   }
  }, [address, loadData]);
+
+ // Body scroll lock when mobile drawer is open
+ useEffect(() => {
+  if (mobileMenuOpen) {
+   document.body.style.overflow = 'hidden';
+  } else {
+   document.body.style.overflow = '';
+  }
+  return () => { document.body.style.overflow = ''; };
+ }, [mobileMenuOpen]);
 
  useEffect(() => {
  const wallet = loadWallet();
@@ -203,6 +214,15 @@ export default function DashboardPage() {
  <span className="absolute top-0 right-0 w-4 h-4 bg-indigo-600 text-white text-[9px] font-bold rounded-full flex items-center justify-center border-2 border-white -translate-y-1/4 translate-x-1/4">3</span>
  </button>
  </div>
+ <div className="flex items-center gap-2 lg:hidden">
+ <button className="relative p-3 bg-white border border-slate-200 rounded-full hover:bg-slate-50 transition-colors shadow-sm">
+ <Bell className="w-5 h-5 text-slate-600" />
+ <span className="absolute top-0 right-0 w-4 h-4 bg-indigo-600 text-white text-[9px] font-bold rounded-full flex items-center justify-center border-2 border-white -translate-y-1/4 translate-x-1/4">3</span>
+ </button>
+ <button onClick={() => setMobileMenuOpen(true)} className="p-3 bg-white border border-slate-200 rounded-full hover:bg-slate-50 transition-colors shadow-sm">
+ <Menu className="w-5 h-5 text-slate-600" />
+ </button>
+ </div>
  </header>
 
  <div className="px-8 sm:px-10 lg:px-12 pb-12 flex-1 flex flex-col gap-6">
@@ -224,11 +244,11 @@ export default function DashboardPage() {
  <div className="flex flex-col">
  <div className="flex items-center gap-2 mb-2 text-blue-100 font-semibold text-sm">
  Total Balance <button onClick={() => setShowBalance(!showBalance)} className="p-1 hover:bg-white/10 rounded-lg transition-colors">
-   <Eye className={`w-4 h-4 opacity-70 ${!showBalance ? 'line-through opacity-40' : ''}`} />
+   {showBalance ? <Eye className="w-4 h-4 opacity-70" /> : <EyeOff className="w-4 h-4 opacity-70" />}
   </button>
  </div>
  <div className="text-4xl sm:text-5xl font-extrabold tracking-tight mb-2 drop-shadow-sm">
- {showBalance ? parseFloat(balance).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : '****'} <span className="text-2xl font-bold opacity-80">XLM</span>
+ {showBalance ? parseFloat(balance).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : '********'} <span className="text-2xl font-bold opacity-80">XLM</span>
  </div>
  <div className="flex items-center gap-3">
  <span className="bg-white/20 backdrop-blur-md text-white px-2.5 py-1 rounded-lg text-xs font-bold flex items-center gap-1 border border-white/20">
@@ -752,6 +772,72 @@ export default function DashboardPage() {
 
   </div>
   </main>
+
+  {/* Mobile Drawer */}
+  {mobileMenuOpen && (
+   <div className="fixed inset-0 z-50 lg:hidden">
+    {/* Backdrop */}
+    <div className="absolute inset-0 bg-black/40 backdrop-blur-sm" onClick={() => setMobileMenuOpen(false)} />
+    {/* Drawer */}
+    <div className="absolute left-0 top-0 bottom-0 w-[280px] bg-white shadow-2xl flex flex-col animate-slide-in">
+     {/* Drawer Header */}
+     <div className="px-6 pt-8 pb-4 shrink-0 flex items-center justify-between">
+      <Link href="/" className="flex items-center gap-3 px-2" onClick={() => setMobileMenuOpen(false)}>
+       <Image src={logo} alt="Atreus" width={32} height={32} className="rounded-[10px] shadow-sm" />
+       <span className="font-extrabold text-xl tracking-tight text-slate-900">Atreus</span>
+      </Link>
+      <button onClick={() => setMobileMenuOpen(false)} className="p-2 hover:bg-slate-100 rounded-xl transition-colors">
+       <X className="w-5 h-5 text-slate-400" />
+      </button>
+     </div>
+
+     {/* Nav Items */}
+     <nav className="flex-1 min-h-0 overflow-y-auto px-6 flex flex-col gap-1.5 py-2">
+      {navItems.map((item, i) => {
+       if (item.href) {
+        return (
+         <Link key={i} href={item.href} onClick={() => setMobileMenuOpen(false)} className={`flex items-center gap-4 px-4 py-3.5 rounded-2xl transition-all font-bold text-sm cursor-pointer ${item.active ? 'bg-indigo-50/80 text-indigo-700 shadow-sm' : 'text-slate-500 hover:bg-slate-50 hover:text-slate-900'}`}>
+          <item.icon className={`w-5 h-5 ${item.active ? 'text-indigo-600' : 'text-slate-400'}`} />
+          {item.label}
+         </Link>
+        );
+       }
+       return (
+        <div key={i} onClick={() => { item.onClick?.(); setMobileMenuOpen(false); }} className={`flex items-center gap-4 px-4 py-3.5 rounded-2xl transition-all font-bold text-sm cursor-pointer ${item.active ? 'bg-indigo-50/80 text-indigo-700 shadow-sm' : 'text-slate-500 hover:bg-slate-50 hover:text-slate-900'}`}>
+         <item.icon className={`w-5 h-5 ${item.active ? 'text-indigo-600' : 'text-slate-400'}`} />
+         {item.label}
+        </div>
+       );
+      })}
+     </nav>
+
+     {/* Bottom Section */}
+     <div className="px-6 pb-6 pt-3 shrink-0 flex flex-col gap-3">
+      <div className="p-4 bg-slate-50 border border-slate-100 rounded-2xl">
+       <div className="flex items-center gap-2 mb-1">
+        <Shield className="w-4 h-4 text-slate-400" />
+        <span className="text-[11px] font-extrabold text-slate-600 uppercase tracking-wider">Built on Stellar</span>
+        <div className="w-2 h-2 rounded-full bg-green-500 shadow-[0_0_8px_rgba(34,197,94,0.6)] animate-pulse ml-auto"></div>
+       </div>
+       <p className="text-[12px] font-medium text-slate-500 leading-snug">Fast. Low cost. Borderless payments.</p>
+      </div>
+
+      <Link href="/profile" onClick={() => setMobileMenuOpen(false)} className="flex items-center justify-between p-3 border border-slate-100 rounded-2xl hover:bg-slate-50 transition-colors shadow-sm group">
+       <div className="flex items-center gap-3 min-w-0">
+        <div className="w-10 h-10 rounded-xl bg-indigo-600 text-white flex items-center justify-center font-bold text-sm shadow-sm group-hover:scale-105 transition-transform shrink-0">
+         {emailName.charAt(0).toUpperCase()}
+        </div>
+        <div className="flex flex-col min-w-0">
+         <span className="text-sm font-bold truncate">{emailName}</span>
+         <span className="text-[10px] font-medium text-slate-500 truncate">{displayAddress}</span>
+        </div>
+       </div>
+       <ChevronDown className="w-4 h-4 text-slate-400 shrink-0" />
+      </Link>
+     </div>
+    </div>
+   </div>
+  )}
   </div>
   );
  }
