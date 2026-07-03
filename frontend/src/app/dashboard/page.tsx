@@ -45,6 +45,7 @@ export default function DashboardPage() {
  const [storedLinks, setStoredLinks] = useState<StoredLink[]>([]);
  const [receivedLinks, setReceivedLinks] = useState<StoredLink[]>([]);
  const [copiedLinkId, setCopiedLinkId] = useState("");
+ const [showBalance, setShowBalance] = useState(true);
 
  const loadData = useCallback(async (addr: string) => {
  try {
@@ -222,10 +223,12 @@ export default function DashboardPage() {
  <div className="flex items-start justify-between relative z-10">
  <div className="flex flex-col">
  <div className="flex items-center gap-2 mb-2 text-blue-100 font-semibold text-sm">
- Total Balance <Eye className="w-4 h-4 opacity-70" />
+ Total Balance <button onClick={() => setShowBalance(!showBalance)} className="p-1 hover:bg-white/10 rounded-lg transition-colors">
+   <Eye className={`w-4 h-4 opacity-70 ${!showBalance ? 'line-through opacity-40' : ''}`} />
+  </button>
  </div>
  <div className="text-4xl sm:text-5xl font-extrabold tracking-tight mb-2 drop-shadow-sm">
- {parseFloat(balance).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} <span className="text-2xl font-bold opacity-80">XLM</span>
+ {showBalance ? parseFloat(balance).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : '****'} <span className="text-2xl font-bold opacity-80">XLM</span>
  </div>
  <div className="flex items-center gap-3">
  <span className="bg-white/20 backdrop-blur-md text-white px-2.5 py-1 rounded-lg text-xs font-bold flex items-center gap-1 border border-white/20">
@@ -340,18 +343,19 @@ export default function DashboardPage() {
  <div className="h-px bg-slate-100 my-2"></div>
 
  {/* Available Assets — popular tokens to activate */}
- <div className="flex flex-col gap-3 mb-2">
-  <h4 className="text-xs font-extrabold text-slate-400 uppercase tracking-wider pt-2">Available</h4>
-  {(() => {
-   const existingCodes = balances.map((b: any) => b.asset_code).filter(Boolean);
-   const available = [
-    { code: 'USDC', name: 'USD Coin' },
-    { code: 'USDT', name: 'Tether' },
-    { code: 'EURT', name: 'Euro Token' },
-   ];
-   return available.map((asset, i) => {
-    const isActive = existingCodes.includes(asset.code);
-    return (
+ {(() => {
+  const existingCodes = balances.map((b: any) => b.asset_code).filter(Boolean);
+  const allAvailable = [
+   { code: 'USDC', name: 'USD Coin' },
+   { code: 'EURT', name: 'Euro Token' },
+   { code: 'yUSDC', name: 'Your USDC' },
+  ];
+  const available = allAvailable.filter(a => !existingCodes.includes(a.code));
+  if (available.length === 0) return null;
+  return (
+   <div className="flex flex-col gap-3 mb-2">
+    <h4 className="text-xs font-extrabold text-slate-400 uppercase tracking-wider pt-2">Available</h4>
+    {available.map((asset, i) => (
      <div key={i} className="flex items-center justify-between p-3 rounded-xl bg-slate-50/30 border border-slate-100/60">
       <div className="flex items-center gap-3">
        <div className="w-9 h-9 rounded-full border border-slate-200 flex items-center justify-center shrink-0 overflow-hidden bg-white shadow-sm">
@@ -360,7 +364,7 @@ export default function DashboardPage() {
         ) : asset.code === 'EURT' ? (
          <div className="w-full h-full bg-blue-100 text-blue-600 rounded-full flex items-center justify-center font-bold text-[10px]">€</div>
         ) : (
-         <div className="w-full h-full bg-slate-100 text-slate-500 rounded-full flex items-center justify-center font-bold text-[10px]">{asset.code.slice(0, 2)}</div>
+         <div className="w-full h-full bg-slate-100 text-slate-500 rounded-full flex items-center justify-center font-bold text-[10px]">{asset.code.slice(0, 3)}</div>
         )}
        </div>
        <div className="flex flex-col">
@@ -368,18 +372,14 @@ export default function DashboardPage() {
         <span className="text-[10px] text-slate-400">{asset.name}</span>
        </div>
       </div>
-      {isActive ? (
-       <span className="text-[10px] font-bold text-green-600 bg-green-50 px-2 py-1 rounded-lg border border-green-100">Active</span>
-      ) : (
-       <Link href="/assets" className="text-[10px] font-bold text-indigo-600 bg-indigo-50 px-3 py-1.5 rounded-lg border border-indigo-100 hover:bg-indigo-100 transition-colors">
-        Activate
-       </Link>
-      )}
+      <Link href="/assets" className="text-[10px] font-bold text-indigo-600 bg-indigo-50 px-3 py-1.5 rounded-lg border border-indigo-100 hover:bg-indigo-100 transition-colors">
+       Activate
+      </Link>
      </div>
-    );
-   });
-  })()}
- </div>
+    ))}
+   </div>
+  );
+ })()}
 
  <Link href="/assets" className="mt-4 self-start text-sm font-bold text-indigo-600 hover:text-indigo-700 flex items-center gap-1">
   Manage assets <ArrowRight className="w-4 h-4" />
@@ -451,8 +451,8 @@ export default function DashboardPage() {
    });
   }
 
-  // Sort by timestamp descending, take top 5
-  const sorted = activities.sort((a, b) => b.timestamp - a.timestamp).slice(0, 5);
+  // Sort by timestamp descending, take top 7
+  const sorted = activities.sort((a, b) => b.timestamp - a.timestamp).slice(0, 7);
 
   if (sorted.length === 0) {
    return (
