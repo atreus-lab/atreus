@@ -97,8 +97,8 @@ export default function CreatePage() {
   };
 
   return (
-    <div className="min-h-screen bg-[#FAFBFF] flex items-center justify-center p-4">
-      <div className="w-full max-w-md bg-white rounded-[2rem] p-8 shadow-[0_12px_40px_rgba(0,0,0,0.04)] border border-slate-100 space-y-6">
+    <>
+      <div className="w-full max-w-md mx-auto rounded-[2rem] p-8 space-y-6" style={{ background: 'var(--background-card)', border: '1px solid var(--border-default)' }}>
         <Link
           href="/"
           className="text-sm font-bold text-indigo-600 hover:text-indigo-700 inline-flex items-center gap-1"
@@ -106,7 +106,7 @@ export default function CreatePage() {
           <ArrowLeft className="w-4 h-4" /> Home
         </Link>
 
-        <h2 className="text-xl font-extrabold text-slate-900">Create Link</h2>
+        <h2 className="text-xl font-extrabold" style={{ color: 'var(--foreground-primary)' }}>Create Link</h2>
 
         <div>
           <label className="text-sm font-semibold text-slate-500 block mb-1.5">Amount (XLM)</label>
@@ -115,7 +115,7 @@ export default function CreatePage() {
             value={amount}
             onChange={(e) => setAmount(e.target.value)}
             placeholder="0.00"
-            className="w-full p-3.5 rounded-xl border border-slate-200 text-slate-900 text-sm font-medium focus:outline-none focus:border-indigo-500 focus:ring-4 focus:ring-indigo-500/10"
+            className="w-full p-3.5 rounded-xl text-sm font-medium focus:outline-none focus:ring-4" style={{ background: 'var(--background-elevated)', border: '2px solid var(--border-default)', color: 'var(--foreground-primary)',  }}
             disabled={isCreating}
           />
         </div>
@@ -125,7 +125,7 @@ export default function CreatePage() {
           <select
             value={expirySeconds}
             onChange={(e) => setExpirySeconds(Number(e.target.value))}
-            className="w-full p-3.5 rounded-xl border border-slate-200 text-slate-900 text-sm font-medium focus:outline-none focus:border-indigo-500 focus:ring-4 focus:ring-indigo-500/10 bg-white"
+            className="w-full p-3.5 rounded-xl text-sm font-medium focus:outline-none focus:ring-4" style={{ background: 'var(--background-elevated)', border: '2px solid var(--border-default)', color: 'var(--foreground-primary)',  }}
             disabled={isCreating}
           >
             {EXPIRY_OPTIONS.map((opt) => (
@@ -143,7 +143,7 @@ export default function CreatePage() {
             value={recipientEmail}
             onChange={(e) => setRecipientEmail(e.target.value)}
             placeholder="alice@example.com"
-            className="w-full p-3.5 rounded-xl border border-slate-200 text-slate-900 text-sm font-medium focus:outline-none focus:border-indigo-500 focus:ring-4 focus:ring-indigo-500/10"
+            className="w-full p-3.5 rounded-xl text-sm font-medium focus:outline-none focus:ring-4" style={{ background: 'var(--background-elevated)', border: '2px solid var(--border-default)', color: 'var(--foreground-primary)',  }}
             disabled={isCreating}
           />
           {recipientEmail.trim() && (
@@ -154,7 +154,7 @@ export default function CreatePage() {
         </div>
 
         {error && (
-          <div className="bg-red-50 border border-red-100 text-red-600 text-sm font-medium p-3 rounded-xl">
+          <div className="text-sm font-medium p-3 rounded-xl" style={{ background: 'rgba(248,113,113,0.15)', border: '1px solid rgba(248,113,113,0.3)', color: 'var(--error)' }}>
             {error}
           </div>
         )}
@@ -175,18 +175,18 @@ export default function CreatePage() {
 
         {link && (
           <div className="space-y-4 pt-2">
-            <div className="bg-slate-50 rounded-xl p-4 border border-slate-200">
+            <div className="rounded-xl p-4" style={{ background: 'var(--background-elevated)', border: '1px solid var(--border-default)' }}>
               <p className="text-xs font-semibold text-slate-500 mb-2">Share this link:</p>
               <div className="flex gap-2">
                 <input
                   type="text"
                   readOnly
                   value={link}
-                  className="flex-1 p-2.5 rounded-lg border border-slate-200 text-xs font-mono bg-white text-slate-900"
+                  className="flex-1 p-2.5 rounded-lg text-xs font-mono" style={{ background: 'var(--background-elevated)', border: '1px solid var(--border-default)', color: 'var(--foreground-primary)' }}
                 />
                 <button
                   onClick={copyToClipboard}
-                  className="p-2.5 rounded-lg bg-indigo-50 text-indigo-600 hover:bg-indigo-100 transition-colors"
+                  className="p-2.5 rounded-lg transition-colors" style={{ background: 'rgba(59,130,246,0.15)', color: 'var(--accent-primary)' }}
                   title="Copy to clipboard"
                 >
                   {copied ? <Check className="w-4 h-4" /> : <Copy className="w-4 h-4" />}
@@ -196,13 +196,13 @@ export default function CreatePage() {
 
             <button
               onClick={() => router.push('/dashboard')}
-              className="w-full py-3 rounded-2xl text-sm font-bold text-slate-600 bg-slate-100 hover:bg-slate-200 transition-colors"
+              className="w-full py-3 rounded-2xl text-sm font-bold transition-colors" style={{ background: 'var(--background-elevated)', color: 'var(--foreground-secondary)' }}
             >
               Back to Dashboard
             </button>
           </div>
         )}
       </div>
-    </div>
+    </>
   );
 }

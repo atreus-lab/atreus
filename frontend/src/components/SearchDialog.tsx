@@ -180,8 +180,8 @@ export default function SearchDialog({ open, onClose, links, receivedLinks, tran
   return (
     <div className="fixed inset-0 z-[100] flex items-start justify-center pt-[15vh]">
       <div className="absolute inset-0 bg-black/40 backdrop-blur-sm" onClick={onClose} />
-      <div className="relative w-full max-w-sm mx-4 bg-white rounded-xl shadow-[0_30px_80px_rgba(0,0,0,0.2)] border border-slate-100 overflow-hidden animate-[fadeSlideIn_0.15s_ease-out]">
-        <div className="flex items-center gap-2 px-4 py-3 border-b border-slate-100">
+      <div className="relative w-full max-w-sm mx-4 rounded-xl border overflow-hidden animate-[fadeSlideIn_0.15s_ease-out]" style={{ background: 'var(--background-card)', borderColor: 'var(--border-default)', boxShadow: '0 30px 80px rgba(0,0,0,0.5)' }}>
+        <div className="flex items-center gap-2 px-4 py-3 border-b" style={{ borderColor: 'var(--border-default)' }}>
           <Search className="w-4 h-4 text-slate-400 shrink-0" />
           <input
             ref={inputRef}
@@ -190,9 +190,9 @@ export default function SearchDialog({ open, onClose, links, receivedLinks, tran
             onChange={e => { setQuery(e.target.value); setSelectedIndex(0); }}
             onKeyDown={handleKeyDown}
             placeholder="Search pages, links, transactions..."
-            className="flex-1 text-sm font-medium text-slate-900 placeholder-slate-400 outline-none bg-transparent"
+            className="flex-1 text-sm font-medium outline-none bg-transparent" style={{ color: 'var(--foreground-primary)' }}
           />
-          <kbd className="hidden sm:inline-flex items-center gap-1 px-1.5 py-0.5 bg-slate-100 text-slate-400 rounded text-[10px] font-bold">
+          <kbd className="hidden sm:inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-bold" style={{ background: 'var(--background-elevated)', color: 'var(--foreground-secondary)' }}>
             ESC
           </kbd>
         </div>
@@ -220,14 +220,14 @@ export default function SearchDialog({ open, onClose, links, receivedLinks, tran
                       onClick={() => navigateTo(result)}
                       onMouseEnter={() => setSelectedIndex(globalIndex)}
                       className={`w-full flex items-start gap-3 px-4 py-2.5 text-left transition-colors ${
-                        isSelected ? "bg-indigo-50/80" : "hover:bg-slate-50"
+                        isSelected ? "bg-indigo-500/20" : "hover:bg-white/5"
                       }`}
                     >
-                      <div className="w-8 h-8 rounded-lg bg-slate-100 text-slate-500 flex items-center justify-center shrink-0 mt-0.5">
+                      <div className="w-8 h-8 rounded-lg flex items-center justify-center shrink-0 mt-0.5" style={{ background: 'var(--background-elevated)', color: 'var(--foreground-secondary)' }}>
                         {result.icon}
                       </div>
                       <div className="flex flex-col min-w-0 flex-1">
-                        <span className="text-sm font-bold text-slate-900 truncate">{result.label}</span>
+                        <span className="text-sm font-bold truncate" style={{ color: 'var(--foreground-primary)' }}>{result.label}</span>
                         <span className="text-xs font-semibold text-slate-500 mt-0.5 truncate">{result.description}</span>
                       </div>
                       {result.href && (
@@ -241,17 +241,17 @@ export default function SearchDialog({ open, onClose, links, receivedLinks, tran
           )}
         </div>
 
-        <div className="flex items-center gap-3 px-4 py-2.5 border-t border-slate-100 bg-slate-50/50">
+        <div className="flex items-center gap-3 px-4 py-2.5 border-t" style={{ borderColor: 'var(--border-default)', background: 'var(--background-elevated)' }}>
           <div className="flex items-center gap-1.5 text-[10px] font-semibold text-slate-400">
-            <kbd className="px-1 py-0.5 bg-white border border-slate-200 rounded text-[9px] font-bold">↑↓</kbd>
+            <kbd className="px-1 py-0.5 rounded text-[9px] font-bold" style={{ background: 'var(--background-card)', border: '1px solid var(--border-default)', color: 'var(--foreground-secondary)' }}>↑↓</kbd>
             <span>Navigate</span>
           </div>
           <div className="flex items-center gap-1.5 text-[10px] font-semibold text-slate-400">
-            <kbd className="px-1 py-0.5 bg-white border border-slate-200 rounded text-[9px] font-bold">↵</kbd>
+            <kbd className="px-1 py-0.5 rounded text-[9px] font-bold" style={{ background: 'var(--background-card)', border: '1px solid var(--border-default)', color: 'var(--foreground-secondary)' }}>↵</kbd>
             <span>Open</span>
           </div>
           <div className="flex items-center gap-1.5 text-[10px] font-semibold text-slate-400">
-            <kbd className="px-1 py-0.5 bg-white border border-slate-200 rounded text-[9px] font-bold">ESC</kbd>
+            <kbd className="px-1 py-0.5 rounded text-[9px] font-bold" style={{ background: 'var(--background-card)', border: '1px solid var(--border-default)', color: 'var(--foreground-secondary)' }}>ESC</kbd>
             <span>Close</span>
           </div>
         </div>

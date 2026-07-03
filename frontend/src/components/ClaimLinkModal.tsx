@@ -15,10 +15,10 @@ export default function ClaimLinkModal({ show, input, onInputChange, onClaim, on
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm">
-      <div className="bg-white rounded-[2rem] p-8 shadow-xl border border-slate-100 w-full max-w-md mx-4 space-y-5">
+      <div className="rounded-[2rem] p-8 w-full max-w-md mx-4 space-y-5" style={{ background: 'var(--background-card)', border: '1px solid var(--border-default)', boxShadow: '0 30px 60px rgba(0,0,0,0.5)' }}>
         <div className="flex items-center justify-between">
-          <h3 className="text-lg font-extrabold text-slate-900">Claim a Payment Link</h3>
-          <button onClick={onClose} className="p-2 hover:bg-slate-100 rounded-xl transition-colors">
+          <h3 className="text-lg font-extrabold" style={{ color: 'var(--foreground-primary)' }}>Claim a Payment Link</h3>
+          <button onClick={onClose} className="p-2 rounded-xl transition-colors" style={{ color: 'var(--foreground-secondary)' }}>
             <X className="w-5 h-5 text-slate-400" />
           </button>
         </div>
@@ -28,13 +28,13 @@ export default function ClaimLinkModal({ show, input, onInputChange, onClaim, on
           value={input}
           onChange={(e) => onInputChange(e.target.value)}
           placeholder="https://localhost:3000/claim#..."
-          className="w-full p-3.5 rounded-xl border border-slate-200 text-sm font-medium focus:outline-none focus:border-indigo-500 focus:ring-4 focus:ring-indigo-500/10"
+          className="w-full px-5 py-4 rounded-2xl text-sm font-medium focus:outline-none focus:ring-4" style={{ background: 'var(--background-elevated)', border: '2px solid var(--border-default)', color: 'var(--foreground-primary)' }}
         />
         <div className="flex gap-3">
-          <button onClick={onClose} className="flex-1 py-3 rounded-2xl text-sm font-bold text-slate-600 bg-slate-100 hover:bg-slate-200 transition-colors">
+          <button onClick={onClose} className="flex-1 py-3 rounded-2xl text-sm font-bold transition-colors" style={{ background: 'var(--background-elevated)', color: 'var(--foreground-secondary)' }}>
             Cancel
           </button>
-          <button onClick={onClaim} disabled={!input.trim()} className="flex-1 py-3 rounded-2xl text-sm font-bold text-white bg-indigo-600 hover:bg-indigo-700 disabled:opacity-40 disabled:cursor-not-allowed transition-all shadow-[0_4px_12px_rgba(79,70,229,0.3)]">
+          <button onClick={onClaim} disabled={!input.trim()} className="flex-1 py-3 rounded-2xl text-sm font-bold text-white disabled:opacity-40 disabled:cursor-not-allowed transition-all" style={{ background: 'var(--accent-primary)' }}>
             Open Claim Page
           </button>
         </div>

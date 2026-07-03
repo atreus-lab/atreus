@@ -6,10 +6,8 @@ import Link from "next/link";
 import { loadWallet, getTransactions, type StoredWallet } from "@/lib/wallet";
 import { getStoredLinks, getClaimedLinks, type StoredLink } from "@/lib/links";
 import { Activity as ActivityIcon, Link2, ArrowDownToLine, ArrowUpRight, ArrowDownLeft, CheckCircle2, ArrowLeft } from "lucide-react";
-import AppSidebar from "@/components/AppSidebar";
 import AppHeader from "@/components/AppHeader";
 import SearchDialog from "@/components/SearchDialog";
-import { getNavItems } from "@/constants/navigation";
 
 interface ActivityItem {
   id: string;
@@ -65,66 +63,60 @@ export default function ActivityPage() {
   }, []);
 
   if (loading) {
-    return <div className="min-h-screen bg-[#FAFBFF] flex items-center justify-center"><div className="animate-spin w-8 h-8 border-4 border-indigo-600 border-t-transparent rounded-full"></div></div>;
+    return <div className="min-h-screen flex items-center justify-center" style={{ background: 'var(--background-primary)' }}><div className="animate-spin w-8 h-8 border-4 border-indigo-600 border-t-transparent rounded-full"></div></div>;
   }
 
-  const emailName = storedWallet?.email ? storedWallet.email.split('@')[0] : 'User';
-  const displayAddress = address ? `${address.slice(0, 5)}...${address.slice(-4)}` : '';
-  const navItems = getNavItems("Activity");
   const activities = buildActivityFeed(storedLinks, receivedLinks, transactions, address);
 
   function renderActivityItem(item: ActivityItem) {
-    let iconColor: string;
+    let iconStyle: Record<string, string>;
     let IconComponent: any;
     switch (item.type) {
-      case 'link_created': IconComponent = Link2; iconColor = 'bg-purple-50 text-purple-500'; break;
-      case 'link_claimed_by_other': IconComponent = CheckCircle2; iconColor = 'bg-green-50 text-green-500'; break;
-      case 'claimed_by_you': IconComponent = ArrowDownToLine; iconColor = 'bg-blue-50 text-blue-500'; break;
-      case 'sent': IconComponent = ArrowUpRight; iconColor = 'bg-orange-50 text-orange-500'; break;
-      case 'received': IconComponent = ArrowDownLeft; iconColor = 'bg-green-50 text-green-500'; break;
-      default: IconComponent = ActivityIcon; iconColor = 'bg-slate-50 text-slate-400';
+      case 'link_created': IconComponent = Link2; iconStyle = { background: 'rgba(168,85,247,0.15)', color: '#a855f7' }; break;
+      case 'link_claimed_by_other': IconComponent = CheckCircle2; iconStyle = { background: 'rgba(34,197,94,0.15)', color: '#22c55e' }; break;
+      case 'claimed_by_you': IconComponent = ArrowDownToLine; iconStyle = { background: 'rgba(59,130,246,0.15)', color: '#3b82f6' }; break;
+      case 'sent': IconComponent = ArrowUpRight; iconStyle = { background: 'rgba(249,115,22,0.15)', color: '#f97316' }; break;
+      case 'received': IconComponent = ArrowDownLeft; iconStyle = { background: 'rgba(34,197,94,0.15)', color: '#22c55e' }; break;
+      default: IconComponent = ActivityIcon; iconStyle = {};
     }
     return (
       <div key={item.id} className="flex items-start gap-4 group">
-        <div className={`w-10 h-10 rounded-full flex items-center justify-center shrink-0 border-4 border-white ${iconColor}`}><IconComponent className="w-4 h-4" /></div>
+        <div className="w-10 h-10 rounded-full flex items-center justify-center shrink-0 border-4" style={{ borderColor: 'var(--background-primary)', ...iconStyle }}><IconComponent className="w-4 h-4" /></div>
         <div className="flex flex-col flex-1 pt-1">
           <div className="flex items-center justify-between">
-            <span className="font-bold text-slate-900 text-sm">{item.description}</span>
-            <span className="text-[11px] font-semibold text-slate-400">{new Date(item.timestamp).toLocaleDateString([], { month: 'short', day: 'numeric' })}</span>
+            <span style={{ color: 'var(--foreground-primary)' }} className="font-bold text-sm">{item.description}</span>
+            <span style={{ color: 'var(--foreground-secondary)' }} className="text-[11px] font-semibold">{new Date(item.timestamp).toLocaleDateString([], { month: 'short', day: 'numeric' })}</span>
           </div>
-          <span className="text-[12px] font-semibold text-slate-500">{item.amount}</span>
+          <span style={{ color: 'var(--foreground-secondary)' }} className="text-[12px] font-semibold">{item.amount}</span>
         </div>
       </div>
     );
   }
 
   return (
-    <div className="min-h-screen bg-[#FAFBFF] flex font-sans text-slate-900 selection:bg-indigo-100">
-      <AppSidebar navItems={navItems} emailName={emailName} displayAddress={displayAddress} />
-      <main className="flex-1 flex flex-col min-w-0">
-        <AppHeader title="Activity" subtitle="Your complete transaction history" onSearchOpen={() => setSearchOpen(true)} />
-        <div className="px-8 sm:px-10 lg:px-12 pb-12 flex-1 flex flex-col gap-6 pt-6">
-          <div className="bg-white rounded-[2rem] p-8 sm:p-10 shadow-[0_12px_40px_rgba(0,0,0,0.04)] border border-slate-100 flex flex-col">
-            <div className="flex items-center justify-between mb-8">
-              <h3 className="font-extrabold text-slate-900 text-xl">All Activity</h3>
-              <Link href="/dashboard" className="text-sm font-bold text-indigo-600 hover:text-indigo-700 flex items-center gap-1"><ArrowLeft className="w-4 h-4" /> Back to Overview</Link>
-            </div>
-            <div className="flex flex-col gap-6 relative">
-              <div className="absolute left-5 top-4 bottom-4 w-px bg-slate-100 -z-10"></div>
-              {activities.length > 0 ? activities.map(renderActivityItem) : (
-                <div className="flex items-start gap-4">
-                  <div className="w-10 h-10 rounded-full bg-slate-50 text-slate-400 border-4 border-white flex items-center justify-center shrink-0"><ActivityIcon className="w-4 h-4" /></div>
-                  <div className="flex flex-col flex-1 pt-1">
-                    <span className="font-bold text-slate-900 text-sm">No activity yet</span>
-                    <span className="text-[12px] font-semibold text-slate-500">Your activity will appear here.</span>
-                  </div>
+    <>
+      <AppHeader title="Activity" subtitle="Your complete transaction history" onSearchOpen={() => setSearchOpen(true)} />
+      <div className="app-content flex flex-col gap-6">
+        <div className="panel flex flex-col">
+          <div className="flex items-center justify-between mb-8">
+            <h3 className="section-title" style={{ fontSize: '1.25rem' }}>All Activity</h3>
+            <Link href="/dashboard" className="text-sm font-bold flex items-center gap-1" style={{ color: 'var(--accent-primary)' }}><ArrowLeft className="w-4 h-4" /> Back to Overview</Link>
+          </div>
+          <div className="flex flex-col gap-6 relative">
+            <div className="absolute left-5 top-4 bottom-4 w-px -z-10" style={{ background: 'var(--border-default)' }}></div>
+            {activities.length > 0 ? activities.map(renderActivityItem) : (
+              <div className="flex items-start gap-4">
+                <div className="w-10 h-10 rounded-full flex items-center justify-center shrink-0 border-4" style={{ borderColor: 'var(--background-primary)', background: 'var(--surface-secondary)', color: 'var(--foreground-secondary)' }}><ActivityIcon className="w-4 h-4" /></div>
+                <div className="flex flex-col flex-1 pt-1">
+                  <span className="font-bold text-sm" style={{ color: 'var(--foreground-primary)' }}>No activity yet</span>
+                  <span className="text-[12px] font-semibold" style={{ color: 'var(--foreground-secondary)' }}>Your activity will appear here.</span>
                 </div>
-              )}
-            </div>
+              </div>
+            )}
           </div>
         </div>
-        <SearchDialog open={searchOpen} onClose={() => setSearchOpen(false)} links={storedLinks} receivedLinks={receivedLinks} transactions={transactions} address={address} />
-      </main>
-    </div>
+      </div>
+      <SearchDialog open={searchOpen} onClose={() => setSearchOpen(false)} links={storedLinks} receivedLinks={receivedLinks} transactions={transactions} address={address} />
+    </>
   );
 }
