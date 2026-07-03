@@ -78,7 +78,7 @@ export default function SendPage() {
     <>
       <AppHeader title="Send XLM" subtitle="Transfer assets securely on the Stellar network" backHref="/dashboard" onSearchOpen={() => setSearchOpen(true)} />
 
-      <div className="app-content max-w-4xl mx-auto">
+      <div className="app-content flex flex-col gap-6">
         {!mounted ? (
           <div className="flex-1 flex items-center justify-center p-8">
             <div className="animate-spin w-6 h-6 border-2 border-[var(--accent-primary)] border-t-transparent rounded-full" />
