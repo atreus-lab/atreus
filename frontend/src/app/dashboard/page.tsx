@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useRef } from "react";
 import { useRouter } from "next/navigation";
 import Image from "next/image";
 import Link from "next/link";
@@ -47,6 +47,10 @@ export default function DashboardPage() {
  const [copiedLinkId, setCopiedLinkId] = useState("");
  const [showBalance, setShowBalance] = useState(true);
  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+ const [notifications, setNotifications] = useState<{ id: string; title: string; description: string; time: number; read: boolean }[]>([]);
+ const [showNotifications, setShowNotifications] = useState(false);
+ const notifiedRef = useRef<Set<string>>(new Set());
+ const notifRef = useRef<HTMLDivElement>(null);
 
  const loadData = useCallback(async (addr: string) => {
  try {
@@ -82,6 +86,68 @@ export default function DashboardPage() {
   window.location.href = link;
  };
 
+ // Hydrate notifiedRef from localStorage (runs first on mount)
+ useEffect(() => {
+  try {
+   const stored = JSON.parse(localStorage.getItem("atreus_notified") || "[]");
+   notifiedRef.current = new Set(stored);
+  } catch {}
+ }, []);
+
+ // Notification check — run after link status refresh and periodically
+ const checkForNotifications = useCallback(() => {
+  const links = getStoredLinks();
+  const notified = notifiedRef.current;
+  for (const link of links) {
+   if (link.claimed && !notified.has(link.secretHex)) {
+    notified.add(link.secretHex);
+    const notif = {
+     id: `link-claimed-${link.secretHex}`,
+     title: "Payment Link Claimed 🎉",
+     description: `${link.amount} XLM has been claimed via your payment link.`,
+     time: Date.now(),
+     read: false,
+    };
+    setNotifications(prev => [notif, ...prev].slice(0, 20));
+   }
+  }
+  localStorage.setItem("atreus_notified", JSON.stringify([...notified]));
+ }, []);
+
+ // Periodic notification check
+ useEffect(() => {
+  if (!address) return;
+  const interval = setInterval(() => {
+   refreshLinkStatuses().then(() => {
+    setStoredLinks(getStoredLinks());
+    setReceivedLinks(getClaimedLinks());
+    checkForNotifications();
+   });
+  }, 15000);
+  return () => clearInterval(interval);
+ }, [address, checkForNotifications]);
+
+ // Close notification dropdown on outside click
+ useEffect(() => {
+  const handleClick = (e: MouseEvent) => {
+   if (!notifRef.current) return;
+   const target = e.target as HTMLElement;
+   // Check if click is inside the dropdown or on any bell button
+   if (notifRef.current.contains(target)) return;
+   if (target.closest('[data-bell]')) return;
+   setShowNotifications(false);
+  };
+  document.addEventListener("mousedown", handleClick);
+  return () => document.removeEventListener("mousedown", handleClick);
+ }, []);
+
+ // Mark all as read when dropdown opens
+ useEffect(() => {
+  if (showNotifications) {
+   setNotifications(prev => prev.map(n => ({ ...n, read: true })));
+  }
+ }, [showNotifications]);
+
  // Auto-refresh after a claim (claimed timestamp set in localStorage)
  useEffect(() => {
   const claimed = localStorage.getItem("atreus_claimed");
@@ -116,8 +182,9 @@ export default function DashboardPage() {
  refreshLinkStatuses().then(() => {
    setStoredLinks(getStoredLinks());
    setReceivedLinks(getClaimedLinks());
+   checkForNotifications();
   });
- }, [loadData, router]);
+ }, [loadData, router, checkForNotifications]);
 
  if (loading) {
  return (
@@ -193,6 +260,44 @@ export default function DashboardPage() {
  {/* Main Content */}
  <main className="flex-1 flex flex-col min-w-0">
  
+ {/* Notification Dropdown */}
+ {showNotifications && (
+ <div ref={notifRef} className="absolute top-[5.5rem] right-8 sm:right-10 lg:right-12 z-50 w-[380px] max-w-[calc(100vw-3rem)] bg-white rounded-2xl shadow-[0_20px_60px_rgba(0,0,0,0.12)] border border-slate-100 overflow-hidden animate-[fadeSlideIn_0.2s_ease-out]">
+ <div className="flex items-center justify-between px-5 py-4 border-b border-slate-100">
+  <h3 className="font-extrabold text-slate-900 text-base">Notifications</h3>
+  <button onClick={() => setShowNotifications(false)} className="p-1.5 hover:bg-slate-100 rounded-lg transition-colors">
+   <X className="w-4 h-4 text-slate-400" />
+  </button>
+ </div>
+ <div className="max-h-[420px] overflow-y-auto">
+  {notifications.length === 0 ? (
+   <div className="flex flex-col items-center gap-3 py-12 px-5">
+    <Bell className="w-10 h-10 text-slate-300" />
+    <div className="text-center">
+     <p className="text-sm font-bold text-slate-700">No notifications yet</p>
+     <p className="text-xs font-semibold text-slate-400 mt-1">You'll be notified when your payment links are claimed.</p>
+    </div>
+   </div>
+  ) : (
+   notifications.map((n) => (
+    <div key={n.id} className={`flex items-start gap-4 px-5 py-4 border-b border-slate-50 hover:bg-slate-50/50 transition-colors ${n.read ? '' : 'bg-indigo-50/20'}`}>
+     <div className="w-10 h-10 rounded-xl bg-green-50 text-green-600 flex items-center justify-center shrink-0 shadow-sm">
+      <CheckCircle2 className="w-5 h-5" />
+     </div>
+     <div className="flex flex-col min-w-0 flex-1">
+      <p className="text-sm font-bold text-slate-900">{n.title}</p>
+      <p className="text-xs font-semibold text-slate-500 mt-0.5 leading-snug">{n.description}</p>
+      <span className="text-[10px] font-semibold text-slate-400 mt-1">
+       {new Date(n.time).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+      </span>
+     </div>
+    </div>
+   ))
+  )}
+ </div>
+ </div>
+ )}
+
  {/* Top Header */}
  <header className="w-full flex items-center justify-between py-6 px-8 sm:px-10 lg:px-12 bg-[#FAFBFF] sticky top-0 z-30 backdrop-blur-md border-b border-slate-100/50">
  <div className="flex flex-col">
@@ -209,15 +314,19 @@ export default function DashboardPage() {
  </div>
  </div>
  
- <button className="relative p-3 bg-white border border-slate-200 rounded-full hover:bg-slate-50 transition-colors shadow-sm ">
+ <button data-bell onClick={() => setShowNotifications(!showNotifications)} className="relative p-3 bg-white border border-slate-200 rounded-full hover:bg-slate-50 transition-colors shadow-sm ">
  <Bell className="w-5 h-5 text-slate-600 " />
- <span className="absolute top-0 right-0 w-4 h-4 bg-indigo-600 text-white text-[9px] font-bold rounded-full flex items-center justify-center border-2 border-white -translate-y-1/4 translate-x-1/4">3</span>
+ {notifications.filter(n => !n.read).length > 0 && (
+ <span className="absolute top-0 right-0 w-5 h-5 bg-indigo-600 text-white text-[9px] font-bold rounded-full flex items-center justify-center border-2 border-white -translate-y-1/4 translate-x-1/4">{notifications.filter(n => !n.read).length}</span>
+ )}
  </button>
  </div>
  <div className="flex items-center gap-2 lg:hidden">
- <button className="relative p-3 bg-white border border-slate-200 rounded-full hover:bg-slate-50 transition-colors shadow-sm">
+ <button data-bell onClick={() => setShowNotifications(!showNotifications)} className="relative p-3 bg-white border border-slate-200 rounded-full hover:bg-slate-50 transition-colors shadow-sm">
  <Bell className="w-5 h-5 text-slate-600" />
- <span className="absolute top-0 right-0 w-4 h-4 bg-indigo-600 text-white text-[9px] font-bold rounded-full flex items-center justify-center border-2 border-white -translate-y-1/4 translate-x-1/4">3</span>
+ {notifications.filter(n => !n.read).length > 0 && (
+ <span className="absolute top-0 right-0 w-5 h-5 bg-indigo-600 text-white text-[9px] font-bold rounded-full flex items-center justify-center border-2 border-white -translate-y-1/4 translate-x-1/4">{notifications.filter(n => !n.read).length}</span>
+ )}
  </button>
  <button onClick={() => setMobileMenuOpen(true)} className="p-3 bg-white border border-slate-200 rounded-full hover:bg-slate-50 transition-colors shadow-sm">
  <Menu className="w-5 h-5 text-slate-600" />
@@ -302,9 +411,9 @@ export default function DashboardPage() {
  </div>
  </div>
 
- <button className="mt-auto self-start text-sm font-bold text-indigo-600 hover:text-indigo-700 flex items-center gap-1 z-10">
+ <Link href="/security" className="mt-auto self-start text-sm font-bold text-indigo-600 hover:text-indigo-700 flex items-center gap-1 z-10">
  View details <ArrowRight className="w-4 h-4" />
- </button>
+ </Link>
 
  {/* Decorative Shield Image */}
  <div className="absolute -right-4 top-1/2 -translate-y-1/2 w-48 h-48 opacity-20 pointer-events-none mix-blend-multiply">
