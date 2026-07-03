@@ -51,7 +51,13 @@ export default function ReceivePage() {
     }
   };
 
-  if (!mounted) return null;
+  if (!mounted) {
+   return (
+    <div className="min-h-screen bg-[#FAFBFF] flex items-center justify-center">
+     <div className="animate-spin w-8 h-8 border-4 border-indigo-600 border-t-transparent rounded-full"></div>
+    </div>
+   );
+  }
 
   const emailName = storedWallet?.email?.split('@')[0] || "User";
 
