@@ -4,14 +4,14 @@ import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import Image from "next/image";
 import Link from "next/link";
-import { loadWallet, swapXLM, getBalance, getExplorerUrl, type StoredWallet } from "@/lib/wallet";
+import { loadWallet, swapXLM, getBalances, getExplorerUrl, type StoredWallet } from "@/lib/wallet";
 import { 
  LayoutDashboard, Wallet, Link2, ArrowRightLeft, BarChart3, Activity, Shield, 
  Settings, Search, Bell, ChevronDown, ArrowLeft, Loader2, ExternalLink, RefreshCw, CheckCircle2
 } from "lucide-react";
 import logo from "../../media/ateruslogo.jpeg";
 
-const TOKENS = [
+const ALL_TOKENS = [
   { code: "USDC", issuer: "GA2BYV7QJ75ZAZXQBEDX5CAYXIRMXELJYRK5O6IHF2RLCDKVQU2ZSKBU" },
   { code: "EURT", issuer: "GBLETQF7AAB2DPWP3LU6DYXYF3CZX7RVH3PB6IHQWECTOKZL7EENGO2U" },
 ];
@@ -32,16 +32,26 @@ export default function SwapPage() {
   const [storedWallet, setStoredWallet] = useState<StoredWallet | null>(null);
   const [loading, setLoading] = useState(true);
   const [amount, setAmount] = useState("");
-  const [token, setToken] = useState(TOKENS[0]);
+  const [balances, setBalances] = useState<any[]>([]);
+  const [token, setToken] = useState(ALL_TOKENS[0]);
   const [status, setStatus] = useState<"idle" | "swapping" | "success" | "error">("idle");
   const [errorMsg, setErrorMsg] = useState("");
   const [txHash, setTxHash] = useState("");
+  const activatedTokens = ALL_TOKENS.filter(t => balances.some(b => b.asset_code === t.code));
+  const swappableTokens = activatedTokens.length > 0 ? activatedTokens : ALL_TOKENS;
 
   useEffect(() => {
     const wallet = loadWallet();
     if (!wallet) { router.push("/wallet"); return; }
     setStoredWallet(wallet);
-    setLoading(false);
+    getBalances(wallet.publicKey).then(bals => {
+      setBalances(bals);
+      // Default to first activated token
+      const activatedCodes = bals.map((b: any) => b.asset_code).filter(Boolean);
+      const firstActivated = ALL_TOKENS.find(t => activatedCodes.includes(t.code));
+      if (firstActivated) setToken(firstActivated);
+      setLoading(false);
+    }).catch(() => setLoading(false));
   }, [router]);
 
   const handleSwap = async () => {
@@ -52,11 +62,14 @@ export default function SwapPage() {
       if (!storedWallet) { router.push("/wallet"); return; }
       if (!amount || parseFloat(amount) <= 0) throw new Error("Enter a valid amount");
 
-      const bal = await getBalance(storedWallet.publicKey);
-      if (parseFloat(bal) < parseFloat(amount) + 0.005) throw new Error("Insufficient XLM");
+      const xlmBal = balances.find(b => b.asset_type === "native")?.balance || "0";
+      if (parseFloat(xlmBal) < parseFloat(amount) + 0.005) throw new Error("Insufficient XLM");
 
       const hash = await swapXLM(token.code, token.issuer, amount);
       setTxHash(hash);
+      // Refresh balances after successful swap
+      const bals = await getBalances(storedWallet.publicKey);
+      setBalances(bals);
       setStatus("success");
     } catch (err: any) {
       setErrorMsg(err.message || "Swap failed");
@@ -206,8 +219,8 @@ export default function SwapPage() {
               <span className="text-blue-600 font-bold text-xs">{token.code.slice(0, 2)}</span>
              </div>
              <div className="relative">
-              <select value={token.code} onChange={e => setToken(TOKENS.find(t => t.code === e.target.value)!)} className="font-extrabold text-lg text-slate-900 bg-transparent border-none outline-none cursor-pointer focus:text-indigo-600 appearance-none pr-5">
-               {TOKENS.map(t => <option key={t.code} value={t.code}>{t.code}</option>)}
+              <select value={token.code} onChange={e => setToken(ALL_TOKENS.find(t => t.code === e.target.value)!)} className="font-extrabold text-lg text-slate-900 bg-transparent border-none outline-none cursor-pointer focus:text-indigo-600 appearance-none pr-5">
+               {swappableTokens.map(t => <option key={t.code} value={t.code}>{t.code}</option>)}
               </select>
               <ChevronDown className="w-4 h-4 text-slate-400 absolute right-0 top-1/2 -translate-y-1/2 pointer-events-none" />
              </div>
@@ -219,6 +232,14 @@ export default function SwapPage() {
           <div className="flex flex-col gap-2 mb-6">
            <label className="text-xs font-bold text-slate-500 uppercase tracking-wider">Amount (XLM)</label>
            <input value={amount} onChange={e => setAmount(e.target.value)} placeholder="0.00" type="number" step="0.01" className="w-full p-4 rounded-xl border border-slate-200 text-lg font-bold focus:outline-none focus:border-indigo-500 focus:ring-4 focus:ring-indigo-500/10 transition-all" />
+           {parseFloat(amount) > 0 && (
+            <div className="flex items-center justify-between p-4 bg-indigo-50/50 rounded-xl border border-indigo-100 mt-2">
+             <span className="text-sm font-semibold text-slate-600">≈ You receive</span>
+             <span className="text-lg font-extrabold text-indigo-700">
+              {(parseFloat(amount) * 0.98).toFixed(2)} {token.code}
+            </span>
+            </div>
+           )}
           </div>
 
           <p className="text-xs font-semibold text-slate-400 mb-6 flex items-center gap-1">
