@@ -437,8 +437,8 @@ export default function DashboardPage() {
    });
   }
 
-  // Sort by timestamp descending, take top 8
-  const sorted = activities.sort((a, b) => b.timestamp - a.timestamp).slice(0, 8);
+  // Sort by timestamp descending, take top 5
+  const sorted = activities.sort((a, b) => b.timestamp - a.timestamp).slice(0, 5);
 
   if (sorted.length === 0) {
    return (
