@@ -8,14 +8,31 @@ import { submitAttestation } from "../lib/stellar.js";
 let circuit: any = undefined;
 function getCircuit() {
   if (circuit) return circuit;
-  const circuitPath =
-    process.env.CIRCUIT_PATH ||
-    resolve(dirname(fileURLToPath(import.meta.url)), "../../../circuits/target/secret.json");
-  if (!existsSync(circuitPath)) {
-    throw new Error(`Circuit file not found at ${circuitPath}`);
+
+  const candidates = [];
+
+  if (process.env.CIRCUIT_PATH) {
+    candidates.push(process.env.CIRCUIT_PATH);
   }
-  circuit = JSON.parse(readFileSync(circuitPath, "utf-8"));
-  return circuit;
+
+  const moduleDir = dirname(fileURLToPath(import.meta.url));
+  candidates.push(
+    resolve(moduleDir, "../../circuits/target/secret.json"),
+    resolve(moduleDir, "../../../circuits/target/secret.json"),
+    resolve(moduleDir, "../circuits/target/secret.json"),
+    resolve(process.cwd(), "circuits/target/secret.json"),
+  );
+
+  for (const candidate of candidates) {
+    if (existsSync(candidate)) {
+      circuit = JSON.parse(readFileSync(candidate, "utf-8"));
+      return circuit;
+    }
+  }
+
+  throw new Error(
+    `Circuit file not found. Tried:\n  ${candidates.join("\n  ")}`
+  );
 }
 
 export const linkRoutes: Router = Router();
