@@ -5,7 +5,7 @@
       "src": "api/index.ts",
       "use": "@vercel/node",
       "config": {
-        "includeFiles": ["circuits/**"]
+        "includeFiles": ["circuits/**", "wasm/**"]
       }
     }
   ],
