@@ -1,13 +1,22 @@
 import { Router, Request, Response } from "express";
-import { readFileSync } from "fs";
+import { readFileSync, existsSync } from "fs";
 import { resolve, dirname } from "path";
 import { fileURLToPath } from "url";
 import { sha256Hex, verifyClaimProof } from "../lib/zk.js";
 import { submitAttestation } from "../lib/stellar.js";
 
-const __dirname = dirname(fileURLToPath(import.meta.url));
-const circuitPath = resolve(__dirname, "../../../circuits/target/secret.json");
-const circuit = JSON.parse(readFileSync(circuitPath, "utf-8"));
+let circuit: any = undefined;
+function getCircuit() {
+  if (circuit) return circuit;
+  const circuitPath =
+    process.env.CIRCUIT_PATH ||
+    resolve(dirname(fileURLToPath(import.meta.url)), "../../../circuits/target/secret.json");
+  if (!existsSync(circuitPath)) {
+    throw new Error(`Circuit file not found at ${circuitPath}`);
+  }
+  circuit = JSON.parse(readFileSync(circuitPath, "utf-8"));
+  return circuit;
+}
 
 export const linkRoutes: Router = Router();
 
@@ -69,7 +78,7 @@ linkRoutes.post("/:hash/attest", async (req: Request, res: Response) => {
       return;
     }
 
-    const isValid = await verifyClaimProof(circuit.bytecode, proofBytes, secretBytes, recipient);
+    const isValid = await verifyClaimProof(getCircuit().bytecode, proofBytes, secretBytes, recipient);
     if (!isValid) {
       res.status(400).json({ error: "ZK proof verification failed" });
       return;
