@@ -6,10 +6,10 @@ import { loadWallet, type StoredWallet } from "@/lib/wallet";
 import AppHeader from "@/components/AppHeader";
 import SearchDialog from "@/components/SearchDialog";
 import Image from "next/image";
-import Link from "next/link";
 import { 
   Shield, ArrowRight, Laptop, Globe, ShieldAlert, 
-  Lock, Bell, Key, Fingerprint, Smartphone, CheckCircle2, Eye 
+  Lock, Bell, Key, Fingerprint, Smartphone, CheckCircle2, Eye, 
+  Loader2
 } from "lucide-react";
 
 // @ts-ignore
@@ -22,13 +22,55 @@ export default function SecurityPage() {
   const [storedWallet, setStoredWallet] = useState<StoredWallet | null>(null);
   const [loading, setLoading] = useState(true);
   const [searchOpen, setSearchOpen] = useState(false);
+  const [passkeyLoading, setPasskeyLoading] = useState(false);
+  const [passkeyRegistered, setPasskeyRegistered] = useState(false);
+  const [privacyEnabled, setPrivacyEnabled] = useState(true);
+  const [walletLocked, setWalletLocked] = useState(false);
+
+  const PRIVACY_KEY = 'atreus_privacy_enabled';
+  const LOCK_KEY = 'atreus_wallet_locked';
 
   useEffect(() => {
     const wallet = loadWallet();
     if (!wallet) { router.push("/wallet"); return; }
     setStoredWallet(wallet);
+    setPrivacyEnabled(localStorage.getItem(PRIVACY_KEY) !== 'false');
+    setWalletLocked(localStorage.getItem(LOCK_KEY) === 'true');
+    setPasskeyRegistered(localStorage.getItem('atreus_passkey_registered') === 'true');
     setLoading(false);
   }, [router]);
+
+  const handleRegisterPasskey = async () => {
+    if (!storedWallet) return;
+    setPasskeyLoading(true);
+    try {
+      const { registerPasskey } = await import('@/lib/passkey');
+      await registerPasskey(storedWallet.email || storedWallet.publicKey);
+      localStorage.setItem('atreus_passkey_registered', 'true');
+      setPasskeyRegistered(true);
+    } catch (err: any) {
+      console.error('Passkey registration failed:', err);
+    } finally {
+      setPasskeyLoading(false);
+    }
+  };
+
+  const togglePrivacy = () => {
+    const next = !privacyEnabled;
+    setPrivacyEnabled(next);
+    localStorage.setItem(PRIVACY_KEY, String(next));
+  };
+
+  const handleLockWallet = () => {
+    const next = !walletLocked;
+    setWalletLocked(next);
+    localStorage.setItem(LOCK_KEY, String(next));
+    if (next) {
+      localStorage.setItem('atreus_lock_time', Date.now().toString());
+    } else {
+      localStorage.removeItem('atreus_lock_time');
+    }
+  };
 
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
@@ -86,9 +128,9 @@ export default function SecurityPage() {
                   </div>
 
                   <div className="mt-6 pt-4">
-                    <Link href="#" className="flex items-center gap-1.5 text-[12px] font-bold text-white hover:opacity-80 transition-opacity w-max">
+                    <button onClick={() => router.push('/settings')} className="flex items-center gap-1.5 text-[12px] font-bold text-white hover:opacity-80 transition-opacity w-max">
                       View security recommendations <ArrowRight className="w-3.5 h-3.5" />
-                    </Link>
+                    </button>
                   </div>
                 </div>
               </div>
@@ -110,7 +152,7 @@ export default function SecurityPage() {
                       <Eye className="w-3.5 h-3.5 text-gray-400" />
                     </div>
                   </div>
-                  <button className="w-full py-2.5 rounded-lg bg-[rgba(255,255,255,0.05)] hover:bg-[rgba(255,255,255,0.08)] border border-[rgba(255,255,255,0.1)] text-white text-[12px] font-bold transition-colors">
+                  <button onClick={() => router.push('/wallet')} className="w-full py-2.5 rounded-lg bg-[rgba(255,255,255,0.05)] hover:bg-[rgba(255,255,255,0.08)] border border-[rgba(255,255,255,0.1)] text-white text-[12px] font-bold transition-colors">
                     Manage Phrase
                   </button>
                 </div>
@@ -123,16 +165,20 @@ export default function SecurityPage() {
                       <h3 className="text-[13px] font-bold text-white">Passkeys</h3>
                     </div>
                     <p className="text-[11px] text-[#94a3b8] mb-4 leading-relaxed">Use passkeys for secure, passwordless authentication.</p>
-                    <div className="flex items-center justify-between bg-[rgba(255,255,255,0.03)] rounded-lg p-3 border border-[rgba(255,255,255,0.06)] mb-4 cursor-pointer hover:bg-[rgba(255,255,255,0.06)] transition-colors">
+                    <div onClick={() => router.push('/profile')} className="flex items-center justify-between bg-[rgba(255,255,255,0.03)] rounded-lg p-3 border border-[rgba(255,255,255,0.06)] mb-4 cursor-pointer hover:bg-[rgba(255,255,255,0.06)] transition-colors">
                       <div className="flex items-center gap-2">
-                        <CheckCircle2 className="w-3.5 h-3.5 text-white" />
-                        <span className="text-[11px] font-semibold text-white">1 Passkey Active</span>
+                        {passkeyRegistered ? (
+                          <CheckCircle2 className="w-3.5 h-3.5 text-green-400" />
+                        ) : (
+                          <Fingerprint className="w-3.5 h-3.5 text-gray-400" />
+                        )}
+                        <span className="text-[11px] font-semibold text-white">{passkeyRegistered ? '1 Passkey Active' : 'No passkeys registered'}</span>
                       </div>
                       <ArrowRight className="w-3.5 h-3.5 text-gray-400" />
                     </div>
                   </div>
-                  <button className="w-full py-2.5 rounded-lg bg-[rgba(255,255,255,0.05)] hover:bg-[rgba(255,255,255,0.08)] border border-[rgba(255,255,255,0.1)] text-white text-[12px] font-bold transition-colors">
-                    Manage Passkeys
+                  <button onClick={handleRegisterPasskey} disabled={passkeyLoading} className="w-full py-2.5 rounded-lg bg-[rgba(255,255,255,0.05)] hover:bg-[rgba(255,255,255,0.08)] border border-[rgba(255,255,255,0.1)] text-white text-[12px] font-bold transition-colors disabled:opacity-50 flex items-center justify-center gap-2">
+                    {passkeyLoading ? <><Loader2 className="w-3.5 h-3.5 animate-spin" /> Registering...</> : 'Manage Passkeys'}
                   </button>
                 </div>
 
@@ -149,7 +195,7 @@ export default function SecurityPage() {
                       <span className="text-[11px] font-semibold text-white">Enabled</span>
                     </div>
                   </div>
-                  <button className="w-full py-2.5 rounded-lg bg-[rgba(255,255,255,0.05)] hover:bg-[rgba(255,255,255,0.08)] border border-[rgba(255,255,255,0.1)] text-white text-[12px] font-bold transition-colors">
+                  <button onClick={() => router.push('/profile')} className="w-full py-2.5 rounded-lg bg-[rgba(255,255,255,0.05)] hover:bg-[rgba(255,255,255,0.08)] border border-[rgba(255,255,255,0.1)] text-white text-[12px] font-bold transition-colors">
                     Manage 2FA
                   </button>
                 </div>
@@ -178,8 +224,8 @@ export default function SecurityPage() {
                     <span className="text-[9px] font-medium text-gray-400 bg-[#1a1a1a] px-2 py-0.5 rounded">Current</span>
                   </div>
                 </div>
-                <button className="w-full py-2.5 rounded-lg bg-[rgba(255,255,255,0.03)] hover:bg-[rgba(255,255,255,0.06)] border border-[rgba(255,255,255,0.05)] text-white text-[12px] font-bold transition-colors">
-                  Manage Devices (3)
+                <button onClick={() => router.push('/profile')} className="w-full py-2.5 rounded-lg bg-[rgba(255,255,255,0.03)] hover:bg-[rgba(255,255,255,0.06)] border border-[rgba(255,255,255,0.05)] text-white text-[12px] font-bold transition-colors">
+                  Manage Devices
                 </button>
               </div>
 
@@ -202,8 +248,8 @@ export default function SecurityPage() {
                     <span className="text-[9px] font-medium text-gray-400 bg-[#1a1a1a] px-2 py-0.5 rounded">Current</span>
                   </div>
                 </div>
-                <button className="w-full py-2.5 rounded-lg bg-[rgba(255,255,255,0.03)] hover:bg-[rgba(255,255,255,0.06)] border border-[rgba(255,255,255,0.05)] text-white text-[12px] font-bold transition-colors">
-                  View All Sessions (2)
+                <button onClick={() => router.push('/activity')} className="w-full py-2.5 rounded-lg bg-[rgba(255,255,255,0.03)] hover:bg-[rgba(255,255,255,0.06)] border border-[rgba(255,255,255,0.05)] text-white text-[12px] font-bold transition-colors">
+                  View All Sessions
                 </button>
               </div>
 
@@ -244,7 +290,7 @@ export default function SecurityPage() {
                     <ArrowRight className="w-3.5 h-3.5 text-gray-500" />
                   </div>
                 </div>
-                <button className="w-full py-2.5 rounded-lg bg-[rgba(255,255,255,0.03)] hover:bg-[rgba(255,255,255,0.06)] border border-[rgba(255,255,255,0.05)] text-white text-[12px] font-bold transition-colors">
+                <button onClick={() => router.push('/settings')} className="w-full py-2.5 rounded-lg bg-[rgba(255,255,255,0.03)] hover:bg-[rgba(255,255,255,0.06)] border border-[rgba(255,255,255,0.05)] text-white text-[12px] font-bold transition-colors">
                   Configure Settings
                 </button>
               </div>
@@ -263,7 +309,7 @@ export default function SecurityPage() {
                   </div>
                   <p className="text-[11px] text-[#94a3b8] mb-4 leading-relaxed">Manage your privacy and data visibility.</p>
                 </div>
-                <div className="flex items-center justify-between bg-[#111] rounded-lg p-3 border border-[#1a1a1a] cursor-pointer hover:bg-[#1a1a1a] transition-colors">
+                <div onClick={togglePrivacy} className="flex items-center justify-between bg-[#111] rounded-lg p-3 border border-[#1a1a1a] cursor-pointer hover:bg-[#1a1a1a] transition-colors">
                   <div className="flex items-center gap-3">
                     <Shield className="w-4 h-4 text-gray-400" />
                     <div className="flex flex-col">
@@ -272,7 +318,7 @@ export default function SecurityPage() {
                     </div>
                   </div>
                   <div className="flex items-center gap-2">
-                    <span className="text-[11px] font-medium text-gray-300">On</span>
+                    <span className="text-[11px] font-medium text-gray-300">{privacyEnabled ? 'On' : 'Off'}</span>
                     <ArrowRight className="w-3.5 h-3.5 text-gray-500" />
                   </div>
                 </div>
@@ -287,8 +333,8 @@ export default function SecurityPage() {
                   </div>
                   <p className="text-[11px] text-[#94a3b8] mb-4 leading-relaxed">Temporarily lock your wallet in case of suspicious activity.</p>
                 </div>
-                <button className="w-full py-[14px] rounded-lg bg-[rgba(255,255,255,0.05)] hover:bg-[rgba(255,255,255,0.1)] border border-[rgba(255,255,255,0.15)] text-white text-[12px] font-bold transition-colors flex items-center justify-center gap-2">
-                  <Lock className="w-3.5 h-3.5" /> Lock Wallet Now
+                <button onClick={handleLockWallet} className="w-full py-[14px] rounded-lg bg-[rgba(255,255,255,0.05)] hover:bg-[rgba(255,255,255,0.1)] border border-[rgba(255,255,255,0.15)] text-white text-[12px] font-bold transition-colors flex items-center justify-center gap-2">
+                  <Lock className="w-3.5 h-3.5" /> {walletLocked ? 'Unlock Wallet' : 'Lock Wallet Now'}
                 </button>
               </div>
 
@@ -296,9 +342,9 @@ export default function SecurityPage() {
               <div className="panel p-5 flex flex-col justify-between lg:col-span-6">
                 <div className="flex items-center justify-between mb-4">
                   <h3 className="text-[13px] font-bold text-white">Security Activity</h3>
-                  <Link href="#" className="text-[11px] text-gray-400 hover:text-white transition-colors flex items-center gap-1">
+                  <button onClick={() => router.push('/activity')} className="text-[11px] text-gray-400 hover:text-white transition-colors flex items-center gap-1">
                     View all <ArrowRight className="w-3 h-3" />
-                  </Link>
+                  </button>
                 </div>
                 
                 <div className="flex flex-col gap-0 relative">
@@ -345,9 +391,9 @@ export default function SecurityPage() {
                 </div>
 
                 <div className="mt-2 pt-3 border-t border-[rgba(255,255,255,0.05)]">
-                  <Link href="#" className="flex items-center gap-1.5 text-[11px] font-bold text-gray-400 hover:text-white transition-colors w-max">
+                  <button onClick={() => router.push('/activity')} className="flex items-center gap-1.5 text-[11px] font-bold text-gray-400 hover:text-white transition-colors w-max">
                     View full security history <ArrowRight className="w-3 h-3" />
-                  </Link>
+                  </button>
                 </div>
               </div>
 

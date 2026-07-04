@@ -18,14 +18,26 @@ export default function ProfilePage() {
   const [language, setLanguage] = useState("en");
   const [exporting, setExporting] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
+  const [editingProfile, setEditingProfile] = useState(false);
+  const [customName, setCustomName] = useState("");
+  const [customBio, setCustomBio] = useState("");
+
+  const DISPLAY_NAME_KEY = 'atreus_display_name';
+  const BIO_KEY = 'atreus_bio';
 
   useEffect(() => {
     const wallet = loadWallet();
     if (!wallet) { router.push("/wallet"); return; }
     setStoredWallet(wallet);
     setAddress(wallet.publicKey);
+    setCustomName(localStorage.getItem(DISPLAY_NAME_KEY) || '');
+    setCustomBio(localStorage.getItem(BIO_KEY) || '');
     setLoading(false);
   }, [router]);
+
+  const savedName = customName || (storedWallet?.email ? storedWallet.email.split('@')[0] : 'User');
+  const displayName = savedName.charAt(0).toUpperCase() + savedName.slice(1);
+  const displayBio = customBio || 'Exploring the future of payments with Atreus 🚀';
 
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
@@ -80,8 +92,14 @@ export default function ProfilePage() {
     finally { setExporting(false); }
   };
 
-  const emailName = storedWallet?.email ? storedWallet.email.split('@')[0] : 'User';
-  const displayName = emailName.charAt(0).toUpperCase() + emailName.slice(1);
+  const handleEditProfile = () => {
+    if (editingProfile) {
+      // Save
+      localStorage.setItem(DISPLAY_NAME_KEY, customName);
+      localStorage.setItem(BIO_KEY, customBio);
+    }
+    setEditingProfile(!editingProfile);
+  };
 
   const SECURITY_ITEMS = [
     { icon: ShieldCheck, color: 'var(--accent-primary)', title: 'Recovery Phrase', desc: 'Secure your wallet recovery phrase', badge: <span className="text-[10px] font-bold px-2 py-0.5 rounded-md bg-[rgba(34,197,94,0.08)] text-success">Backed up</span> },
@@ -119,11 +137,34 @@ export default function ProfilePage() {
                     <p className="text-[10px] text-secondary mt-0.5">Member since July 2, 2026</p>
                   </div>
                 </div>
-                <button className="px-3 py-1.5 bg-[rgba(59,130,246,0.08)] text-accent text-xs font-bold rounded-lg flex items-center gap-1.5 shrink-0 transition-colors hover:bg-[rgba(59,130,246,0.12)]">
-                  <Edit2 className="w-3 h-3" /> Edit
+                <button onClick={handleEditProfile} className="px-3 py-1.5 bg-[rgba(59,130,246,0.08)] text-accent text-xs font-bold rounded-lg flex items-center gap-1.5 shrink-0 transition-colors hover:bg-[rgba(59,130,246,0.12)]">
+                  {editingProfile ? <><CheckCircle2 className="w-3 h-3" /> Save</> : <><Edit2 className="w-3 h-3" /> Edit</>}
                 </button>
               </div>
-              <p className="text-sm font-medium text-primary">Exploring the future of payments with Atreus 🚀</p>
+              {editingProfile ? (
+                <div className="flex flex-col gap-3">
+                  <div>
+                    <label className="text-[10px] font-bold text-secondary mb-1 block">Display Name</label>
+                    <input
+                      value={customName}
+                      onChange={e => setCustomName(e.target.value)}
+                      placeholder="Your name"
+                      className="w-full bg-elevated border border-[var(--border-default)] rounded-lg px-3 py-2 text-sm font-semibold text-primary outline-none focus:border-[var(--accent-primary)] transition-colors"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-[10px] font-bold text-secondary mb-1 block">Bio</label>
+                    <input
+                      value={customBio}
+                      onChange={e => setCustomBio(e.target.value)}
+                      placeholder="Tell us about yourself"
+                      className="w-full bg-elevated border border-[var(--border-default)] rounded-lg px-3 py-2 text-sm font-semibold text-primary outline-none focus:border-[var(--accent-primary)] transition-colors"
+                    />
+                  </div>
+                </div>
+              ) : (
+                <p className="text-sm font-medium text-primary">{displayBio}</p>
+              )}
             </div>
 
             {/* Security Card */}
