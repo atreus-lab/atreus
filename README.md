@@ -1,7 +1,5 @@
 # Atreus
 
-> Privacy-preserving payment links + full-featured Stellar wallet. Built for [Stellar Hacks: Real-World ZK](https://dorahacks.io/hackathon/stellar-hacks-zk/detail).
-
 ## What It Does
 
 - **Wallet Dashboard** — View balance, all assets, recent transactions. Create wallet instantly (no extension needed).
