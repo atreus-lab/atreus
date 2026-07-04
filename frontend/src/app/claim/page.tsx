@@ -160,8 +160,7 @@ const parseLinkInput = () => {
 
       setStatus('claiming');
       const linkHash = new Uint8Array(await crypto.subtle.digest('SHA-256', secretBytes));
-      const emailHash = walletEmail ? await sha256Hash(walletEmail) : undefined;
-      const hash = await claimLinkTx(recipient, linkHash, secretBytes, emailHash);
+      const hash = await claimLinkTx(recipient, linkHash, secretBytes);
       setTxHash(hash);
 
       setStatus('success');

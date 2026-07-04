@@ -137,7 +137,6 @@ export const claimLinkTx = async (
   recipient: string,
   linkHash: Uint8Array,
   secret: Uint8Array,
-  recipientEmailHash?: Uint8Array,
 ) => {
   const contractId = process.env.NEXT_PUBLIC_CONTRACT_ID;
   if (!contractId) throw new Error("NEXT_PUBLIC_CONTRACT_ID is not configured");
@@ -150,9 +149,6 @@ export const claimLinkTx = async (
     throw new Error("Recipient account isn't funded on testnet — fund it first via friendbot.");
   }
 
-  // If no email hash provided, use 32 zero bytes (no email restriction)
-  const emailHash = recipientEmailHash || new Uint8Array(32);
-
   const contract = new Contract(contractId);
 
   const op = contract.call(
@@ -160,7 +156,6 @@ export const claimLinkTx = async (
     xdr.ScVal.scvBytes(Buffer.from(linkHash)),
     new Address(recipient).toScVal(),
     xdr.ScVal.scvBytes(Buffer.from(secret)),
-    xdr.ScVal.scvBytes(Buffer.from(emailHash)),
   );
 
   let tx = new TransactionBuilder(account, { fee: "100000", networkPassphrase })
