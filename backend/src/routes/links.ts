@@ -15,12 +15,11 @@ function getCircuit() {
     candidates.push(process.env.CIRCUIT_PATH);
   }
 
-  const moduleDir = dirname(fileURLToPath(import.meta.url));
+  const cwd = process.cwd();
   candidates.push(
-    resolve(moduleDir, "../../circuits/target/secret.json"),
-    resolve(moduleDir, "../../../circuits/target/secret.json"),
-    resolve(moduleDir, "../circuits/target/secret.json"),
-    resolve(process.cwd(), "circuits/target/secret.json"),
+    resolve(cwd, "circuits/target/secret.json"),
+    resolve(cwd, "../circuits/target/secret.json"),
+    resolve(dirname(fileURLToPath(import.meta.url)), "../../../circuits/target/secret.json"),
   );
 
   for (const candidate of candidates) {
