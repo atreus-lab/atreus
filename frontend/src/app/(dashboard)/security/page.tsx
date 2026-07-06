@@ -12,9 +12,7 @@ import {
   Loader2
 } from "lucide-react";
 
-// @ts-expect-error - image import
 import shieldImg from "@/media/shield3.png";
-// @ts-expect-error - image import
 import progressImg from "@/media/progressbar.png";
 
 export default function SecurityPage() {

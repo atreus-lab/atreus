@@ -11,3 +11,5 @@ Thumbs.db
 test_snapshots/
 *.wasm.gz
 .opencode/
+.vercel
+.env*
