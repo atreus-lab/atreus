@@ -108,7 +108,7 @@ export default function SwapPage() {
       setStatus("swapping"); setErrorMsg("");
       if (!storedWallet) { router.push("/wallet"); return; }
       if (!amount || parseFloat(amount) <= 0) throw new Error("Enter a valid amount");
-      let sourceBalance = fromToken.code === "XLM" ? (balances.find(b => b.asset_type === "native")?.balance || "0") : (balances.find(b => b.asset_code === fromToken.code)?.balance || "0");
+      const sourceBalance = fromToken.code === "XLM" ? (balances.find(b => b.asset_type === "native")?.balance || "0") : (balances.find(b => b.asset_code === fromToken.code)?.balance || "0");
       if (parseFloat(sourceBalance) < parseFloat(amount)) throw new Error(`Insufficient ${fromToken.code} balance`);
       const hash = await swapTokens(fromToken.code === "XLM" ? null : fromToken.code, fromToken.code === "XLM" ? null : fromToken.issuer, toToken.code, toToken.issuer!, amount);
       setTxHash(hash);

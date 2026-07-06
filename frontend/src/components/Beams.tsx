@@ -1,5 +1,4 @@
 
-/* eslint-disable react/no-unknown-property */
 "use client";
 import { forwardRef, useImperativeHandle, useEffect, useRef, useMemo } from 'react';
 
