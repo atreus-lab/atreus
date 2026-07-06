@@ -66,7 +66,7 @@ Future (once CAP-0074 ships):
 
 **Known tradeoff, stated plainly:** the attester is a single, centralized, documented trust assumption —
 if that service is down, claims can't be attested. This is the interim pattern Stellar's own docs
-recommend for Noir circuits on Stellar today, not a workaround invented for this hackathon; it's removable
+recommend for Noir circuits on Stellar today; it's removable
 once native BN254 verification lands. See `contracts/README.md` and the
 [contracts walkthrough](./contracts/walkthrough/allwalkthrough.md) Part 9 for the full mechanics, including
 why `bb.js` proof generation looked broken for weeks and turned out to be a version-pin bug, not an

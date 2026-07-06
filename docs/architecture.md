@@ -22,13 +22,6 @@ Atreus is a **TipLink-style wallet on Stellar** with an added **ZK-powered payme
 - On-chain verification via Noir + rs-soroban-ultrahonk
 - Double-claim prevention via nullifiers
 
-### Hackathon Context
-- **Event:** [Stellar Hacks: Real-World ZK](https://dorahacks.io/hackathon/stellar-hacks-zk/detail)
-- **Deadline:** Jul 3, 2026 17:00 UTC
-- **Prize Pool:** $10,000 (1st: $5,000)
-- **Requirements:** Open-source repo, demo video (2–3 min), ZK + Stellar integration
-- **ZK Stack:** Noir circuits → Barretenberg proofs → Soroban on-chain verification
-
 ---
 
 ## 2. Tech Stack
@@ -352,7 +345,7 @@ User's Google account is banned or deleted.
 
 ---
 
-## 9. MVP Scope (Hackathon)
+## 9. MVP Scope
 
 ### MUST BUILD
 1. **Google Login + Wallet** — HKDF derivation, wallet dashboard, balance display
@@ -379,7 +372,7 @@ User's Google account is banned or deleted.
 
 ---
 
-## 10. Demo Flow (Hackathon)
+## 10. Demo Flow
 
 ### Step 1: Create Link
 1. Sender navigates to `/create`
@@ -414,9 +407,9 @@ Sender copies link, sends via Telegram/email/QR.
 
 | Phase | Feature | Timeline |
 |-------|---------|----------|
-| **1. MVP** | Google wallet + secret-based payment links + Noir verification | Hackathon (current) |
-| **2. Balance Threshold** | `balance_threshold.nr` circuit — prove balance > threshold | Post-hackathon |
-| **3. Wallet Features** | Soroswap swap, transaction history, multi-asset support | Post-hackathon |
+| **1. MVP** | Google wallet + secret-based payment links + Noir verification | Current |
+| **2. Balance Threshold** | `balance_threshold.nr` circuit — prove balance > threshold | Future |
+| **3. Wallet Features** | Soroswap swap, transaction history, multi-asset support | Future |
 | **4. Allowlist Proofs** | Merkle proof circuit — prove membership without revealing identity | Future |
 | **5. Private Payroll** | Bulk link generation, CSV import, enterprise dashboard | Future |
 | **6. Developer SDK** | Atreus SDK, API, embeddable widgets | Future |
@@ -444,7 +437,6 @@ Sender copies link, sends via Telegram/email/QR.
 - [Noir Language](https://noir-lang.org/docs/)
 - [rs-soroban-ultrahonk (Noir verifier for Soroban)](https://github.com/NethermindEth/rs-soroban-ultrahonk)
 - [Noir on Stellar Tutorial](https://jamesbachini.com/noir-on-stellar/)
-- [Stellar Hacks: Real-World ZK](https://dorahacks.io/hackathon/stellar-hacks-zk/detail)
 - [TipLink (reference product)](https://github.com/TipLink)
 - [LOBSTR Wallet (reference)](https://github.com/Lobstrco)
 - [Soroswap](https://soroswap.finance)

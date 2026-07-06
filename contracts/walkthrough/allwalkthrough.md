@@ -123,7 +123,7 @@ NEXT_PUBLIC_TOKEN_ID=CDLZFC3SYJYDZT7K67VZ75HPJVIEUVNIXF47ZG2FB2RMQQVU2HHGCYSC
 
 **What we believed:** `bb.js` UltraHonk proof generation was fundamentally broken — crashed with
 `RuntimeError: unreachable` on every platform tried (Windows native, Docker/Linux), for weeks. Conclusion
-at the time: ZK proving was a dead end for this hackathon, strip it out (Option A: SHA-256-only escrow,
+at the time: ZK proving was a dead end, strip it out (Option A: SHA-256-only escrow,
 keep the verifier contract as inert evidence of the design).
 
 ### 9.1 — Root cause: wrong `@aztec/bb.js` version
