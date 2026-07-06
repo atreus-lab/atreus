@@ -1,181 +1,116 @@
 # Atreus
 
+ZK-gated escrow payment links on Stellar. Create on-chain escrow links with XLM, share a secret URL, and let recipients claim funds by generating a zero-knowledge proof — without ever revealing the secret on-chain.
+
 ## What It Does
 
-- **Wallet Dashboard** — View balance, all assets, recent transactions. Create wallet instantly (no extension needed).
-- **Send / Receive** — Send XLM to any Stellar address. Receive with copy-address + explorer link.
-- **Swap** — XLM → USDC/EURT via Stellar DEX path payments. Auto-adds trustlines.
-- **Payment Links** — Create escrow links with SHA-256 secret. Recipient claims with ZK proof architecture demo.
-- **Manage Assets** — Add trustlines for any Stellar asset (USDC, EURT, custom).
+- **Wallet Dashboard** — View balance, all assets, and recent transactions. Create an instant non-custodial wallet (no browser extension required).
+- **Send / Receive** — Send XLM to any Stellar address. Share your address with an explorer link.
+- **Swap** — XLM → USDC/EURT via Stellar DEX path payments. Trustlines added automatically.
+- **Payment Links** — Create escrow links secured by SHA-256 secrets and ZK proofs. Recipients claim funds by proving secret knowledge without revealing it.
+- **Manage Assets** — Add trustlines for any Stellar asset.
 
-## Current State
+## Architecture
 
-| Component | Status | Notes |
-|-----------|--------|-------|
-| Wallet dashboard | ✅ Working | BIP39 mnemonic wallet, Horizon API |
-| Send XLM | ✅ Working | Web wallet signing via stellar-sdk |
-| Receive | ✅ Working | Copy address, explorer link |
-| Swap (XLM → USDC/EURT) | ✅ Working | DEX path payment, auto-trustline |
-| Manage Assets (trustlines) | ✅ Working | Add USDC, EURT, or custom assets |
-| Google OAuth sign-in | ✅ Working | Sign in with Google, email stored in wallet |
-| Wallet restore (seed phrase) | ✅ Working | BIP39 mnemonic validation + recovery |
-| Create payment link | ✅ Working | localStorage wallet + Soroban contract call |
-| Claim payment link | ✅ Working | Real ZK proof (client-side UltraHonk) → backend attestation → on-chain `claim_link` gated on `is_attested` |
-| VerifierContract | ✅ Deployed (redeployed) | Real attestation oracle (`attest`/`is_attested`), not just a receipt service — testnet |
-| AtreusContract | ✅ Deployed (redeployed) | Escrow + claim, now gated on ZK attestation — testnet |
-| Noir circuit | ✅ Compiles + tests pass | Pedersen hash |
-| bb.js UltraHonk proof | ✅ Working | Was a `bb.js` version-pin bug (`^4.4.0` vs the `5.0.0-nightly.20260522` Noir `1.0.0-beta.22` actually needs), not a platform/architecture limitation — see [contracts walkthrough Part 9](./contracts/walkthrough/allwalkthrough.md) |
-| Backend API | ✅ Working | ZK attestation-oracle: verifies real proofs off-chain, signs on-chain attestations |
+```
+Browser (ZK proof)  →  Backend (proof verification)  →  Soroban (on-chain settlement)
+```
 
-## Key Features
+| Component | Stack | What it does |
+|-----------|-------|-------------|
+| `frontend/` | Next.js 15, React 19, Tailwind CSS | Wallet UI + payment link creation/claiming |
+| `backend/` | Express, TypeScript, `bb.js` | ZK attestation service — verifies UltraHonk proofs off-chain, signs on-chain attestations |
+| `contracts/` | Rust, Soroban SDK 22.0.0 | Escrow contract + VerifierContract (attestation oracle) |
+| `circuits/` | Noir 1.0.0-beta.22 | Pedersen-based ZK proof circuit |
 
-### Web Wallet (No Extension Needed)
-- **BIP39 mnemonic** (24 words) instead of `Keypair.random()` — recoverable across devices
-- **Google OAuth** sign-in via `@react-oauth/google` — email stored with wallet
+### ZK Architecture
+
+Payment links use a real Noir circuit that proves knowledge of a link secret without revealing it. An UltraHonk proof is generated client-side via `@aztec/bb.js` and verified by a backend attester, which submits an on-chain attestation that the escrow contract checks before releasing funds.
+
+The attester pattern is used because Soroban lacks native BN254 pairing host functions (BLS12-381 is available via CAP-0059, but this toolchain targets BN254). Once CAP-0074 ships native BN254 verification, the attester can be replaced with direct on-chain proof verification:
+
+```mermaid
+flowchart LR
+    S[Sender] -->|create_link| E[Escrow Contract]
+    E -->|escrows tokens| E
+    R[Recipient] -->|generates UltraHonk proof| BA[Backend Attester]
+    BA -->|verifies proof + submits attest| VC[Verifier Contract]
+    VC -->|is_attested=true| E
+    E -->|releases funds| R
+```
+
+## Features
+
+### Web Wallet
+- **BIP39 mnemonic** (24 words) — recoverable across devices
+- **Google OAuth** sign-in via `@react-oauth/google`
 - **Anonymous wallet** — create instantly, no account needed
-- **Wallet restore** — paste 24-word seed phrase to recover
-- **Freighter completely removed** — all signing via localStorage keypair
-- All wallet pages (dashboard, send, receive, swap, assets) work without any browser extension
+- **Wallet restore** — recover from seed phrase
+- All signing via localStorage keypair — no browser extension required
 
 ### Payment Links
-1. **Sender**: Generates 32-byte secret → SHA-256 → `create_link()` → contract escrows tokens
-2. **Recipient**: Opens URL with `#secretHex` → generates a real UltraHonk ZK proof client-side → backend
-   attester verifies it off-chain and submits an on-chain attestation → calls `claim_link()` → contract
-   checks both `sha256(secret) == link_hash` **and** the attestation → tokens released
+1. **Sender** generates a 32-byte secret → SHA-256 hash → `create_link()` on the escrow contract
+2. **Recipient** opens the URL containing the secret → generates a ZK proof client-side → backend attester verifies the proof and submits an on-chain attestation → `claim_link()` checks both the secret hash and attestation → funds released
 
-### ZK Architecture — Attestation Oracle (today) → Native Verification (future)
-
-Real ZK, not a demo: the Noir circuit (`circuits/`) proves knowledge of the link secret without revealing
-it, and a genuine UltraHonk proof is generated and cryptographically verified (`@aztec/bb.js`). What's
-*not* native yet is on-chain verification — Soroban doesn't have BN254 pairing host functions today
-(CAP-0074 is proposed, not implemented; BLS12-381 is live via CAP-0059, but this toolchain targets BN254).
-So the proof is verified off-chain by a trusted attester service instead, which then attests on-chain:
-
-```
-Today:
-  Browser  --generate UltraHonk proof-->  Backend attester
-  Backend  --verify proof, recompute expected public inputs from the secret-->  (valid?)
-  Backend  --sign + submit attest()-->  Soroban VerifierContract
-  Soroban  --claim_link() checks is_attested()-->  Escrow releases funds
-
-Future (once CAP-0074 ships):
-  Browser  --generate UltraHonk proof-->  Soroban VerifierContract (native BN254 verify)
-  Soroban  --claim_link() checks verify_proof() directly-->  Escrow releases funds
-  (no attester, no backend trust assumption)
-```
-
-**Known tradeoff, stated plainly:** the attester is a single, centralized, documented trust assumption —
-if that service is down, claims can't be attested. This is the interim pattern Stellar's own docs
-recommend for Noir circuits on Stellar today; it's removable
-once native BN254 verification lands. See `contracts/README.md` and the
-[contracts walkthrough](./contracts/walkthrough/allwalkthrough.md) Part 9 for the full mechanics, including
-why `bb.js` proof generation looked broken for weeks and turned out to be a version-pin bug, not an
-architectural dead end.
-
-## Monorepo Structure
-
-```
-atreus/
-├── frontend/          Next.js 15 web app (wallet + payment links)
-├── backend/           Express API — ZK attestation-oracle service
-├── contracts/         Soroban smart contracts (Rust)
-├── circuits/          Noir ZK circuits (Pedersen hash)
-├── docs/              Architecture + design system (stale)
-├── Dockerfile         Node 20 + nargo 1.0.0-beta.22
-├── docker-compose.yml Docker services for nargo commands
-├── package.json       Root pnpm workspace config
-└── pnpm-workspace.yaml
-
-### Frontend structure
-
-```
-frontend/
-├── src/
-│   ├── app/           13 pages (dashboard, wallet, send, receive, swap, assets, create,
-│   │                  claim, activity, analytics, profile, security, settings)
-│   ├── components/    15 reusable components (AppSidebar, AppHeader, SearchDialog,
-│   │                  BalanceCard, PaymentLinks, NotificationDropdown, etc.)
-│   ├── constants/     Shared nav items with getNavItems() helper
-│   └── lib/           Wallet, Stellar/Soroban, ZK proof, passkey, links utilities
-└── public/circuits/   Compiled Noir circuit (served to browser for proof gen)
-```
-```
-
-## Getting Started
-
-### Prerequisites
-
-- Node.js >= 18
-- [Rust + Cargo](https://rustup.rs/) (for contracts)
-- [Docker](https://docker.com/) (for circuits — no Windows nargo binary)
-
-### Quick Start
-
-```bash
-# Frontend only
-cd frontend
-npm install
-cp .env.example .env.local   # edit with your values (Google Client ID + contract IDs)
-npm run dev                   # http://localhost:3000
-```
-
-### All Commands
+## Quick Start
 
 ```bash
 # Frontend
 cd frontend
 npm install
-npm run dev            # dev server on :3000
-npm run build          # production build
+cp .env.example .env.local   # add your contract IDs and Google Client ID
+npm run dev                   # http://localhost:3000
 
-# Contracts (Rust)
+# Backend
+cd backend
+cp .env.example .env          # set ATTESTER_SECRET_KEY
+pnpm dev                      # http://localhost:3001
+
+# Contracts
 cd contracts
-cargo test -p atreus-contract                    # run tests
-cargo build --target wasm32-unknown-unknown --release  # build WASM
+cargo test -p atreus-contract
 
-# Circuits (Noir via Docker)
-docker compose run --rm compile    # nargo compile
-docker compose run --rm test       # nargo test
-docker compose run --rm execute    # nargo execute (generates witness)
+# Circuits (via Docker)
+docker compose run --rm compile
+docker compose run --rm test
 ```
 
-### Environment Variables
+## Project Structure
 
-```env
-# Required — Soroban contract IDs
+```
+atreus/
+├── frontend/          Next.js 15 web app
+├── backend/           Express API — ZK attestation service
+├── contracts/         Soroban smart contracts (Rust)
+├── circuits/          Noir ZK circuits
+├── docs/              Architecture docs
+├── Dockerfile         Node 20 + nargo 1.0.0-beta.22
+├── docker-compose.yml
+└── pnpm-workspace.yaml
+```
+
+## Environment Variables
+
+**Frontend (`.env.local`):**
+```
 NEXT_PUBLIC_CONTRACT_ID=CCZSFPZ6XPZBUPBGQ5FRP5BMW5HKZIZNCWPLJAHNOWP4ZI7BZSMJDTCD
 NEXT_PUBLIC_VERIFIER_CONTRACT_ID=CB3GJLFAGH2WQTQHSMAB7GABK4NC5Q74XDV2U7MWAYEKQV7YMBV2O7KD
 NEXT_PUBLIC_TOKEN_ID=CDLZFC3SYJYDZT7K67VZ75HPJVIEUVNIXF47ZG2FB2RMQQVU2HHGCYSC
-
-# Required for Google OAuth sign-in
-NEXT_PUBLIC_GOOGLE_CLIENT_ID=your-google-client-id.apps.googleusercontent.com
+NEXT_PUBLIC_GOOGLE_CLIENT_ID=your-client-id.apps.googleusercontent.com
+NEXT_PUBLIC_BACKEND_URL=http://localhost:3001
 ```
 
-Backend needs its own `.env` (see `backend/.env.example`) with an `ATTESTER_SECRET_KEY` — a dedicated,
-funded testnet keypair used to sign attestations. Never commit this file (already gitignored).
-
-## Pages
-
-| Route | Feature | Auth |
-|-------|---------|------|
-| `/` | Landing page | None |
-| `/wallet` | Create/manage wallet (Google, anonymous, restore) | localStorage |
-| `/dashboard` | Balance, assets, actions, tx history | localStorage |
-| `/send` | Send XLM | localStorage |
-| `/receive` | Receive — copy address | localStorage |
-| `/swap` | XLM → token via Stellar DEX | localStorage |
-| `/assets` | Add trustlines (USDC, EURT, custom) | localStorage |
-| `/create` | Create payment link | localStorage |
-| `/claim` | Claim payment link | localStorage |
-| `/activity` | Transaction history | localStorage |
-| `/analytics` | Wallet analytics | localStorage |
-| `/profile` | User profile | localStorage |
-| `/security` | Security settings | localStorage |
-| `/settings` | Network, address book, notifications | localStorage |
-
-## Design System
-
-Tailwind CSS with lucide-react icons. Reusable layout components: `AppSidebar`, `AppHeader`, `SearchDialog` (in `frontend/src/components/`). Navigation items centralized in `frontend/src/constants/navigation.ts`.
+**Backend (`.env`):**
+```
+PORT=3001
+ATTESTER_PUBLIC_KEY=<your attester public key>
+ATTESTER_SECRET_KEY=<your attester secret key>
+NEXT_PUBLIC_CONTRACT_ID=CCZSFPZ6XPZBUPBGQ5FRP5BMW5HKZIZNCWPLJAHNOWP4ZI7BZSMJDTCD
+NEXT_PUBLIC_VERIFIER_CONTRACT_ID=CB3GJLFAGH2WQTQHSMAB7GABK4NC5Q74XDV2U7MWAYEKQV7YMBV2O7KD
+SOROBAN_RPC_URL=https://soroban-testnet.stellar.org
+HORIZON_URL=https://horizon-testnet.stellar.org
+FRONTEND_URL=http://localhost:3000
+```
 
 ## Deployed Contracts (Testnet)
 
@@ -184,29 +119,31 @@ Tailwind CSS with lucide-react icons. Reusable layout components: `AppSidebar`, 
 | VerifierContract | `CB3GJLFAGH2WQTQHSMAB7GABK4NC5Q74XDV2U7MWAYEKQV7YMBV2O7KD` |
 | AtreusContract | `CCZSFPZ6XPZBUPBGQ5FRP5BMW5HKZIZNCWPLJAHNOWP4ZI7BZSMJDTCD` |
 
-## Packages
+## Pages
 
-| Package | Tech | What it does |
-|---------|------|-------------|
-| `frontend/` | Next.js 15, React 19, Tailwind CSS | Wallet + payment links UI |
-| `backend/` | Express, TypeScript, `bb.js` | ZK attestation-oracle service — verifies real UltraHonk proofs off-chain, signs on-chain attestations |
-| `contracts/` | Rust, Soroban SDK 22.0.0 | Escrow contract + VerifierContract (attestation oracle) |
-| `circuits/` | Noir 1.0.0-beta.22 | Pedersen-based ZK proof circuit |
+| Route | Feature |
+|-------|---------|
+| `/` | Landing page |
+| `/wallet` | Create / restore wallet |
+| `/dashboard` | Balance, assets, transactions |
+| `/send` | Send XLM |
+| `/receive` | Receive — copy address |
+| `/swap` | XLM → token via Stellar DEX |
+| `/assets` | Add trustlines |
+| `/create` | Create payment link |
+| `/claim` | Claim payment link |
+| `/activity` | Transaction history |
+| `/analytics` | Wallet analytics |
+| `/profile` | User profile |
+| `/security` | Security settings |
+| `/settings` | Network, address book, notifications |
 
-## Known Issues
+## Design
 
-- Soroban has no BN254 host functions yet (CAP-0074 proposed, not implemented) — full on-chain ZK
-  verification isn't possible on the public network today, hence the attestation-oracle pattern. This is
-  a protocol capability gap, not a bug in this repo.
-- The attester is a single centralized keypair — a documented trust assumption and single point of
-  failure by design, removable once CAP-0074 ships (see ZK Architecture section above).
-- `/docs/architecture.md` and `/docs/design.md` are stale
-- Testnet has limited DEX liquidity — swap may fail for some token pairs
-- Browser-side proof generation (WASM) may take 5–10s on cold start
+Dark theme with Tailwind CSS and lucide-react icons. Reusable layout components in `frontend/src/components/`. Navigation items centralized in `frontend/src/constants/navigation.ts`.
 
 ## Docs
 
-- Walkthrough files in each package's `walkthrough/` directory
 - [Frontend Walkthrough](./frontend/walkthrough/allwalkthrough.md)
 - [Contracts Walkthrough](./contracts/walkthrough/allwalkthrough.md)
 - [Circuits Walkthrough](./circuits/walkthrough/allwalkthrough.md)

@@ -1,31 +1,25 @@
 # Atreus Backend
 
-Express API service — the ZK attestation-oracle for the Atreus protocol.
+Express API service — the ZK attestation oracle for the Atreus protocol.
 
-Verifies real UltraHonk ZK proofs off-chain and submits signed on-chain attestations
-that `claim_link` requires before releasing escrow funds.
+Verifies UltraHonk ZK proofs off-chain and submits signed on-chain attestations that the escrow contract requires before releasing funds.
 
-## What's Implemented
+## Endpoints
 
-| Endpoint | Status | What it does |
-|----------|--------|-------------|
-| `GET /health` | ✅ Working | Returns `{ status: "ok", timestamp }` |
-| `POST /api/links` | ⏳ Stub | Generates fake link object with UUID |
-| `GET /api/links/:hash` | ⏳ Stub | Returns placeholder data |
-| `POST /api/links/:hash/attest` | ✅ **Real** | ZK attestation-oracle (see below) |
+| Endpoint | What it does |
+|----------|-------------|
+| `GET /health` | Health check — returns `{ status: "ok", timestamp }` |
+| `POST /api/links/:hash/attest` | Verifies a ZK proof and submits an on-chain attestation |
 
-## ZK Attestation-Oracle Flow
+## Attestation Flow
 
-`POST /api/links/:hash/attest` body: `{ recipient, secret (hex), proof (hex) }`
+`POST /api/links/:hash/attest` — body: `{ recipient, secret (hex), proof (hex) }`
 
-1. **Validate:** `sha256(secret) == hash` path param — confirms secret matches the link
-2. **Recompute:** expected public inputs server-side (`secretToField`, `addressToField`, Pedersen hash) — never trusts client-supplied values
-3. **Verify:** `UltraHonkBackend.verifyProof(proof, recomputed_public_inputs)` — real cryptographic check
-4. **Attest:** signs + submits `VerifierContract.attest(attester, link_hash, recipient)` on Stellar testnet
-5. **Return:** `{ success: true, hash, recipient, attestationTx: "<tx_hash>" }`
-
-After attestation, `claim_link` on `AtreusContract` can proceed — it cross-contract calls
-`VerifierContract.is_attested(link_hash, recipient)` and will panic if it returns false.
+1. **Validate** — confirms `sha256(secret) == hash`
+2. **Recompute** — computes expected public inputs server-side (never trusts client-supplied values)
+3. **Verify** — runs `UltraHonkBackend.verifyProof(proof, public_inputs)` for cryptographic verification
+4. **Attest** — signs and submits `VerifierContract.attest(attester, link_hash, recipient)` on Stellar testnet
+5. **Return** — `{ success: true, hash, recipient, attestationTx: "<tx_hash>" }`
 
 ## Tech Stack
 
@@ -34,7 +28,7 @@ After attestation, `claim_link` on `AtreusContract` can proceed — it cross-con
 | Runtime | Node.js 20 |
 | Framework | Express 4 |
 | Language | TypeScript |
-| ZK (proof verify) | `@aztec/bb.js@5.0.0-nightly.20260522` (exact pin — matches Noir 1.0.0-beta.22) |
+| ZK (proof verify) | `@aztec/bb.js@5.0.0-nightly.20260522` |
 | ZK (witness exec) | `@noir-lang/noir_js@1.0.0-beta.22` |
 | Blockchain SDK | `@stellar/stellar-sdk@^16.0.1` |
 | Logging | Pino + pino-pretty |
@@ -42,30 +36,26 @@ After attestation, `claim_link` on `AtreusContract` can proceed — it cross-con
 ## Getting Started
 
 ```bash
-# From repo root (pnpm workspace — don't run npm inside backend/)
+# Install
 pnpm --filter atreus-backend install
 
-# Copy and fill in .env
+# Configure
 cp backend/.env.example backend/.env
-# Set ATTESTER_SECRET_KEY, NEXT_PUBLIC_CONTRACT_ID, NEXT_PUBLIC_VERIFIER_CONTRACT_ID
+# Set ATTESTER_SECRET_KEY, contract IDs, RPC URLs
 
-# Start dev server (loads .env automatically)
+# Start dev server
 pnpm --filter atreus-backend dev    # localhost:3001
-
-# Or from the backend/ directory:
-npx tsx --env-file=.env src/index.ts
 ```
 
 ## Environment Variables
 
 ```env
 PORT=3001
-
-# Attester keypair (dedicated funded testnet account)
 ATTESTER_PUBLIC_KEY=GDH55G3I7YXBAYU5EEV2ANV5PEULLGXZYL6P6BMTIZ6QZPERPOVH7GUG
-ATTESTER_SECRET_KEY=<secret>      # gitignored — never commit
-
-# Must match frontend/.env.local
+ATTESTER_SECRET_KEY=<secret>
+SOROBAN_RPC_URL=https://soroban-testnet.stellar.org
+HORIZON_URL=https://horizon-testnet.stellar.org
+FRONTEND_URL=http://localhost:3000
 NEXT_PUBLIC_CONTRACT_ID=CCZSFPZ6XPZBUPBGQ5FRP5BMW5HKZIZNCWPLJAHNOWP4ZI7BZSMJDTCD
 NEXT_PUBLIC_VERIFIER_CONTRACT_ID=CB3GJLFAGH2WQTQHSMAB7GABK4NC5Q74XDV2U7MWAYEKQV7YMBV2O7KD
 ```
@@ -74,22 +64,18 @@ NEXT_PUBLIC_VERIFIER_CONTRACT_ID=CB3GJLFAGH2WQTQHSMAB7GABK4NC5Q74XDV2U7MWAYEKQV7
 
 ```
 backend/
-├── .env                    # Gitignored — real secrets (attester keypair)
-├── .env.example            # Template — no secrets
-├── package.json
-├── tsconfig.json
 ├── scripts/
-│   └── test-attestation.mjs  # E2E smoke test: real proof gen → attest → verify on-chain
+│   └── test-attestation.mjs    # E2E smoke test
 └── src/
-    ├── index.ts            # Express entry point (port 3001)
+    ├── index.ts                 # Express entry point
     ├── routes/
-    │   └── links.ts        # /api/links routes incl. /attest
+    │   └── links.ts             # /api/links routes
     └── lib/
-        ├── zk.ts           # Proof verification (UltraHonk, Pedersen, field encoding)
-        └── stellar.ts      # submitAttestation() — signs + submits on-chain attestation
+        ├── zk.ts                # Proof verification (UltraHonk, Pedersen, field encoding)
+        └── stellar.ts           # submitAttestation() — signs + submits on-chain attestation
 ```
 
-## Running the E2E Smoke Test
+## E2E Smoke Test
 
 ```bash
 # Requires backend dev server running on :3001
@@ -101,14 +87,6 @@ Expected output:
 - Local verification: `true`
 - Response: `{ success: true, attestationTx: "<hash>" }`
 - `stellar contract invoke ... is_attested` returns `true`
-
-## Why a Backend Attester?
-
-Noir + Barretenberg produces UltraHonk proofs over BN254. Soroban has native pairing
-checks for BLS12-381 (CAP-0059, live) but not BN254 (CAP-0074, proposed). So the proof
-is verified off-chain by this service instead. This is Stellar's own recommended interim
-pattern — documented trust assumption, not a workaround. Once CAP-0074 ships, a native
-BN254 verifier can replace this backend entirely.
 
 ## License
 
