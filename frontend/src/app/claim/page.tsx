@@ -157,6 +157,7 @@ const parseLinkInput = () => {
 
       setStatus('attesting');
       const proofHex = bytesToHex(proof);
+
       // Compute email hash if this is an email-restricted link
       let recipientEmailHash: string | undefined;
       if (intendedEmail) {
@@ -182,7 +183,14 @@ const parseLinkInput = () => {
 
       setStatus('claiming');
       const linkHash = new Uint8Array(await crypto.subtle.digest('SHA-256', secretBytes));
-      const hash = await claimLinkTx(recipient, linkHash, secretBytes);
+
+      // Compute email hash bytes for the contract call if email-restricted
+      let emailHashBytes: Uint8Array | undefined;
+      if (intendedEmail) {
+        emailHashBytes = new Uint8Array(await sha256Hash(intendedEmail));
+      }
+
+      const hash = await claimLinkTx(recipient, linkHash, secretBytes, emailHashBytes);
       setTxHash(hash);
 
       recordEvent(linkHashHex, 'claim');

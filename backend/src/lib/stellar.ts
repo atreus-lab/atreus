@@ -54,8 +54,15 @@ export const createBatchEscrowTransaction = async (
  * Submits VerifierContract.attest(attester, link_hash, recipient) signed by the
  * backend's dedicated attester keypair. Called only after verifyClaimProof() confirms
  * the real UltraHonk proof is valid for this exact (secret, recipient) pair.
+ *
+ * If emailHash is provided (when policy_type == 1), also submits
+ * VerifierContract.attest_email(attester, link_hash, recipient, email_hash).
  */
-export const submitAttestation = async (linkHash: Uint8Array, recipient: string): Promise<string> => {
+export const submitAttestation = async (
+  linkHash: Uint8Array,
+  recipient: string,
+  emailHash?: Uint8Array
+): Promise<string> => {
   const verifierContractId = process.env.NEXT_PUBLIC_VERIFIER_CONTRACT_ID;
   if (!verifierContractId) throw new Error("NEXT_PUBLIC_VERIFIER_CONTRACT_ID is not configured");
 
@@ -65,18 +72,35 @@ export const submitAttestation = async (linkHash: Uint8Array, recipient: string)
   const attesterKp = Keypair.fromSecret(attesterSecret);
   const contract = new Contract(verifierContractId);
 
-  const op = contract.call(
-    "attest",
-    new Address(attesterKp.publicKey()).toScVal(),
-    xdr.ScVal.scvBytes(Buffer.from(linkHash)),
-    new Address(recipient).toScVal(),
-  );
+  // Build operations: always attest the ZK proof binding
+  const ops = [
+    contract.call(
+      "attest",
+      new Address(attesterKp.publicKey()).toScVal(),
+      xdr.ScVal.scvBytes(Buffer.from(linkHash)),
+      new Address(recipient).toScVal(),
+    ),
+  ];
+
+  // If email hash is provided, also attest the email binding
+  if (emailHash && emailHash.length === 32) {
+    ops.push(
+      contract.call(
+        "attest_email",
+        new Address(attesterKp.publicKey()).toScVal(),
+        xdr.ScVal.scvBytes(Buffer.from(linkHash)),
+        new Address(recipient).toScVal(),
+        xdr.ScVal.scvBytes(Buffer.from(emailHash)),
+      )
+    );
+  }
 
   const account = await rpcServer.getAccount(attesterKp.publicKey());
-  let tx = new TransactionBuilder(account, { fee: "100000", networkPassphrase })
-    .addOperation(op)
-    .setTimeout(60)
-    .build();
+  let builder = new TransactionBuilder(account, { fee: "200000", networkPassphrase });
+  for (const op of ops) {
+    builder = builder.addOperation(op);
+  }
+  let tx = builder.setTimeout(60).build();
 
   tx = (await rpcServer.prepareTransaction(tx)) as any;
   tx.sign(attesterKp);

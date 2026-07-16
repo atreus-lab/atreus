@@ -169,6 +169,11 @@ linkRoutes.post("/:hash/attest", async (req: Request, res: Response) => {
     return;
   }
 
+  let emailHashBytes: Uint8Array | undefined;
+  if (recipient_email_hash && typeof recipient_email_hash === "string" && recipient_email_hash.length === 64) {
+    emailHashBytes = Uint8Array.from(Buffer.from(recipient_email_hash, "hex"));
+  }
+
   try {
     const proofBytes = Uint8Array.from(Buffer.from(proof, "hex"));
 
@@ -179,7 +184,7 @@ linkRoutes.post("/:hash/attest", async (req: Request, res: Response) => {
     }
 
     const linkHashBytes = Uint8Array.from(Buffer.from(hash, "hex"));
-    const txHash = await submitAttestation(linkHashBytes, recipient);
+    const txHash = await submitAttestation(linkHashBytes, recipient, emailHashBytes);
 
     res.json({ success: true, hash, recipient, attestationTx: txHash });
   } catch (err: any) {
