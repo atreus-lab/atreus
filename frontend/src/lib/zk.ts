@@ -152,20 +152,26 @@ export async function requestAttestation(
   linkHashHex: string,
   secretHex: string,
   proofHex: string,
-  recipientAddress: string
+  recipientAddress: string,
+  recipientEmailHash?: string
 ): Promise<string> {
   const backendUrl =
     process.env.NEXT_PUBLIC_BACKEND_URL || "http://localhost:3001";
   const url = `${backendUrl}/api/links/${linkHashHex}/attest`;
 
+  const body: Record<string, string> = {
+    recipient: recipientAddress,
+    secret: secretHex,
+    proof: proofHex,
+  };
+  if (recipientEmailHash) {
+    body.recipient_email_hash = recipientEmailHash;
+  }
+
   const resp = await fetch(url, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      recipient: recipientAddress,
-      secret: secretHex,
-      proof: proofHex,
-    }),
+    body: JSON.stringify(body),
   });
 
   const body = await resp.json();
