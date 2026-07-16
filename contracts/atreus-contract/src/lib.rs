@@ -39,6 +39,10 @@ impl AtreusContract {
     ) {
         sender.require_auth();
 
+        if env.storage().persistent().has(&id) {
+            panic!("link already exists");
+        }
+
         let token_client = token::Client::new(&env, &asset);
         token_client.transfer(&sender, &env.current_contract_address(), &amount);
 
