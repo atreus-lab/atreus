@@ -174,10 +174,10 @@ export async function requestAttestation(
     body: JSON.stringify(body),
   });
 
-  const body = await resp.json();
+  const data = await resp.json();
   if (!resp.ok) {
-    throw new Error(body.error || "Attestation request failed");
+    throw new Error(data.error || "Attestation request failed");
   }
 
-  return body.attestationTx;
+  return data.attestationTx;
 }
