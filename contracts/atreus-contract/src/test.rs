@@ -168,3 +168,21 @@ fn test_claim_expired_fails() {
     let recipient = Address::generate(&env);
     assert!(client.try_claim_link(&link_hash, &recipient, &secret, &empty_email_hash(&env)).is_err());
 }
+
+#[test]
+fn test_duplicate_link_fails() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let (client, sender, token) = setup_test(&env);
+    let (_secret, link_hash) = make_secret(&env, 1);
+    let amount = 1000i128;
+    let expiry = env.ledger().timestamp() + 1000;
+    let policy_params = Bytes::new(&env);
+
+    // First create should succeed
+    client.create_link(&link_hash, &0u32, &policy_params, &amount, &token, &expiry, &sender);
+
+    // Second create with same ID should fail
+    assert!(client.try_create_link(&link_hash, &0u32, &policy_params, &amount, &token, &expiry, &sender).is_err());
+}
