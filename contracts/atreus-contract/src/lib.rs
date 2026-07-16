@@ -137,7 +137,7 @@ impl AtreusContract {
             &env,
             &env.crypto().sha256(&link_hash_bytes).to_array(),
         );
-        if env.storage().temporary().has(&nullifier_key) {
+        if env.storage().persistent().has(&nullifier_key) {
             panic!("nullifier already used");
         }
 
@@ -146,7 +146,7 @@ impl AtreusContract {
 
         link_info.claimed = true;
         env.storage().persistent().set(&link_hash, &link_info);
-        env.storage().temporary().set(&nullifier_key, &true);
+        env.storage().persistent().set(&nullifier_key, &true);
 
         env.events().publish(
             (symbol_short!("claimed"), link_hash),
