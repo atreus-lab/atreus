@@ -77,11 +77,16 @@ linkRoutes.get("/:hash", async (req: Request, res: Response) => {
 // that claim_link requires before releasing funds. See contracts/README.md.
 linkRoutes.post("/:hash/attest", async (req: Request, res: Response) => {
   const hash = String(req.params.hash);
-  const { recipient, secret, proof } = req.body;
+  const { recipient, secret, proof, recipient_email_hash } = req.body;
 
   if (!recipient || !secret || !proof) {
     res.status(400).json({ error: "Missing recipient, secret, or proof" });
     return;
+  }
+
+  let emailHashBytes: Uint8Array | undefined;
+  if (recipient_email_hash && typeof recipient_email_hash === "string" && recipient_email_hash.length === 64) {
+    emailHashBytes = Uint8Array.from(Buffer.from(recipient_email_hash, "hex"));
   }
 
   try {
@@ -101,7 +106,7 @@ linkRoutes.post("/:hash/attest", async (req: Request, res: Response) => {
     }
 
     const linkHashBytes = Uint8Array.from(Buffer.from(hash, "hex"));
-    const txHash = await submitAttestation(linkHashBytes, recipient);
+    const txHash = await submitAttestation(linkHashBytes, recipient, emailHashBytes);
 
     res.json({ success: true, hash, recipient, attestationTx: txHash });
   } catch (err: any) {
