@@ -144,7 +144,17 @@ const parseLinkInput = () => {
 
       setStatus('attesting');
       const proofHex = bytesToHex(proof);
-      await requestAttestation(linkHashHex, secretHex, proofHex, recipient);
+
+      // Compute email hash if this is an email-restricted link
+      let recipientEmailHash: string | undefined;
+      if (intendedEmail) {
+        const emailHashBytes = new Uint8Array(await sha256Hash(intendedEmail));
+        recipientEmailHash = Array.from(emailHashBytes)
+          .map((b) => b.toString(16).padStart(2, '0'))
+          .join('');
+      }
+
+      await requestAttestation(linkHashHex, secretHex, proofHex, recipient, recipientEmailHash);
 
       // Email verification: if the link was created for a specific email, check it matches
       if (intendedEmail) {
@@ -160,7 +170,14 @@ const parseLinkInput = () => {
 
       setStatus('claiming');
       const linkHash = new Uint8Array(await crypto.subtle.digest('SHA-256', secretBytes));
-      const hash = await claimLinkTx(recipient, linkHash, secretBytes);
+
+      // Compute email hash bytes for the contract call if email-restricted
+      let emailHashBytes: Uint8Array | undefined;
+      if (intendedEmail) {
+        emailHashBytes = new Uint8Array(await sha256Hash(intendedEmail));
+      }
+
+      const hash = await claimLinkTx(recipient, linkHash, secretBytes, emailHashBytes);
       setTxHash(hash);
 
       setStatus('success');
