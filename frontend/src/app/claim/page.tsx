@@ -142,11 +142,20 @@ const parseLinkInput = () => {
       }
 
       setStatus('generating_proof');
-      const { proof, linkHashHex } = await generateClaimProof(secretBytes, recipient);
+      const { proof, linkHashHex, linkHashFieldHex, nullifierFieldHex } = await generateClaimProof(secretBytes, recipient);
 
       setStatus('attesting');
       const proofHex = bytesToHex(proof);
-      await requestAttestation(linkHashHex, secretHex, proofHex, recipient);
+      // Compute email hash if this is an email-restricted link
+      let recipientEmailHash: string | undefined;
+      if (intendedEmail) {
+        const emailHashBytes = new Uint8Array(await sha256Hash(intendedEmail));
+        recipientEmailHash = Array.from(emailHashBytes)
+          .map((b) => b.toString(16).padStart(2, '0'))
+          .join('');
+      }
+
+      await requestAttestation(linkHashHex, proofHex, recipient, linkHashFieldHex, nullifierFieldHex, recipientEmailHash);
 
       // Email verification: if the link was created for a specific email, check it matches
       if (intendedEmail) {
