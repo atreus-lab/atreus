@@ -43,28 +43,28 @@ function fieldToProofInput(f: bigint): string {
  * Resolve the path to the barretenberg WASM file.
  *
  * 1. Tries `wasm/barretenberg-threads.wasm.gz` relative to cwd (works in local dev
- *    after `npm run prebuild`, or on Vercel if the file was included via includeFiles).
- * 2. If the file doesn't exist locally, downloads from `FRONTEND_URL/wasm/barretenberg-threads.wasm.gz`
- *    (the frontend serves this as a static asset from its public/ directory) and caches
- *    it to `/tmp/` for the lifetime of the cold start.
+ *    after `npm run postinstall`, or on Vercel if postinstall copied it).
+ * 2. If the file doesn't exist locally, downloads from the npm CDN (unpkg) which
+ *    always serves the exact version specified in package.json, and caches it to
+ *    `/tmp/` for the lifetime of the cold start.
  */
 let cachedWasmPath: string | null = null;
 
 async function getWasmPath(): Promise<string> {
   if (cachedWasmPath) return cachedWasmPath;
 
-  // 1. Try local filesystem path (works in local dev, or when Vercel includes via wasm/**)
+  // 1. Try local filesystem path (local dev after postinstall, or Vercel build copy)
   const localPath = resolve(process.cwd(), "wasm/barretenberg-threads.wasm.gz");
   if (existsSync(localPath)) {
     cachedWasmPath = localPath;
     return localPath;
   }
 
-  // 2. Fallback — download from the frontend URL and cache to /tmp/
-  const frontendUrl = process.env.FRONTEND_URL;
-  if (frontendUrl) {
-    const url = `${frontendUrl.replace(/\/$/, "")}/wasm/barretenberg-threads.wasm.gz`;
-    const resp = await fetch(url);
+  // 2. Fallback — download from the npm CDN (always available) and cache to /tmp/
+  const CDN_URL =
+    "https://unpkg.com/@aztec/bb.js@5.0.0-nightly.20260522/dest/node/barretenberg_wasm/barretenberg-threads.wasm.gz";
+  try {
+    const resp = await fetch(CDN_URL);
     if (resp.ok) {
       const buffer = Buffer.from(await resp.arrayBuffer());
       const tmpPath = "/tmp/barretenberg-threads.wasm.gz";
@@ -73,6 +73,8 @@ async function getWasmPath(): Promise<string> {
       cachedWasmPath = tmpPath;
       return tmpPath;
     }
+  } catch {
+    // CDN unreachable — fall through to the local path error below
   }
 
   // If all fallbacks fail, return the local path anyway (bb.js will throw ENOENT)
