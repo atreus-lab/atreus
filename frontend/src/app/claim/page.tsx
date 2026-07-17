@@ -161,7 +161,7 @@ const parseLinkInput = () => {
           .join('');
       }
 
-      await requestAttestation(linkHashHex, secretHex, proofHex, recipient, recipientEmailHash);
+      await requestAttestation(linkHashHex, proofHex, recipient, linkHashFieldHex, nullifierFieldHex, recipientEmailHash);
 
       // Email verification: if the link was created for a specific email, check it matches
       if (intendedEmail) {
