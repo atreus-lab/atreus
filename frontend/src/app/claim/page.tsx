@@ -153,7 +153,7 @@ const parseLinkInput = () => {
       }
 
       setStatus('generating_proof');
-      const { proof, linkHashHex } = await generateClaimProof(secretBytes, recipient);
+      const { proof, linkHashHex, linkHashFieldHex, nullifierFieldHex } = await generateClaimProof(secretBytes, recipient);
 
       setStatus('attesting');
       const proofHex = bytesToHex(proof);
@@ -167,7 +167,7 @@ const parseLinkInput = () => {
           .join('');
       }
 
-      await requestAttestation(linkHashHex, secretHex, proofHex, recipient, recipientEmailHash);
+      await requestAttestation(linkHashHex, proofHex, recipient, linkHashFieldHex, nullifierFieldHex, recipientEmailHash);
 
       // Email verification: if the link was created for a specific email, check it matches
       if (intendedEmail) {

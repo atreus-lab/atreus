@@ -64,15 +64,15 @@ async function loadCircuit(): Promise<any> {
 /**
  * Generate a real UltraHonk proof for the claim flow.
  *
- * Returns the raw proof bytes — the caller POSTs these (hex-encoded) to the backend
- * attest endpoint along with the secret and recipient. The backend independently
- * recomputes the expected public inputs and verifies against those (not client-supplied),
- * so there's no trust issue with the client generating the proof.
+ * Returns the raw proof bytes plus the circuit's public inputs (link_hash and nullifier,
+ * as Pedersen field elements) — the caller POSTs these (hex-encoded) to the backend
+ * attest endpoint along with the recipient. The private secret never leaves the client:
+ * the backend verifies the proof against these public inputs alone.
  */
 export async function generateClaimProof(
   secretBytes: Uint8Array,
   recipientAddress: string
-): Promise<{ proof: Uint8Array; linkHashHex: string }> {
+): Promise<{ proof: Uint8Array; linkHashHex: string; linkHashFieldHex: string; nullifierFieldHex: string }> {
   // Dynamic imports — these are large WASM modules, only load when needed
   const bbModule = await import("@aztec/bb.js");
   const noirModule = await import("@noir-lang/noir_js");
@@ -138,21 +138,29 @@ export async function generateClaimProof(
       .map((b) => b.toString(16).padStart(2, "0"))
       .join("");
 
-    return { proof: result.proof, linkHashHex };
+    return {
+      proof: result.proof,
+      linkHashHex,
+      linkHashFieldHex: fieldToHex(linkHashField),
+      nullifierFieldHex: fieldToHex(nullifierField),
+    };
   } finally {
     await api.destroy();
   }
 }
 
 /**
- * POST proof to the backend attest endpoint.
+ * POST proof to the backend attest endpoint, along with the circuit's public inputs
+ * (link_hash and nullifier). The private secret is never sent — the backend verifies
+ * the proof against these public inputs alone.
  * Returns the attestation transaction hash on success.
  */
 export async function requestAttestation(
   linkHashHex: string,
-  secretHex: string,
   proofHex: string,
   recipientAddress: string,
+  linkHashFieldHex: string,
+  nullifierFieldHex: string,
   recipientEmailHash?: string
 ): Promise<string> {
   const backendUrl =
@@ -161,8 +169,9 @@ export async function requestAttestation(
 
   const body: Record<string, string> = {
     recipient: recipientAddress,
-    secret: secretHex,
     proof: proofHex,
+    link_hash: linkHashFieldHex,
+    nullifier: nullifierFieldHex,
   };
   if (recipientEmailHash) {
     body.recipient_email_hash = recipientEmailHash;
