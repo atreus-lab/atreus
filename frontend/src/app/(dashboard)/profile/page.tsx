@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { loadWallet, getBalances, getTransactions, type StoredWallet } from "@/lib/wallet";
+import { getClaimedLinks } from "@/lib/links";
 import { CheckCircle2, Edit2, ShieldCheck, Lock, Fingerprint, KeyRound, Shield, ChevronRight, Copy, Bell, Palette, Globe, Download, ChevronDown, Trash2 } from "lucide-react";
 import AppHeader from "@/components/AppHeader";
 import SearchDialog from "@/components/SearchDialog";
@@ -69,6 +70,21 @@ export default function ProfilePage() {
         if (tx.created_at < counterparties[counterparty].firstSeen) counterparties[counterparty].firstSeen = tx.created_at;
         if (tx.created_at > counterparties[counterparty].lastSeen) counterparties[counterparty].lastSeen = tx.created_at;
       }
+      // Include senders of payment links this wallet has claimed — these funds move
+      // via the claim contract, not a Horizon payment, so they're invisible above.
+      const claimedLinks = getClaimedLinks();
+      for (const link of claimedLinks) {
+        const counterparty = link.counterpartyAddress;
+        if (!counterparty || counterparty === pk) continue;
+        const amount = parseFloat(link.amount) || 0;
+        const seenAt = new Date(link.createdAt).toISOString();
+        if (!counterparties[counterparty]) counterparties[counterparty] = { received: 0, sent: 0, txs: 0, firstSeen: seenAt, lastSeen: seenAt };
+        counterparties[counterparty].received += amount;
+        counterparties[counterparty].txs += 1;
+        totalReceived += amount;
+        if (seenAt < counterparties[counterparty].firstSeen) counterparties[counterparty].firstSeen = seenAt;
+        if (seenAt > counterparties[counterparty].lastSeen) counterparties[counterparty].lastSeen = seenAt;
+      }
       const sep = '═'.repeat(72);
       let report = `\n${sep}\n  ATREUS ACCOUNT REPORT\n${sep}\n\nGenerated: ${now}\nNetwork:   ${netLabel}\n\n── Account ──────────────────────────────────────────────────────\n  Public Key:  ${pk}\n  Email:       ${storedWallet.email || 'N/A'}\n  Explorer:    https://stellar.expert/explorer/${defaultNetwork === 'testnet' ? 'testnet' : 'public'}/account/${pk}\n`;
       const xlmBal = balances?.find((b: any) => b.asset_type === 'native')?.balance || '0';
@@ -82,7 +98,7 @@ export default function ProfilePage() {
       if (sorted.length > 0) { for (const [addr, info] of sorted) { const shortAddr = `${addr.slice(0, 8)}...${addr.slice(-6)}`; report += `  ${shortAddr.padEnd(40)} ${info.received.toFixed(2).padEnd(12)} ${info.sent.toFixed(2).padEnd(12)} ${String(info.txs).padEnd(6)}  ${new Date(info.lastSeen).toLocaleDateString()}\n`; } }
       else { report += `  No transactions yet.\n`; }
       report += `\n── Transaction History ────────────────────────────────────────\n`;
-      if (transactions.length > 0) { for (const tx of transactions) { const date = new Date(tx.created_at).toLocaleDateString(); const amount = (parseFloat(tx.amount) || 0).toFixed(4); const asset = tx.asset_code || 'XLM'; const counterparty = tx.from === pk ? tx.to : tx.from; const cs = counterparty ? `${counterparty.slice(0, 8)}...${counterparty.slice(-6)}` : '(unknown)'; const dir = tx.to === pk ? '← Received from' : '→ Sent to'; report += `  ${date.padEnd(14)} ${(tx.type || 'payment').padEnd(16)} ${amount.padEnd(16)} ${asset.padEnd(10)}  ${dir} ${cs}\n`; } }
+      if (transactions.length > 0) { for (const tx of transactions) { const date = new Date(tx.created_at).toLocaleDateString(); const amount = (parseFloat(tx.amount) || 0).toFixed(4); const asset = tx.asset_code || 'XLM'; const counterparty = tx.from === pk ? tx.to : tx.from; const cs = counterparty || '(unknown)'; const dir = tx.to === pk ? '← Received from' : '→ Sent to'; report += `  ${date.padEnd(14)} ${(tx.type || 'payment').padEnd(16)} ${amount.padEnd(16)} ${asset.padEnd(10)}  ${dir} ${cs}\n`; } }
       else { report += `  No transactions found.\n`; }
       report += `\n${sep}\n  End of report\n${sep}\n`;
       const blob = new Blob([report], { type: 'text/plain;charset=utf-8' });

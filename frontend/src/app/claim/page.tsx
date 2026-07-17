@@ -197,6 +197,7 @@ const parseLinkInput = () => {
         expiresAt: 0,
         claimed: true,
         txHash: hash,
+        counterpartyAddress: linkInfo.creator || undefined,
       });
     } catch (err: any) {
       console.error(err);

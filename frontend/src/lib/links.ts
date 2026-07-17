@@ -13,6 +13,8 @@ export interface StoredLink {
   expiresAt: number;
   claimed: boolean;
   txHash?: string;
+  /** For links claimed by this wallet: the address of the sender who created the link. */
+  counterpartyAddress?: string;
 }
 
 const STORAGE_KEY = "atreus_links";
@@ -95,8 +97,8 @@ function extractI128(v: any): bigint | null {
  * Read link info (claimed status + amount) from the contract.
  * Returns { claimed, amount } where amount is in XLM as a string, or null for both if unreadable.
  */
-export async function readLinkInfo(linkHashHex: string): Promise<{ claimed: boolean | null; amount: string | null }> {
-  const result: { claimed: boolean | null; amount: string | null } = { claimed: null, amount: null };
+export async function readLinkInfo(linkHashHex: string): Promise<{ claimed: boolean | null; amount: string | null; creator: string | null }> {
+  const result: { claimed: boolean | null; amount: string | null; creator: string | null } = { claimed: null, amount: null, creator: null };
   const contractId = process.env.NEXT_PUBLIC_CONTRACT_ID;
   if (!contractId || !linkHashHex) return result;
   try {
@@ -124,6 +126,12 @@ export async function readLinkInfo(linkHashHex: string): Promise<{ claimed: bool
                 // Convert stroops to XLM (1 XLM = 10,000,000 stroops)
                 const xlm = Number(i128) / 10_000_000;
                 result.amount = xlm.toFixed(7).replace(/\.?0+$/, '');
+              }
+            } else if (fieldName === 'creator' && v) {
+              try {
+                result.creator = Address.fromScVal(v).toString();
+              } catch {
+                // Not a valid Address ScVal
               }
             }
           }
