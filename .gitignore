@@ -11,6 +11,7 @@ Thumbs.db
 test_snapshots/
 coverage/
 *.wasm.gz
+!backend/wasm/barretenberg-threads.wasm.gz
 .opencode/
 .vercel
 .env*
