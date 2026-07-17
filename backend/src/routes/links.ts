@@ -8,10 +8,19 @@ import { batchResultsCsv, createBatchRecord, parseBatchCsv, processBatch, type B
 import pino from "pino";
 
 let circuit: any = undefined;
-function getCircuit() {
+
+/**
+ * Load the compiled Noir circuit (secret.json) — tries local filesystem paths
+ * first, then falls back to fetching from the frontend server (where the circuit
+ * is served as a static asset at /circuits/secret.json). The frontend fallback
+ * is needed on Vercel serverless where includeFiles may not reliably place
+ * the circuit file into the function root.
+ */
+async function getCircuit(): Promise<any> {
   if (circuit) return circuit;
 
-  const candidates = [];
+  // 1. Try local filesystem paths (local dev, self-hosted)
+  const candidates: string[] = [];
 
   if (process.env.CIRCUIT_PATH) {
     candidates.push(process.env.CIRCUIT_PATH);
@@ -31,8 +40,23 @@ function getCircuit() {
     }
   }
 
+  // 2. Fallback — fetch from the frontend URL (works on Vercel where the
+  //    circuit is deployed as a static asset in the frontend's public dir)
+  const frontendUrl = process.env.FRONTEND_URL;
+  if (frontendUrl) {
+    try {
+      const resp = await fetch(`${frontendUrl.replace(/\/$/, "")}/circuits/secret.json`);
+      if (resp.ok) {
+        circuit = await resp.json();
+        return circuit;
+      }
+    } catch (e: any) {
+      logger.warn({ error: e?.message }, "Failed to fetch circuit from FRONTEND_URL");
+    }
+  }
+
   throw new Error(
-    `Circuit file not found. Tried:\n  ${candidates.join("\n  ")}`
+    `Circuit file not found (tried filesystem and FRONTEND_URL). Tried:\n  ${candidates.join("\n  ")}`
   );
 }
 
@@ -177,7 +201,7 @@ linkRoutes.post("/:hash/attest", async (req: Request, res: Response) => {
   try {
     const proofBytes = Uint8Array.from(Buffer.from(proof, "hex"));
 
-    const isValid = await verifyClaimProof(getCircuit().bytecode, proofBytes, recipient, link_hash, nullifier);
+    const isValid = await verifyClaimProof((await getCircuit()).bytecode, proofBytes, recipient, link_hash, nullifier);
     if (!isValid) {
       res.status(400).json({ error: "ZK proof verification failed" });
       return;
