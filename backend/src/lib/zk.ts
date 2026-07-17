@@ -1,9 +1,17 @@
 import { StrKey } from "@stellar/stellar-sdk";
 import { Barretenberg, UltraHonkBackend } from "@aztec/bb.js";
+import { createHash } from "crypto";
 
 // BN254 (alt_bn128) scalar field order — matches Noir/Barretenberg's Field type.
 export const FR_ORDER =
   21888242871839275222246405745257275088548364400416034343698204186575808495617n;
+
+// A field element is always 32 bytes, so a valid hex encoding is always exactly 64 chars.
+const FIELD_HEX_LEN = 64;
+
+export function sha256Hex(bytes: Uint8Array): string {
+  return createHash("sha256").update(Buffer.from(bytes)).digest("hex");
+}
 
 export function addressToField(stellarAddress: string): bigint {
   const pubkeyBytes = StrKey.decodeEd25519PublicKey(stellarAddress);
@@ -11,11 +19,16 @@ export function addressToField(stellarAddress: string): bigint {
   return BigInt("0x" + hex) % FR_ORDER;
 }
 
-/** Parses a "0x..."-prefixed field element hex string into a bigint, reduced mod FR_ORDER. */
+/**
+ * Parses a "0x..."-prefixed field element hex string into a bigint, reduced mod FR_ORDER.
+ * Requires exactly 32 bytes (64 hex chars) after stripping the prefix — a truncated or
+ * oversized string is rejected outright rather than silently producing the wrong field
+ * value (or, unbounded, becoming a CPU/memory DoS vector via BigInt() on a huge string).
+ */
 export function parseFieldHex(hex: string): bigint {
   const clean = hex.startsWith("0x") || hex.startsWith("0X") ? hex.slice(2) : hex;
-  if (!/^[0-9a-fA-F]+$/.test(clean) || clean.length === 0) {
-    throw new Error("Invalid field element hex string");
+  if (clean.length !== FIELD_HEX_LEN || !/^[0-9a-fA-F]+$/.test(clean)) {
+    throw new Error(`Invalid field element hex string: expected ${FIELD_HEX_LEN} hex chars`);
   }
   return BigInt("0x" + clean) % FR_ORDER;
 }
@@ -41,7 +54,9 @@ export async function verifyClaimProof(
   const linkHashField = parseFieldHex(linkHashHex);
   const nullifierField = parseFieldHex(nullifierHex);
 
-  const api = await Barretenberg.initSingleton({ threads: 1, backend: "Wasm" as any });
+  // Fresh instance per call (not the shared singleton) — this is destroyed below, and
+  // destroying the singleton would break any other request verifying concurrently.
+  const api = await Barretenberg.new({ threads: 1 });
   const backend = new UltraHonkBackend(circuitBytecode, api);
   try {
     return await backend.verifyProof({
