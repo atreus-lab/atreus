@@ -1,6 +1,7 @@
 import { StrKey } from "@stellar/stellar-sdk";
 import { Barretenberg, UltraHonkBackend } from "@aztec/bb.js";
 import { createHash } from "crypto";
+import { resolve } from "path";
 
 // BN254 (alt_bn128) scalar field order — matches Noir/Barretenberg's Field type.
 export const FR_ORDER =
@@ -38,6 +39,16 @@ function fieldToProofInput(f: bigint): string {
 }
 
 /**
+ * Resolve the path to the barretenberg WASM file. On Vercel, the file is included
+ * via the `wasm/**` includeFiles pattern and lives at /var/task/wasm/.
+ * In local dev, it lives at backend/wasm/ relative to cwd.
+ */
+function getWasmPath(): string {
+  // The prebuild script copies bb.js's barretenberg-threads.wasm.gz into wasm/
+  return resolve(process.cwd(), "wasm/barretenberg-threads.wasm.gz");
+}
+
+/**
  * Verifies a real UltraHonk proof against the circuit's public inputs only — recipient,
  * link_hash, and nullifier (all Pedersen field elements supplied by the caller). The
  * backend never sees, and does not need, the private secret: that's the whole point of a
@@ -56,7 +67,9 @@ export async function verifyClaimProof(
 
   // Fresh instance per call (not the shared singleton) — this is destroyed below, and
   // destroying the singleton would break any other request verifying concurrently.
-  const api = await Barretenberg.new({ threads: 1 });
+  // Pass an explicit wasmPath so the WASM file can be included via vercel.json's
+  // includeFiles (wasm/**) instead of relying on the node_modules symlink.
+  const api = await Barretenberg.new({ threads: 1, wasmPath: getWasmPath() });
   const backend = new UltraHonkBackend(circuitBytecode, api);
   try {
     return await backend.verifyProof({
