@@ -139,8 +139,9 @@ function extractI128(v: any): bigint | null {
 }
 
 /**
- * Read link info (claimed status + amount) from the contract.
- * Returns { claimed, amount } where amount is in XLM as a string, or null for both if unreadable.
+ * Read link info (claimed status + amount + creator) from the contract.
+ * Returns { claimed, amount, creator } where amount is in XLM as a string and creator is the
+ * sender's address, or null for any field that couldn't be read.
  */
 export async function readLinkInfo(linkHashHex: string): Promise<{ claimed: boolean | null; amount: string | null; creator: string | null }> {
   const result: { claimed: boolean | null; amount: string | null; creator: string | null } = { claimed: null, amount: null, creator: null };
