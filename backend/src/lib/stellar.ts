@@ -58,13 +58,20 @@ export const createBatchEscrowTransaction = async (
  * If emailHash is provided (when policy_type == 1), also submits
  * VerifierContract.attest_email(attester, link_hash, recipient, email_hash).
  */
+// VerifierContract that the AtreusContract (CAITLKEO4YJ5HQR6DORTWX5RAVD5XLSHCPWIOZIWSQF6CSNJIPXOQKT2)
+// was deployed with. This MUST match or the attestation won't be found by claim_link.
+// The env var is checked first for flexibility; this hardcoded fallback ensures the
+// correct contract is used even if Vercel env vars are misconfigured.
+const DEFAULT_VERIFIER_CONTRACT_ID =
+  "CA3WA53LKQEJH3L3FSLFOUBOB3DG7D4IHEE4GEMM35WC5Z5YWDN264DB";
+
 export const submitAttestation = async (
   linkHash: Uint8Array,
   recipient: string,
   emailHash?: Uint8Array
 ): Promise<string> => {
-  const verifierContractId = process.env.NEXT_PUBLIC_VERIFIER_CONTRACT_ID;
-  if (!verifierContractId) throw new Error("NEXT_PUBLIC_VERIFIER_CONTRACT_ID is not configured");
+  const verifierContractId =
+    process.env.NEXT_PUBLIC_VERIFIER_CONTRACT_ID || DEFAULT_VERIFIER_CONTRACT_ID;
 
   const attesterSecret = process.env.ATTESTER_SECRET_KEY;
   if (!attesterSecret) throw new Error("ATTESTER_SECRET_KEY is not configured");
