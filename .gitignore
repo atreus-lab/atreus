@@ -12,6 +12,7 @@ test_snapshots/
 coverage/
 *.wasm.gz
 !backend/wasm/barretenberg-threads.wasm.gz
+!frontend/public/wasm/barretenberg-threads.wasm.gz
 .opencode/
 .vercel
 .env*
