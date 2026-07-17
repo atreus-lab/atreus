@@ -3,7 +3,7 @@
 import Image from "next/image";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { ChevronLeft, ChevronUp, LayoutDashboard, Wallet, Link2, ArrowRightLeft, BarChart3, Activity, Shield, Settings } from "lucide-react";
+import { ChevronLeft, ChevronUp, LayoutDashboard, Wallet, Link2, ArrowRightLeft, BarChart3, Activity, Shield, Settings, User } from "lucide-react";
 import logo from "../media/ateruslogo.jpeg";
 import { useSidebar } from "./sidebar-context";
 import { loadWallet } from "@/lib/wallet";
@@ -18,6 +18,7 @@ const NAV_ITEMS = [
   { icon: Activity, label: "Activity", href: "/activity" },
   { icon: Shield, label: "Security", href: "/security" },
   { icon: Settings, label: "Settings", href: "/settings" },
+  { icon: User, label: "Profile", href: "/profile" },
 ];
 
 export default function DashboardSidebar() {
