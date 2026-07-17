@@ -6,6 +6,7 @@ import Link from 'next/link';
 import { Copy, Check, Loader2, ArrowLeft, Mail, Shield } from 'lucide-react';
 import { connectWallet, createEscrowTx } from '@/lib/stellar';
 import { saveLink } from '@/lib/links';
+import { BatchUpload } from '@/components/BatchUpload';
 
 const EXPIRY_OPTIONS = [
   { label: '1 minute', value: 60 },
@@ -34,6 +35,7 @@ export default function CreatePage() {
   const [isCreating, setIsCreating] = useState(false);
   const [error, setError] = useState('');
   const [copied, setCopied] = useState(false);
+  const [mode, setMode] = useState<'single' | 'batch'>('single');
 
   const handleCreate = async () => {
     try {
@@ -104,6 +106,13 @@ export default function CreatePage() {
         </Link>
 
         <h2 className="text-xl font-bold text-primary">Create Link</h2>
+
+        <div className="grid grid-cols-2 rounded-lg bg-elevated p-1 text-sm font-semibold">
+          <button onClick={() => setMode('single')} className={`rounded-md py-2 ${mode === 'single' ? 'bg-[var(--bg-panel)] text-primary shadow-sm' : 'text-secondary'}`}>Single Link</button>
+          <button onClick={() => setMode('batch')} className={`rounded-md py-2 ${mode === 'batch' ? 'bg-[var(--bg-panel)] text-primary shadow-sm' : 'text-secondary'}`}>Batch Upload</button>
+        </div>
+
+        {mode === 'batch' ? <BatchUpload /> : <>
 
         <div className="space-y-1.5">
           <label className="text-sm font-semibold text-secondary block">Amount (XLM)</label>
@@ -197,6 +206,7 @@ export default function CreatePage() {
             </button>
           </div>
         )}
+        </>}
       </div>
     </div>
   );
