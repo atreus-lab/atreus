@@ -2,6 +2,7 @@ import { StrKey } from "@stellar/stellar-sdk";
 import { Barretenberg, UltraHonkBackend } from "@aztec/bb.js";
 import { createHash } from "crypto";
 import { resolve } from "path";
+import { existsSync, writeFileSync, mkdirSync } from "fs";
 
 // BN254 (alt_bn128) scalar field order — matches Noir/Barretenberg's Field type.
 export const FR_ORDER =
@@ -39,13 +40,46 @@ function fieldToProofInput(f: bigint): string {
 }
 
 /**
- * Resolve the path to the barretenberg WASM file. On Vercel, the file is included
- * via the `wasm/**` includeFiles pattern and lives at /var/task/wasm/.
- * In local dev, it lives at backend/wasm/ relative to cwd.
+ * Resolve the path to the barretenberg WASM file.
+ *
+ * 1. Tries `wasm/barretenberg-threads.wasm.gz` relative to cwd (works in local dev
+ *    after `npm run postinstall`, or on Vercel if postinstall copied it).
+ * 2. If the file doesn't exist locally, downloads from the npm CDN (unpkg) which
+ *    always serves the exact version specified in package.json, and caches it to
+ *    `/tmp/` for the lifetime of the cold start.
  */
-function getWasmPath(): string {
-  // The prebuild script copies bb.js's barretenberg-threads.wasm.gz into wasm/
-  return resolve(process.cwd(), "wasm/barretenberg-threads.wasm.gz");
+let cachedWasmPath: string | null = null;
+
+async function getWasmPath(): Promise<string> {
+  if (cachedWasmPath) return cachedWasmPath;
+
+  // 1. Try local filesystem path (local dev after postinstall, or Vercel build copy)
+  const localPath = resolve(process.cwd(), "wasm/barretenberg-threads.wasm.gz");
+  if (existsSync(localPath)) {
+    cachedWasmPath = localPath;
+    return localPath;
+  }
+
+  // 2. Fallback — download from the npm CDN (always available) and cache to /tmp/
+  const CDN_URL =
+    "https://unpkg.com/@aztec/bb.js@5.0.0-nightly.20260522/dest/node/barretenberg_wasm/barretenberg-threads.wasm.gz";
+  try {
+    const resp = await fetch(CDN_URL);
+    if (resp.ok) {
+      const buffer = Buffer.from(await resp.arrayBuffer());
+      const tmpPath = "/tmp/barretenberg-threads.wasm.gz";
+      mkdirSync("/tmp", { recursive: true });
+      writeFileSync(tmpPath, buffer);
+      cachedWasmPath = tmpPath;
+      return tmpPath;
+    }
+  } catch {
+    // CDN unreachable — fall through to the local path error below
+  }
+
+  // If all fallbacks fail, return the local path anyway (bb.js will throw ENOENT)
+  cachedWasmPath = localPath;
+  return localPath;
 }
 
 /**
@@ -67,9 +101,10 @@ export async function verifyClaimProof(
 
   // Fresh instance per call (not the shared singleton) — this is destroyed below, and
   // destroying the singleton would break any other request verifying concurrently.
-  // Pass an explicit wasmPath so the WASM file can be included via vercel.json's
-  // includeFiles (wasm/**) instead of relying on the node_modules symlink.
-  const api = await Barretenberg.new({ threads: 1, wasmPath: getWasmPath() });
+  // Pass an explicit wasmPath so bb.js can find the WASM without relying on the
+  // pnpm virtual-store symlink (which is stripped by Vercel's deployment builder).
+  const wasmPath = await getWasmPath();
+  const api = await Barretenberg.new({ threads: 1, wasmPath });
   const backend = new UltraHonkBackend(circuitBytecode, api);
   try {
     return await backend.verifyProof({
