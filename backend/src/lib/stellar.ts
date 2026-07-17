@@ -1,4 +1,5 @@
-import { Horizon, Networks, Asset, rpc, Contract, TransactionBuilder, Address, Keypair, xdr } from "@stellar/stellar-sdk";
+import { Horizon, Networks, Asset, rpc, Contract, TransactionBuilder, Address, Keypair, xdr, nativeToScVal } from "@stellar/stellar-sdk";
+import { emailHash, type BatchInputRow } from "./batch.js";
 
 export const HORIZON_URL = process.env.HORIZON_URL || "https://horizon-testnet.stellar.org";
 export const SOROBAN_RPC_URL = process.env.SOROBAN_RPC_URL || "https://soroban-testnet.stellar.org";
@@ -6,6 +7,48 @@ export const server = new Horizon.Server(HORIZON_URL);
 export const rpcServer = new rpc.Server(SOROBAN_RPC_URL);
 export const networkPassphrase = Networks.TESTNET;
 export const nativeAsset = Asset.native();
+
+export const createBatchEscrowTransaction = async (
+  creator: string,
+  row: BatchInputRow,
+  linkHash: Uint8Array,
+): Promise<string> => {
+  const contractId = process.env.NEXT_PUBLIC_CONTRACT_ID;
+  const tokenId = process.env.NEXT_PUBLIC_TOKEN_ID;
+  const creatorSecret = process.env.BATCH_CREATOR_SECRET_KEY;
+  if (!contractId || !tokenId || !creatorSecret) throw new Error("Batch escrow configuration is incomplete");
+  const keypair = Keypair.fromSecret(creatorSecret);
+  if (keypair.publicKey() !== creator) throw new Error("Configured batch signer does not match creator");
+  const amountParts = row.amount.split(".");
+  const stroops = BigInt(amountParts[0]) * 10_000_000n + BigInt((amountParts[1] || "").padEnd(7, "0"));
+  const recipientHash = emailHash(row.email);
+  const contract = new Contract(contractId);
+  const operation = contract.call(
+    "create_link",
+    xdr.ScVal.scvBytes(Buffer.from(linkHash)),
+    nativeToScVal(recipientHash ? 1 : 0, { type: "u32" }),
+    xdr.ScVal.scvBytes(Buffer.from(recipientHash ?? new Uint8Array())),
+    nativeToScVal(stroops, { type: "i128" }),
+    new Address(tokenId).toScVal(),
+    nativeToScVal(Math.floor(Date.now() / 1000) + 7 * 24 * 60 * 60, { type: "u64" }),
+    new Address(creator).toScVal(),
+  );
+  const account = await rpcServer.getAccount(creator);
+  let transaction = new TransactionBuilder(account, { fee: "100000", networkPassphrase })
+    .addOperation(operation).setTimeout(120).build();
+  transaction = await rpcServer.prepareTransaction(transaction) as any;
+  transaction.sign(keypair);
+  const submitted = await rpcServer.sendTransaction(transaction as any);
+  if (submitted.status === "ERROR") throw new Error(`Transaction rejected: ${(submitted as any).errorResultXdr || "RPC error"}`);
+  const started = Date.now();
+  while (Date.now() - started < 30_000) {
+    const result = await rpcServer.getTransaction(submitted.hash);
+    if (result.status === rpc.Api.GetTransactionStatus.SUCCESS) return submitted.hash;
+    if (result.status === rpc.Api.GetTransactionStatus.FAILED) throw new Error(`Transaction failed: ${submitted.hash}`);
+    await new Promise((resolve) => setTimeout(resolve, 1500));
+  }
+  throw new Error(`RPC timeout waiting for ${submitted.hash}`);
+};
 
 /**
  * Submits VerifierContract.attest(attester, link_hash, recipient) signed by the
