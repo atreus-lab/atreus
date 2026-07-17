@@ -5,7 +5,11 @@
       "src": "api/index.ts",
       "use": "@vercel/node",
       "config": {
-        "includeFiles": ["circuits/**", "wasm/**"]
+        "includeFiles": [
+          "circuits/**",
+          "wasm/**",
+          "node_modules/@aztec/bb.js/dest/node/barretenberg_wasm/**"
+        ]
       }
     }
   ],
