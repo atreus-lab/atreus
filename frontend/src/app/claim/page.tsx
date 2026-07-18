@@ -4,12 +4,15 @@ import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { loadWallet } from '@/lib/wallet';
-import { connectWallet, claimLinkTx } from '@/lib/stellar';
+import { connectWallet, networkPassphrase, rpcServer, waitForTransaction } from '@/lib/stellar';
 import { bytesToHex } from '@/lib/proof';
 import { generateClaimProof, requestAttestation } from '@/lib/zk';
 import { updateLinkStatus, checkLinkOnChain, saveClaimedLink, readLinkInfo } from '@/lib/links';
 import { recordEvent } from '@/lib/analytics';
 import { Loader2, CheckCircle2, XCircle, ArrowLeft, Link2, Mail } from 'lucide-react';
+import { requestAccess, signTransaction } from '@stellar/freighter-api';
+import { Address, Contract, TransactionBuilder, nativeToScVal, xdr } from '@stellar/stellar-sdk';
+import { Buffer } from 'buffer';
 
 type ClaimStatus =
   | 'idle'
@@ -142,6 +145,13 @@ const parseLinkInput = () => {
       setErrorKind('error');
 
       const recipient = await connectWallet();
+      const freighter = await requestAccess();
+      if (freighter.error || !freighter.address) {
+        throw new Error(freighter.error?.message || 'Connect Freighter to sign this claim.');
+      }
+      if (freighter.address !== recipient) {
+        throw new Error('The connected Freighter account does not match your Atreus wallet.');
+      }
 
       const secretBytes = new Uint8Array(secretHex.match(/.{1,2}/g)!.map((b) => parseInt(b, 16)));
 
@@ -201,7 +211,66 @@ const parseLinkInput = () => {
         emailHashBytes = new Uint8Array(await sha256Hash(intendedEmail));
       }
 
-      const hash = await claimLinkTx(recipient, linkHash, secretBytes, emailHashBytes);
+      const contractId = process.env.NEXT_PUBLIC_CONTRACT_ID;
+      const relayerAddress = process.env.NEXT_PUBLIC_RELAYER_ADDRESS;
+      const relayerFee = process.env.NEXT_PUBLIC_RELAYER_FEE_STROOPS;
+      if (!contractId || !relayerAddress || !relayerFee) {
+        throw new Error('Gasless claim configuration is incomplete.');
+      }
+      if (!/^\d+$/.test(relayerFee)) {
+        throw new Error('Gasless claim configuration has an invalid relayer fee.');
+      }
+
+      const contract = new Contract(contractId);
+      const claimOperation = contract.call(
+        'claim_link',
+        xdr.ScVal.scvBytes(Buffer.from(linkHash)),
+        new Address(recipient).toScVal(),
+        xdr.ScVal.scvBytes(Buffer.from(secretBytes)),
+        xdr.ScVal.scvBytes(Buffer.from(emailHashBytes ?? new Uint8Array(32))),
+        new Address(relayerAddress).toScVal(),
+        nativeToScVal(BigInt(relayerFee), { type: 'i128' }),
+      );
+
+      // Preparing attaches the Soroban footprint and authorization requirements
+      // before the wallet signs the exact claim, relayer address, and fee.
+      const account = await rpcServer.getAccount(recipient);
+      let transaction = new TransactionBuilder(account, {
+        fee: '100000',
+        networkPassphrase,
+      })
+        .addOperation(claimOperation)
+        .setTimeout(120)
+        .build();
+      transaction = (await rpcServer.prepareTransaction(transaction)) as typeof transaction;
+
+      const unsignedXdr = transaction.toXDR();
+      const signed = await signTransaction(unsignedXdr, {
+        address: recipient,
+        networkPassphrase,
+      });
+      if (signed.error || !signed.signedTxXdr) {
+        throw new Error(signed.error?.message || 'Freighter did not sign the claim transaction.');
+      }
+      if (signed.signerAddress && signed.signerAddress !== recipient) {
+        throw new Error('Freighter signed with a different account than the claim recipient.');
+      }
+
+      const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:3001';
+      const relayResponse = await fetch(`${backendUrl}/api/relay`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ transactionXdr: signed.signedTxXdr }),
+      });
+      const relayResult = await relayResponse.json().catch(() => null);
+      if (!relayResponse.ok || typeof relayResult?.hash !== 'string') {
+        throw new Error(relayResult?.error || 'Relayer request failed.');
+      }
+
+      // The relayer submits the outer fee-bump transaction; the client only polls
+      // for confirmation and never submits the user-signed envelope itself.
+      const hash = relayResult.hash;
+      await waitForTransaction(hash, { timeoutMs: 30_000 });
       setTxHash(hash);
 
       recordEvent(linkHashHex, 'claim');
