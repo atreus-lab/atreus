@@ -43,6 +43,10 @@ fn make_secret(env: &Env, val: u8) -> (BytesN<32>, BytesN<32>) {
     (secret, link_hash)
 }
 
+fn no_relayer(env: &Env) -> (Address, i128) {
+    (Address::generate(env), 0)
+}
+
 fn empty_email_hash(env: &Env) -> BytesN<32> {
     BytesN::from_array(env, &[0u8; 32])
 }
@@ -71,12 +75,14 @@ fn test_email_restricted_claim() {
 
     let recipient = Address::generate(&env);
 
+    let (relayer, fee) = no_relayer(&env);
+
     // Try claiming with wrong email hash — should fail
     let wrong_hash = email_hash(&env, "bob@example.com");
-    assert!(client.try_claim_link(&link_hash, &recipient, &secret, &wrong_hash).is_err());
+    assert!(client.try_claim_link(&link_hash, &recipient, &secret, &wrong_hash, &relayer, &fee).is_err());
 
     // Claim with correct email hash — should succeed
-    client.claim_link(&link_hash, &recipient, &secret, &intended_hash);
+    client.claim_link(&link_hash, &recipient, &secret, &intended_hash, &relayer, &fee);
 }
 
 #[test]
@@ -93,7 +99,8 @@ fn test_create_and_claim() {
     client.create_link(&link_hash, &0u32, &policy_params, &amount, &token, &expiry, &sender);
 
     let recipient = Address::generate(&env);
-    client.claim_link(&link_hash, &recipient, &secret, &empty_email_hash(&env));
+    let (relayer, fee) = no_relayer(&env);
+    client.claim_link(&link_hash, &recipient, &secret, &empty_email_hash(&env), &relayer, &fee);
 }
 
 #[test]
@@ -111,7 +118,8 @@ fn test_wrong_secret_fails() {
     client.create_link(&link_hash, &0u32, &policy_params, &amount, &token, &expiry, &sender);
 
     let recipient = Address::generate(&env);
-    assert!(client.try_claim_link(&link_hash, &recipient, &wrong_secret, &empty_email_hash(&env)).is_err());
+    let (relayer, fee) = no_relayer(&env);
+    assert!(client.try_claim_link(&link_hash, &recipient, &wrong_secret, &empty_email_hash(&env), &relayer, &fee).is_err());
 }
 
 #[test]
@@ -128,9 +136,10 @@ fn test_double_claim_fails() {
     client.create_link(&link_hash, &0u32, &policy_params, &amount, &token, &expiry, &sender);
 
     let recipient = Address::generate(&env);
-    client.claim_link(&link_hash, &recipient, &secret, &empty_email_hash(&env));
+    let (relayer, fee) = no_relayer(&env);
+    client.claim_link(&link_hash, &recipient, &secret, &empty_email_hash(&env), &relayer, &fee);
 
-    assert!(client.try_claim_link(&link_hash, &recipient, &secret, &empty_email_hash(&env)).is_err());
+    assert!(client.try_claim_link(&link_hash, &recipient, &secret, &empty_email_hash(&env), &relayer, &fee).is_err());
 }
 
 #[test]
@@ -166,7 +175,8 @@ fn test_claim_expired_fails() {
     env.ledger().set_timestamp(expiry + 1);
 
     let recipient = Address::generate(&env);
-    assert!(client.try_claim_link(&link_hash, &recipient, &secret, &empty_email_hash(&env)).is_err());
+    let (relayer, fee) = no_relayer(&env);
+    assert!(client.try_claim_link(&link_hash, &recipient, &secret, &empty_email_hash(&env), &relayer, &fee).is_err());
 }
 
 #[test]
