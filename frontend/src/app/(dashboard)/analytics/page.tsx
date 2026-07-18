@@ -19,7 +19,6 @@ export default function AnalyticsPage() {
   const [stats, setStats] = useState<SummaryStats | null>(null);
   const [timeSeries, setTimeSeries] = useState<Record<TimeRange, TimeSeriesPoint[]>>({ "7d": [], "30d": [], "90d": [] });
   const [linkStats, setLinkStats] = useState<Record<string, LinkStats>>({});
-  const [linkTimeSeries, setLinkTimeSeries] = useState<Record<string, TimeSeriesPoint[]>>({});
   const [links, setLinks] = useState<string[]>([]);
   const [selectedLink, setSelectedLink] = useState<string | null>(null);
   const [activeRange, setActiveRange] = useState<TimeRange>("7d");
@@ -31,18 +30,15 @@ export default function AnalyticsPage() {
       setTimeSeries(data.timeSeries);
       setLinks(data.links);
       const linkStatsMap: Record<string, LinkStats> = {};
-      const linkSeriesMap: Record<string, TimeSeriesPoint[]> = {};
       for (const hash of data.links) {
         try {
           const linkData = await fetchLinkStats(hash);
           linkStatsMap[hash] = linkData.stats;
-          linkSeriesMap[hash] = linkData.timeSeries;
         } catch {
           // skip individual link errors
         }
       }
       setLinkStats(linkStatsMap);
-      setLinkTimeSeries(linkSeriesMap);
     } catch (err) {
       console.error("Failed to load analytics:", err);
     } finally {
@@ -80,9 +76,7 @@ export default function AnalyticsPage() {
 
   const fmtPct = (val: number) => `${val.toFixed(1)}%`;
 
-  const globalSeries = timeSeries[activeRange] || [];
-  const linkSeries = selectedLink ? (linkTimeSeries[selectedLink] || []) : [];
-  const series = selectedLink ? linkSeries : globalSeries;
+  const series = timeSeries[activeRange] || [];
   const maxY = series.reduce((max, p) => Math.max(max, p.views, p.initiations, p.claims), 0);
 
   let totalViews = 0, uniqueViews = 0, initiations = 0, claims = 0, claimRate = 0;

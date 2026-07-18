@@ -133,12 +133,18 @@ const parseLinkInput = () => {
       const recipient = await connectWallet();
 
       const secretBytes = new Uint8Array(secretHex.match(/.{1,2}/g)!.map((b) => parseInt(b, 16)));
-      const linkHashBytes = new Uint8Array(await crypto.subtle.digest('SHA-256', secretBytes));
-      const linkHashHex = Array.from(linkHashBytes).map(b => b.toString(16).padStart(2, '0')).join('');
 
-      recordEvent(linkHashHex, 'initiation');
+      const linkHashForAnalytics = Array.from(
+        new Uint8Array(await crypto.subtle.digest('SHA-256', secretBytes))
+      ).map((b) => b.toString(16).padStart(2, '0')).join('');
+      recordEvent(linkHashForAnalytics, 'initiation');
 
-      const alreadyClaimed = await checkLinkOnChain(linkHashHex);
+      // Quick on-chain check: if the link is already claimed, short-circuit immediately
+      // instead of wasting time generating a ZK proof and attesting.
+      const linkHashForCheck = Array.from(
+        new Uint8Array(await crypto.subtle.digest('SHA-256', secretBytes))
+      ).map((b) => b.toString(16).padStart(2, '0')).join('');
+      const alreadyClaimed = await checkLinkOnChain(linkHashForCheck);
       if (alreadyClaimed === true) {
         setErrorKind('info');
         setErrorMsg('Funds already claimed: This payment link has already been claimed. The funds are no longer available.');
@@ -147,7 +153,7 @@ const parseLinkInput = () => {
       }
 
       setStatus('generating_proof');
-      const { proof, linkHashFieldHex, nullifierFieldHex } = await generateClaimProof(secretBytes, recipient);
+      const { proof, linkHashHex, linkHashFieldHex, nullifierFieldHex } = await generateClaimProof(secretBytes, recipient);
 
       setStatus('attesting');
       const proofHex = bytesToHex(proof);
@@ -200,6 +206,7 @@ const parseLinkInput = () => {
         expiresAt: 0,
         claimed: true,
         txHash: hash,
+        counterpartyAddress: linkInfo.creator || undefined,
       });
     } catch (err: any) {
       console.error(err);

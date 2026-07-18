@@ -58,10 +58,6 @@ export async function getBatchProgress(batchId: string): Promise<BatchProgressDa
   return body;
 }
 
-export function getBatchResultsUrl(batchId: string): string {
-  return `${backendUrl}/api/links/batch/${encodeURIComponent(batchId)}/results.csv`;
-}
-
 const STORAGE_KEY = "atreus_links";
 const RECEIVED_STORAGE_KEY = "atreus_received";
 

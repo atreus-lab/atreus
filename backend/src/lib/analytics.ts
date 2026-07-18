@@ -1,5 +1,3 @@
-import { readFileSync, existsSync, writeFileSync, mkdirSync } from "fs";
-
 export type EventType = "view" | "initiation" | "claim";
 
 export interface AnalyticsEvent {
@@ -58,72 +56,14 @@ const SESSION_INDEX = new Map<string, Set<string>>();
 
 let eventCounter = 0;
 let lastPurge = Date.now();
-let saveTimer: ReturnType<typeof setTimeout> | null = null;
-
-function getStoragePath(): string {
-  if (process.env.VERCEL) {
-    return "/tmp/atreus-analytics.json";
-  }
-  return "analytics-events.json";
-}
-
-function serializeEvents(): string {
-  const arr: RawEvent[] = [];
-  for (const [, evt] of EVENTS) arr.push(evt);
-  return JSON.stringify(arr);
-}
-
-function deserializeEvents(json: string): void {
-  try {
-    const arr: RawEvent[] = JSON.parse(json);
-    for (const evt of arr) {
-      EVENTS.set(evt.id, evt);
-      const linkSet = LINK_INDEX.get(evt.linkHash) ?? new Set<string>();
-      linkSet.add(evt.id);
-      LINK_INDEX.set(evt.linkHash, linkSet);
-      const sessionSet = SESSION_INDEX.get(evt.sessionId) ?? new Set<string>();
-      sessionSet.add(evt.id);
-      SESSION_INDEX.set(evt.sessionId, sessionSet);
-      const numPart = parseInt(evt.id.split("_")[1] || "0", 10);
-      if (!Number.isNaN(numPart)) eventCounter = Math.max(eventCounter, numPart);
-    }
-  } catch {
-    // ignore corrupt storage
-  }
-}
-
-function loadFromDisk(): void {
-  try {
-    const path = getStoragePath();
-    if (existsSync(path)) {
-      const json = readFileSync(path, "utf-8");
-      deserializeEvents(json);
-    }
-  } catch {
-    // ignore disk read errors
-  }
-}
-
-function scheduleSave(): void {
-  if (saveTimer) clearTimeout(saveTimer);
-  saveTimer = setTimeout(() => {
-    try {
-      const path = getStoragePath();
-      const dir = process.env.VERCEL ? "/tmp" : ".";
-      if (!existsSync(dir)) mkdirSync(dir, { recursive: true });
-      writeFileSync(path, serializeEvents(), "utf-8");
-    } catch {
-      // ignore disk write errors
-    }
-    saveTimer = null;
-  }, 500);
-}
-
-loadFromDisk();
 
 function nextId(): string {
   eventCounter++;
   return `evt_${Date.now()}_${eventCounter}`;
+}
+
+function getEventAge(timestamp: number): number {
+  return Date.now() - timestamp;
 }
 
 function purgeExpired(): void {
@@ -159,14 +99,6 @@ export function resetAnalytics(): void {
   SESSION_INDEX.clear();
   eventCounter = 0;
   lastPurge = Date.now();
-  try {
-    const path = getStoragePath();
-    if (existsSync(path)) {
-      writeFileSync(path, "[]", "utf-8");
-    }
-  } catch {
-    // ignore
-  }
 }
 
 export function ingestEvent(input: IngestEvent): AnalyticsEvent {
@@ -187,7 +119,6 @@ export function ingestEvent(input: IngestEvent): AnalyticsEvent {
   const sessionSet = SESSION_INDEX.get(event.sessionId) ?? new Set<string>();
   sessionSet.add(event.id);
   SESSION_INDEX.set(event.sessionId, sessionSet);
-  scheduleSave();
   return toAnalyticsEvent(event);
 }
 
@@ -324,15 +255,15 @@ function computeSummaryStats(events: RawEvent[]): SummaryStats {
   const avgTimeToClaimMs = matchedClaims > 0 ? Math.round(totalTimeToClaim / matchedClaims) : null;
   const perLink: Record<string, LinkStats> = {};
   for (const [, evt] of EVENTS) {
-    const hash = evt.linkHash;
-    if (!perLink[hash]) {
-      const eventIds = LINK_INDEX.get(hash);
+    if (!perLink[evt.linkHash]) perLink[evt.linkHash] = { linkHash: evt.linkHash, views: 0, uniqueViews: 0, initiations: 0, claims: 0, claimRate: 0, avgTimeToClaimMs: null };
+  }
+  for (const [hash, stats] of Object.entries(perLink)) {
+    const eventIds = LINK_INDEX.get(hash);
+    if (eventIds) {
       const linkEvents: RawEvent[] = [];
-      if (eventIds) {
-        for (const id of eventIds) {
-          const e = EVENTS.get(id);
-          if (e) linkEvents.push(e);
-        }
+      for (const id of eventIds) {
+        const evt = EVENTS.get(id);
+        if (evt) linkEvents.push(evt);
       }
       perLink[hash] = computeLinkStats(hash, linkEvents);
     }
