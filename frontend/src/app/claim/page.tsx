@@ -56,14 +56,35 @@ function getFriendlyErrorMessage(err: any): { title: string; description: string
   const rawMsg = err?.message || err?.toString() || '';
   const msg = rawMsg.toLowerCase();
 
-  // Check for already-claimed before anything else — it can show up directly
-  // or as a WasmVm UnreachableCodeReached trap (when the panic message doesn't
-  // propagate cleanly from the contract VM).
+  // ── Ordered checks: specific contract panics FIRST ──
+  // These must come BEFORE the HostError/WasmVm trap block because when Soroban's
+  // prepareTransaction fails it wraps the contract panic in a "HostError" that also
+  // contains the outer function name ("claim_link"), which would trigger the generic
+  // VM trap handler first and mask the real error.
+
+  if (msg.includes('invalid secret'))
+    return { title: 'Invalid link', description: 'The secret key for this link is incorrect. Please check the link and try again.' };
+  if (msg.includes('link expired') || msg.includes('expired'))
+    return { title: 'Link expired', description: 'This payment link has expired and can no longer be claimed.' };
+  if (msg.includes('no valid zk attestation'))
+    return { title: 'Proof verification pending', description: 'The ZK proof attestation has not been recorded yet. Please complete the full claim flow.' };
+  if (msg.includes('link not found'))
+    return { title: 'Link not found', description: 'This payment link does not exist in the contract. It may have been refunded or never created.' };
+  if (msg.includes('nullifier already used'))
+    return { title: 'Already claimed', description: 'This payment link has already been claimed with a different wallet.' };
   if (msg.includes('already claimed'))
     return { title: 'Funds already claimed', description: 'This payment link has already been claimed. The funds are no longer available.' };
+  if (msg.includes('email not attested'))
+    return { title: 'Email verification failed', description: 'This link is restricted to a specific email address. Please log in with the correct email to claim.' };
+  if (msg.includes('untrusted attester'))
+    return { title: 'Attestation rejected', description: 'The attestation could not be recorded because the attester key is not authorized. Please contact support.' };
+  if (msg.includes('verifier not set'))
+    return { title: 'Configuration error', description: 'The contract is not properly configured with a verifier address. Please contact support.' };
 
-  // WasmVm trap that happens when claim_link panics (secret verified, attestation
-  // passed, then claimed check triggers panic! which shows as UnreachableCodeReached)
+  // ── WasmVm / HostError trap fallback ──
+  // When the contract VM crashes instead of cleanly panicking (e.g. UnreachableCodeReached
+  // after a successful attestation check), we catch that here.  But specific panics
+  // are already handled above.
   if (
     msg.includes('wasmvm') ||
     msg.includes('invalidaction') ||
@@ -79,16 +100,6 @@ function getFriendlyErrorMessage(err: any): { title: string; description: string
     return { title: 'Contract error', description: 'The transaction could not be completed. This link may have already been claimed or is invalid. Please check the link and try again.' };
   }
 
-  if (msg.includes('invalid secret'))
-    return { title: 'Invalid link', description: 'The secret key for this link is incorrect. Please check the link and try again.' };
-  if (msg.includes('link expired') || msg.includes('expired'))
-    return { title: 'Link expired', description: 'This payment link has expired and can no longer be claimed.' };
-  if (msg.includes('no valid zk attestation'))
-    return { title: 'Proof verification pending', description: 'The ZK proof attestation has not been recorded yet. Please complete the full claim flow.' };
-  if (msg.includes('link not found'))
-    return { title: 'Link not found', description: 'This payment link does not exist in the contract. It may have been refunded or never created.' };
-  if (msg.includes('nullifier already used'))
-    return { title: 'Already claimed', description: 'This payment link has already been claimed with a different wallet.' };
   if (msg.includes('insufficient balance'))
     return { title: 'Insufficient funds', description: rawMsg };
   if (msg.includes('recipient account') || msg.includes('funded'))

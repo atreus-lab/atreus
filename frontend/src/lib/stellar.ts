@@ -163,6 +163,9 @@ export const claimLinkTx = async (
   let tx = new TransactionBuilder(account, { fee: "100000", networkPassphrase })
     .addOperation(op).setTimeout(120).build();
 
+  // Simulate the transaction. If the contract panics (e.g. "no valid ZK attestation",
+  // "already claimed", etc.), the SDK throws with the contract's panic message so the
+  // frontend's getFriendlyErrorMessage can show it to the user.
   tx = await rpcServer.prepareTransaction(tx) as any;
 
   const kp = getKeypair();
@@ -171,8 +174,12 @@ export const claimLinkTx = async (
   const sendResult = await rpcServer.sendTransaction(tx as any);
 
   if (sendResult.status === "ERROR") {
-    throw new Error(`Tx submission failed: ${(sendResult as any).errorResultXdr || (sendResult as any).errorResult}`);
+    throw new Error(`Contract error: Transaction rejected — ${(sendResult as any).errorResultXdr || (sendResult as any).errorResult}`);
   }
+
+  // Wait for the transaction to be confirmed on-chain so we can detect runtime failures
+  await waitForTransaction(sendResult.hash, { timeoutMs: 30_000 });
+
   return sendResult.hash;
 };
 
