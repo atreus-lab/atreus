@@ -58,55 +58,6 @@ export async function getBatchProgress(batchId: string): Promise<BatchProgressDa
   return body;
 }
 
-export function getBatchResultsUrl(batchId: string): string {
-  return `${backendUrl}/api/links/batch/${encodeURIComponent(batchId)}/results.csv`;
-}
-
-export interface BatchRowResult {
-  row: number;
-  amount: string;
-  email?: string;
-  memo?: string;
-  status: "pending" | "processing" | "success" | "failed";
-  url?: string;
-  txHash?: string;
-  error?: string;
-  attempts?: number;
-}
-
-export interface BatchProgressData {
-  id: string;
-  status: "queued" | "processing" | "completed";
-  totalAmount: string;
-  successCount: number;
-  failureCount: number;
-  rows: BatchRowResult[];
-}
-
-const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL || "http://localhost:3001";
-
-export async function createBatchLinks(csv: string, creator: string): Promise<{ batchId: string }> {
-  const response = await fetch(`${backendUrl}/api/links/batch`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json", "X-Correlation-ID": crypto.randomUUID() },
-    body: JSON.stringify({ csv, creator }),
-  });
-  const body = await response.json();
-  if (!response.ok) throw new Error(body.error || "Failed to create batch");
-  return body;
-}
-
-export async function getBatchProgress(batchId: string): Promise<BatchProgressData> {
-  const response = await fetch(`${backendUrl}/api/links/batch/${encodeURIComponent(batchId)}`, { cache: "no-store" });
-  const body = await response.json();
-  if (!response.ok) throw new Error(body.error || "Failed to load batch progress");
-  return body;
-}
-
-export function getBatchResultsUrl(batchId: string): string {
-  return `${backendUrl}/api/links/batch/${encodeURIComponent(batchId)}/results.csv`;
-}
-
 const STORAGE_KEY = "atreus_links";
 const RECEIVED_STORAGE_KEY = "atreus_received";
 
