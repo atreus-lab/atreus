@@ -199,9 +199,11 @@ linkRoutes.post("/:hash/attest", async (req: Request, res: Response) => {
   }
 
   try {
+    console.error("DEBUG recipient:", recipient, "link_hash:", link_hash?.slice(0, 20), "nullifier:", nullifier?.slice(0, 20));
     const proofBytes = Uint8Array.from(Buffer.from(proof, "hex"));
 
-    const isValid = await verifyClaimProof(getCircuit().bytecode, proofBytes, recipient, link_hash, nullifier);
+    const circuit = await getCircuit();
+    const isValid = await verifyClaimProof(circuit.bytecode, proofBytes, recipient, link_hash, nullifier);
     if (!isValid) {
       res.status(400).json({ error: "ZK proof verification failed" });
       return;
