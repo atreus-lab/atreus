@@ -3,6 +3,7 @@ import cors from "cors";
 import helmet from "helmet";
 import pino from "pino";
 import { linkRoutes } from "./routes/links.js";
+import { analyticsRoutes } from "./routes/analytics.js";
 
 const logger = pino(
   process.env.VERCEL
@@ -23,9 +24,10 @@ const ALLOWED_ORIGINS = process.env.FRONTEND_URL
   ? process.env.FRONTEND_URL.split(",").map((s) => s.trim())
   : ["http://localhost:3000", "http://localhost:5173"];
 app.use(cors({ origin: ALLOWED_ORIGINS }));
-app.use(express.json());
+app.use(express.json({ limit: "1mb" }));
 
 app.use("/api/links", linkRoutes);
+app.use("/api/analytics", analyticsRoutes);
 
 app.get("/health", (_req, res) => {
   res.json({ status: "ok", timestamp: new Date().toISOString() });

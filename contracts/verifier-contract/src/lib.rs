@@ -9,6 +9,7 @@ pub enum DataKey {
     VerificationKey,
     Attester,
     Attestation(BytesN<32>, Address),
+    EmailAttestation(BytesN<32>, Address, BytesN<32>),
 }
 
 #[contract]
@@ -102,6 +103,56 @@ impl VerifierContract {
         env.storage()
             .persistent()
             .get(&DataKey::Attestation(link_hash, recipient))
+            .unwrap_or(false)
+    }
+
+    /// Record that `attester` has independently verified the email hash binding for
+    /// this (link_hash, recipient) pair. Only the trusted attester may call this.
+    /// Used by `claim_link` when `policy_type == 1` to verify the claimer owns the
+    /// intended email address.
+    pub fn attest_email(
+        env: Env,
+        attester: Address,
+        link_hash: BytesN<32>,
+        recipient: Address,
+        email_hash: BytesN<32>,
+    ) {
+        attester.require_auth();
+
+        let trusted: Address = env
+            .storage()
+            .instance()
+            .get(&DataKey::Attester)
+            .expect("attester not set");
+        if attester != trusted {
+            panic!("untrusted attester");
+        }
+
+        env.storage()
+            .persistent()
+            .set(
+                &DataKey::EmailAttestation(link_hash.clone(), recipient.clone(), email_hash.clone()),
+                &true,
+            );
+
+        env.events().publish(
+            (symbol_short!("eml_att"), recipient),
+            (link_hash, email_hash),
+        );
+    }
+
+    /// Whether the trusted attester has vouched for a valid email binding for this
+    /// (link_hash, recipient, email_hash) triple. Used by `claim_link` when
+    /// `policy_type == 1` to verify the email-restricted claim.
+    pub fn is_email_attested(
+        env: Env,
+        link_hash: BytesN<32>,
+        recipient: Address,
+        email_hash: BytesN<32>,
+    ) -> bool {
+        env.storage()
+            .persistent()
+            .get(&DataKey::EmailAttestation(link_hash, recipient, email_hash))
             .unwrap_or(false)
     }
 }

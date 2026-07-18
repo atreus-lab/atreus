@@ -8,6 +8,7 @@ import { connectWallet, claimLinkTx } from '@/lib/stellar';
 import { bytesToHex } from '@/lib/proof';
 import { generateClaimProof, requestAttestation } from '@/lib/zk';
 import { updateLinkStatus, checkLinkOnChain, saveClaimedLink, readLinkInfo } from '@/lib/links';
+import { recordEvent } from '@/lib/analytics';
 import { Loader2, CheckCircle2, XCircle, ArrowLeft, Link2, Mail } from 'lucide-react';
 
 type ClaimStatus =
@@ -113,7 +114,14 @@ const parseLinkInput = () => {
 
   useEffect(() => {
     const hash = window.location.hash.substring(1);
-    if (hash) setSecretHex(hash);
+    if (hash) {
+      setSecretHex(hash);
+      const bytes = new Uint8Array(hash.match(/.{1,2}/g)!.map((b) => parseInt(b, 16)));
+      crypto.subtle.digest('SHA-256', bytes).then((buf) => {
+        const linkHash = Array.from(new Uint8Array(buf)).map(b => b.toString(16).padStart(2, '0')).join('');
+        recordEvent(linkHash, 'view');
+      }).catch(() => {});
+    }
   }, []);
 
   const handleClaim = async () => {
@@ -125,6 +133,11 @@ const parseLinkInput = () => {
       const recipient = await connectWallet();
 
       const secretBytes = new Uint8Array(secretHex.match(/.{1,2}/g)!.map((b) => parseInt(b, 16)));
+
+      const linkHashForAnalytics = Array.from(
+        new Uint8Array(await crypto.subtle.digest('SHA-256', secretBytes))
+      ).map((b) => b.toString(16).padStart(2, '0')).join('');
+      recordEvent(linkHashForAnalytics, 'initiation');
 
       // Quick on-chain check: if the link is already claimed, short-circuit immediately
       // instead of wasting time generating a ZK proof and attesting.
@@ -140,11 +153,21 @@ const parseLinkInput = () => {
       }
 
       setStatus('generating_proof');
-      const { proof, linkHashHex } = await generateClaimProof(secretBytes, recipient);
+      const { proof, linkHashHex, linkHashFieldHex, nullifierFieldHex } = await generateClaimProof(secretBytes, recipient);
 
       setStatus('attesting');
       const proofHex = bytesToHex(proof);
-      await requestAttestation(linkHashHex, secretHex, proofHex, recipient);
+
+      // Compute email hash if this is an email-restricted link
+      let recipientEmailHash: string | undefined;
+      if (intendedEmail) {
+        const emailHashBytes = new Uint8Array(await sha256Hash(intendedEmail));
+        recipientEmailHash = Array.from(emailHashBytes)
+          .map((b) => b.toString(16).padStart(2, '0'))
+          .join('');
+      }
+
+      await requestAttestation(linkHashHex, proofHex, recipient, linkHashFieldHex, nullifierFieldHex, recipientEmailHash);
 
       // Email verification: if the link was created for a specific email, check it matches
       if (intendedEmail) {
@@ -160,8 +183,17 @@ const parseLinkInput = () => {
 
       setStatus('claiming');
       const linkHash = new Uint8Array(await crypto.subtle.digest('SHA-256', secretBytes));
-      const hash = await claimLinkTx(recipient, linkHash, secretBytes);
+
+      // Compute email hash bytes for the contract call if email-restricted
+      let emailHashBytes: Uint8Array | undefined;
+      if (intendedEmail) {
+        emailHashBytes = new Uint8Array(await sha256Hash(intendedEmail));
+      }
+
+      const hash = await claimLinkTx(recipient, linkHash, secretBytes, emailHashBytes);
       setTxHash(hash);
+
+      recordEvent(linkHashHex, 'claim');
 
       setStatus('success');
       localStorage.setItem('atreus_claimed', Date.now().toString());

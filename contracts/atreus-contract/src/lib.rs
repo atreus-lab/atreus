@@ -43,6 +43,10 @@ impl AtreusContract {
     ) {
         sender.require_auth();
 
+        if env.storage().persistent().has(&id) {
+            panic!("link already exists");
+        }
+
         let token_client = token::Client::new(&env, &asset);
         token_client.transfer(&sender, &env.current_contract_address(), &amount);
 
@@ -70,7 +74,7 @@ impl AtreusContract {
         link_hash: BytesN<32>,
         recipient: Address,
         secret: BytesN<32>,
-        recipient_email_hash: BytesN<32>,
+        _recipient_email_hash: BytesN<32>,
     ) {
         recipient.require_auth();
 
@@ -83,15 +87,34 @@ impl AtreusContract {
 
         let mut link_info: LinkInfo = env.storage().persistent().get(&link_hash).expect("Link not found");
 
-        // If policy_type == 1 (email-restricted), verify the claimer's email hash
-        // matches the intended recipient's email hash stored at link creation.
+        // Retrieve verifier early — needed by both the ZK attestation check and the
+        // email-restricted policy check below.
+        let verifier: Address = env.storage().instance().get(&DataKey::VerifierAddress).expect("verifier not set");
+
+        // If policy_type == 1 (email-restricted), verify the claimer's email
+        // through the attestation system, not a plaintext argument. The trusted
+        // attester must have independently verified email ownership and recorded
+        // an EmailAttestation for this (link_hash, recipient, email_hash) triple.
         if link_info.policy_type == 1 {
             if link_info.policy_params.len() != 32 {
                 panic!("invalid policy params length");
             }
-            let recipient_email_bytes = Bytes::from_array(&env, &recipient_email_hash.to_array());
-            if link_info.policy_params != recipient_email_bytes {
-                panic!("recipient email does not match");
+            let mut policy_arr = [0u8; 32];
+            link_info.policy_params.copy_into_slice(&mut policy_arr);
+            let expected_email_hash = BytesN::from_array(&env, &policy_arr);
+            let email_args: soroban_sdk::Vec<Val> = vec![
+                &env,
+                link_hash.into_val(&env),
+                recipient.into_val(&env),
+                expected_email_hash.into_val(&env),
+            ];
+            let email_attested: bool = env.invoke_contract(
+                &verifier,
+                &Symbol::new(&env, "is_email_attested"),
+                email_args,
+            );
+            if !email_attested {
+                panic!("email not attested for this recipient");
             }
         }
 
@@ -99,7 +122,6 @@ impl AtreusContract {
         // releasing funds. The attestation is only recorded by VerifierContract::attest()
         // after a trusted attester has verified a real UltraHonk proof off-chain — see the
         // doc comment on VerifierContract::verify_proof for why this indirection exists.
-        let verifier: Address = env.storage().instance().get(&DataKey::VerifierAddress).expect("verifier not set");
         let args: soroban_sdk::Vec<Val> = vec![
             &env,
             link_hash.into_val(&env),
