@@ -1,6 +1,9 @@
 #![no_std]
 use soroban_sdk::{contract, contractimpl, contracttype, symbol_short, Address, Bytes, BytesN, Env};
 
+const STORAGE_TTL_THRESHOLD: u32 = 535_679;
+const STORAGE_TTL_EXTEND_TO: u32 = 535_679;
+
 #[contracttype]
 pub enum DataKey {
     VerificationKey,
@@ -79,9 +82,13 @@ impl VerifierContract {
             panic!("untrusted attester");
         }
 
+        let attestation_key = DataKey::Attestation(link_hash.clone(), recipient.clone());
         env.storage()
             .persistent()
-            .set(&DataKey::Attestation(link_hash.clone(), recipient.clone()), &true);
+            .set(&attestation_key, &true);
+        env.storage()
+            .persistent()
+            .extend_ttl(&attestation_key, STORAGE_TTL_THRESHOLD, STORAGE_TTL_EXTEND_TO);
 
         env.events().publish(
             (symbol_short!("attested"), recipient),
