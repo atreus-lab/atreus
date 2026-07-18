@@ -58,6 +58,9 @@ linkRoutes.post("/batch", async (req: Request, res: Response) => {
     const origin = process.env.FRONTEND_URL || `${req.protocol}://${req.get("host")}`;
     setImmediate(() => {
       processBatch(batch, async (row, secret) => {
+        // SHA-256(secret_bytes) = on-chain link_id (storage key).
+        // The ZK circuit's Pedersen(secret_field) hash is computed client-side during
+        // the claim flow — it never appears in batch creation. See zk.ts for details.
         const hash = Buffer.from(sha256Hex(secret), "hex");
         logger.info({ correlationId, batchId: batch.id, row: row.row }, "processing batch row");
         return createBatchEscrowTransaction(creator, row, hash);

@@ -27,6 +27,11 @@ impl AtreusContract {
         env.storage().instance().set(&DataKey::VerifierAddress, &verifier);
     }
 
+    /// Create an escrow payment link.
+    ///
+    /// `id` is `sha256(secret_bytes)` — the 32-byte SHA-256 hash of the off-chain
+    /// secret. This serves as the on-chain storage key and is also the value embedded
+    /// in the shareable URL. The raw secret stays off-chain at all times.
     pub fn create_link(
         env: Env,
         id: BytesN<32>,
@@ -64,32 +69,52 @@ impl AtreusContract {
         );
     }
 
+    /// Claim an escrow payment link.
+    ///
+    /// # Hash roles
+    ///
+    /// Two cryptographic hashes are involved in this system, and it is important not
+    /// to confuse them:
+    ///
+    /// - **`link_id`** (`link_hash` parameter here) — `sha256(secret_bytes)`.  This is
+    ///   the on-chain storage key used when the link was created. It is passed in by
+    ///   the caller as the first argument and doubles as the lookup key.
+    ///
+    /// - **ZK circuit `link_hash`** — `pedersen_hash(secret_as_field)`.  This is the
+    ///   public input used inside the Noir circuit to prove knowledge of the secret
+    ///   without revealing it.  Pedersen is a ZK-friendly hash that lives only inside
+    ///   the proof and is verified by the backend attester before the attestation is
+    ///   recorded on-chain.
+    ///
+    /// # Why there is no SHA-256 secret re-check here
+    ///
+    /// The contract does **not** re-hash `secret` and compare it to `link_hash`.
+    /// Requiring the raw secret on-chain would leak it in transaction history,
+    /// defeating the zero-knowledge property.  Instead, proof-of-knowledge is
+    /// established entirely through the ZK attestation:
+    ///
+    /// 1. The client generates an UltraHonk proof that `pedersen_hash(secret) == link_hash_pedersen`.
+    /// 2. The backend attester verifies the proof off-chain and calls `VerifierContract::attest`.
+    /// 3. This function checks `is_attested(link_id, recipient) == true` before releasing funds.
+    ///
+    /// The `link_id` lookup in storage implicitly ties the release to the correct link
+    /// (wrong `link_id` → `Link not found` panic). No additional SHA-256 check is needed.
     pub fn claim_link(
         env: Env,
-        link_hash: BytesN<32>,
+        link_id: BytesN<32>,
         recipient: Address,
-        secret: BytesN<32>,
         _recipient_email_hash: BytesN<32>,
     ) {
         recipient.require_auth();
 
-        // Verify secret: sha256(secret) must equal the stored link_hash.
-        let secret_bytes = Bytes::from_array(&env, &secret.to_array());
-        let computed = env.crypto().sha256(&secret_bytes);
-        if BytesN::from_array(&env, &computed.to_array()) != link_hash {
-            panic!("invalid secret");
-        }
+        let mut link_info: LinkInfo = env.storage().persistent().get(&link_id).expect("Link not found");
 
-        let mut link_info: LinkInfo = env.storage().persistent().get(&link_hash).expect("Link not found");
-
-        // Retrieve verifier early — needed by both the ZK attestation check and the
-        // email-restricted policy check below.
+        // Retrieve the verifier contract — needed for both ZK attestation and email policy checks.
         let verifier: Address = env.storage().instance().get(&DataKey::VerifierAddress).expect("verifier not set");
 
-        // If policy_type == 1 (email-restricted), verify the claimer's email
-        // through the attestation system, not a plaintext argument. The trusted
-        // attester must have independently verified email ownership and recorded
-        // an EmailAttestation for this (link_hash, recipient, email_hash) triple.
+        // If policy_type == 1 (email-restricted), verify the claimer's email through the
+        // attestation system. The trusted attester must have independently verified email
+        // ownership and recorded an EmailAttestation for this (link_id, recipient, email_hash) triple.
         if link_info.policy_type == 1 {
             if link_info.policy_params.len() != 32 {
                 panic!("invalid policy params length");
@@ -99,7 +124,7 @@ impl AtreusContract {
             let expected_email_hash = BytesN::from_array(&env, &policy_arr);
             let email_args: soroban_sdk::Vec<Val> = vec![
                 &env,
-                link_hash.into_val(&env),
+                link_id.into_val(&env),
                 recipient.into_val(&env),
                 expected_email_hash.into_val(&env),
             ];
@@ -113,13 +138,14 @@ impl AtreusContract {
             }
         }
 
-        // Require a real ZK attestation for this exact (link_hash, recipient) pair before
+        // Require a ZK attestation for this exact (link_id, recipient) pair before
         // releasing funds. The attestation is only recorded by VerifierContract::attest()
-        // after a trusted attester has verified a real UltraHonk proof off-chain — see the
-        // doc comment on VerifierContract::verify_proof for why this indirection exists.
+        // after a trusted attester has verified a real UltraHonk proof off-chain (the
+        // Pedersen-based ZK proof inside the Noir circuit). See the doc comment above
+        // for the full explanation of why this is the correct verification gate.
         let args: soroban_sdk::Vec<Val> = vec![
             &env,
-            link_hash.into_val(&env),
+            link_id.into_val(&env),
             recipient.into_val(&env),
         ];
         let attested: bool = env.invoke_contract(&verifier, &Symbol::new(&env, "is_attested"), args);
@@ -135,11 +161,11 @@ impl AtreusContract {
             panic!("link expired");
         }
 
-        // Double-claim prevention via nullifier
-        let link_hash_bytes = Bytes::from_array(&env, &link_hash.to_array());
+        // Double-claim prevention via nullifier derived from link_id
+        let link_id_bytes = Bytes::from_array(&env, &link_id.to_array());
         let nullifier_key = BytesN::from_array(
             &env,
-            &env.crypto().sha256(&link_hash_bytes).to_array(),
+            &env.crypto().sha256(&link_id_bytes).to_array(),
         );
         if env.storage().persistent().has(&nullifier_key) {
             panic!("nullifier already used");
@@ -149,11 +175,11 @@ impl AtreusContract {
         token_client.transfer(&env.current_contract_address(), &recipient, &link_info.amount);
 
         link_info.claimed = true;
-        env.storage().persistent().set(&link_hash, &link_info);
+        env.storage().persistent().set(&link_id, &link_info);
         env.storage().persistent().set(&nullifier_key, &true);
 
         env.events().publish(
-            (symbol_short!("claimed"), link_hash),
+            (symbol_short!("claimed"), link_id),
             (recipient, link_info.amount),
         );
     }

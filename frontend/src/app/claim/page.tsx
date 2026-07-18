@@ -182,7 +182,10 @@ const parseLinkInput = () => {
       }
 
       setStatus('claiming');
-      const linkHash = new Uint8Array(await crypto.subtle.digest('SHA-256', secretBytes));
+      // link_id = sha256(secret_bytes) — the on-chain storage key, never the raw secret.
+      // The raw secret is NOT sent to the contract; proof-of-knowledge comes from the
+      // ZK attestation (Pedersen-based UltraHonk proof) verified by the backend attester.
+      const linkId = new Uint8Array(await crypto.subtle.digest('SHA-256', secretBytes));
 
       // Compute email hash bytes for the contract call if email-restricted
       let emailHashBytes: Uint8Array | undefined;
@@ -190,7 +193,7 @@ const parseLinkInput = () => {
         emailHashBytes = new Uint8Array(await sha256Hash(intendedEmail));
       }
 
-      const hash = await claimLinkTx(recipient, linkHash, secretBytes, emailHashBytes);
+      const hash = await claimLinkTx(recipient, linkId, emailHashBytes);
       setTxHash(hash);
 
       recordEvent(linkHashHex, 'claim');

@@ -2,6 +2,22 @@ import { StrKey } from "@stellar/stellar-sdk";
 import { Barretenberg, UltraHonkBackend } from "@aztec/bb.js";
 import { createHash } from "crypto";
 
+/**
+ * backend/src/lib/zk.ts — Off-chain ZK proof verification for the attestation service.
+ *
+ * ## Dual-hash architecture (issue #68)
+ *
+ * Two different hashes serve two different roles. They must NOT be confused:
+ *
+ * | Hash | Algorithm | Where used | Purpose |
+ * |------|-----------|------------|---------|
+ * | SHA-256(secret_bytes) | SHA-256 | On-chain `link_id` (storage key) | URL → contract mapping. Appears as `:hash` in the attest API route. |
+ * | Pedersen(secret_field) | Pedersen (BN254) | ZK circuit `link_hash` public input | Proves knowledge of secret inside the Noir circuit. This is what `verifyClaimProof` checks. |
+ *
+ * `verifyClaimProof` accepts only the Pedersen-domain values (recipient, link_hash, nullifier)
+ * as public inputs for the UltraHonk verifier. It never sees or needs the raw secret.
+ */
+
 // BN254 (alt_bn128) scalar field order — matches Noir/Barretenberg's Field type.
 export const FR_ORDER =
   21888242871839275222246405745257275088548364400416034343698204186575808495617n;

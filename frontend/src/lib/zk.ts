@@ -5,6 +5,20 @@
  * to a specific Stellar recipient. The proof is verified off-chain by the backend attester,
  * which then submits an on-chain attestation. See contracts/README.md for architecture.
  *
+ * ## Dual-hash architecture (issue #68)
+ *
+ * Two different hashes are used for two different purposes. They are deliberately kept
+ * separate and must NOT be confused with each other:
+ *
+ * | Hash | Algorithm | Where used | Purpose |
+ * |------|-----------|------------|---------|
+ * | `linkHashHex` | SHA-256(secret_bytes) | On-chain storage key (`link_id`) | Links URL to contract storage. Embedded in the shareable URL. Passed as `:hash` in the attest API path. |
+ * | `linkHashFieldHex` | Pedersen(secret_field) | ZK circuit public input (`link_hash`) | Proves knowledge of secret inside the Noir circuit without revealing it. Verified by the backend attester before recording an attestation. |
+ *
+ * The Noir circuit (`circuits/src/policies/secret.nr`) uses ONLY Pedersen hashes.
+ * The contract uses ONLY SHA-256 for the storage key (on-chain; no Pedersen available in Soroban).
+ * The backend ZK verifier (`backend/src/lib/zk.ts`) receives only Pedersen field hashes.
+ *
  * Field encoding matches backend/src/lib/zk.ts — do not change one without the other.
  */
 

@@ -133,10 +133,16 @@ export const createEscrowTx = async (creator: string, amount: string, hash: Uint
   return sendResult.hash;
 };
 
+/// Claim an escrow payment link on-chain.
+///
+/// The raw `secret` is **not** sent to the contract. Proof-of-knowledge is established
+/// entirely through the ZK attestation (Pedersen-based UltraHonk proof verified by the
+/// backend attester). `link_id` is `sha256(secret_bytes)` — the on-chain storage key.
+///
+/// Contract `claim_link` signature: (link_id, recipient, _recipient_email_hash)
 export const claimLinkTx = async (
   recipient: string,
-  linkHash: Uint8Array,
-  secret: Uint8Array,
+  linkId: Uint8Array,        // sha256(secret_bytes) — on-chain storage key
   recipientEmailHash?: Uint8Array,
 ) => {
   const contractId = process.env.NEXT_PUBLIC_CONTRACT_ID;
@@ -154,9 +160,8 @@ export const claimLinkTx = async (
 
   const op = contract.call(
     "claim_link",
-    xdr.ScVal.scvBytes(Buffer.from(linkHash)),
+    xdr.ScVal.scvBytes(Buffer.from(linkId)),
     new Address(recipient).toScVal(),
-    xdr.ScVal.scvBytes(Buffer.from(secret)),
     xdr.ScVal.scvBytes(Buffer.from(recipientEmailHash ?? new Uint8Array(32))),
   );
 
