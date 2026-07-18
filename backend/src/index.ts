@@ -5,6 +5,11 @@ import pino from "pino";
 import { linkRoutes } from "./routes/links.js";
 import { analyticsRoutes } from "./routes/analytics.js";
 
+// Vercel serverless sets HOME to a non-existent path like /home/sbx_user1051.
+// Barretenberg's WASM module writes .bb-crs to $HOME, so we redirect it to
+// the only writable directory on Vercel.
+process.env.HOME = "/tmp";
+
 const logger = pino(
   process.env.VERCEL
     ? { level: "info" }

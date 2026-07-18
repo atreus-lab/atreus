@@ -1,6 +1,8 @@
 import { StrKey } from "@stellar/stellar-sdk";
 import { Barretenberg, UltraHonkBackend } from "@aztec/bb.js";
 import { createHash } from "crypto";
+import { resolve } from "path";
+import { existsSync, writeFileSync, mkdirSync } from "fs";
 
 // BN254 (alt_bn128) scalar field order — matches Noir/Barretenberg's Field type.
 export const FR_ORDER =
@@ -38,6 +40,45 @@ function fieldToProofInput(f: bigint): string {
 }
 
 /**
+ * Resolve the path to the barretenberg WASM file.
+ *
+ * 1. Tries `wasm/barretenberg-threads.wasm.gz` relative to cwd (works in local dev
+ *    after `npm run postinstall`, or on Vercel if postinstall copied it).
+ * 2. If the file doesn't exist locally, downloads from the npm CDN (unpkg) which
+ *    always serves the exact version specified in package.json, and caches it to
+ *    `/tmp/` for the lifetime of the cold start.
+ */
+let cachedWasmPath: string | null = null;
+
+async function getWasmPath(): Promise<string> {
+  if (cachedWasmPath) return cachedWasmPath;
+
+  const localPath = resolve(process.cwd(), "wasm/barretenberg-threads.wasm.gz");
+  if (existsSync(localPath)) {
+    cachedWasmPath = localPath;
+    return localPath;
+  }
+
+  const CDN_URL =
+    "https://unpkg.com/@aztec/bb.js@5.0.0-nightly.20260522/dest/node/barretenberg_wasm/barretenberg-threads.wasm.gz";
+  try {
+    const resp = await fetch(CDN_URL);
+    if (resp.ok) {
+      const buffer = Buffer.from(await resp.arrayBuffer());
+      const tmpPath = "/tmp/barretenberg-threads.wasm.gz";
+      mkdirSync("/tmp", { recursive: true });
+      writeFileSync(tmpPath, buffer);
+      cachedWasmPath = tmpPath;
+      return tmpPath;
+    }
+  } catch {
+  }
+
+  cachedWasmPath = localPath;
+  return localPath;
+}
+
+/**
  * Verifies a real UltraHonk proof against the circuit's public inputs only — recipient,
  * link_hash, and nullifier (all Pedersen field elements supplied by the caller). The
  * backend never sees, and does not need, the private secret: that's the whole point of a
@@ -56,7 +97,8 @@ export async function verifyClaimProof(
 
   // Fresh instance per call (not the shared singleton) — this is destroyed below, and
   // destroying the singleton would break any other request verifying concurrently.
-  const api = await Barretenberg.new({ threads: 1 });
+  const wasmPath = await getWasmPath();
+  const api = await Barretenberg.new({ threads: 1, wasmPath });
   const backend = new UltraHonkBackend(circuitBytecode, api);
   try {
     return await backend.verifyProof({
