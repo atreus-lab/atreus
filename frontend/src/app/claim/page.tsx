@@ -147,7 +147,7 @@ const parseLinkInput = () => {
       }
 
       setStatus('generating_proof');
-      const { proof } = await generateClaimProof(secretBytes, recipient);
+      const { proof, linkHashFieldHex, nullifierFieldHex } = await generateClaimProof(secretBytes, recipient);
 
       setStatus('attesting');
       const proofHex = bytesToHex(proof);
