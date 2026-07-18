@@ -104,15 +104,17 @@ function getFriendlyErrorMessage(err: any): { title: string; description: string
 }
 
 const parseLinkInput = () => {
-    const hash = linkInput.split('#')[1];
+    const hash = linkInput.split('#')[1]?.split(/[,;\s]/)[0];
     if (hash) {
       setSecretHex(hash);
       setLinkInput('');
     }
   };
 
+  const getHashFromUrl = () => window.location.hash.substring(1).split(/[,;\s]/)[0];
+
   useEffect(() => {
-    const hash = window.location.hash.substring(1);
+    const hash = getHashFromUrl();
     if (hash) setSecretHex(hash);
   }, []);
 
