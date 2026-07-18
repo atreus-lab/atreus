@@ -70,7 +70,12 @@ impl AtreusContract {
         recipient: Address,
         secret: BytesN<32>,
         _recipient_email_hash: BytesN<32>,
+        relayer_address: Address,
+        relayer_fee: i128,
     ) {
+        // Soroban authorizes the complete invocation, including relayer_address
+        // and relayer_fee. This makes the recipient's signature an explicit
+        // approval of the exact compensation paid for this gasless claim.
         recipient.require_auth();
 
         // Verify secret: sha256(secret) must equal the stored link_hash.
@@ -145,8 +150,26 @@ impl AtreusContract {
             panic!("nullifier already used");
         }
 
+        // Token transfers accept signed amounts, so reject both negative fees and
+        // fees that would leave the recipient with a negative payout.
+        if relayer_fee < 0 || relayer_fee > link_info.amount {
+            panic!("invalid relayer fee");
+        }
+        let recipient_amount = link_info.amount - relayer_fee;
+
         let token_client = token::Client::new(&env, &link_info.asset);
-        token_client.transfer(&env.current_contract_address(), &recipient, &link_info.amount);
+        if relayer_fee > 0 {
+            token_client.transfer(
+                &env.current_contract_address(),
+                &relayer_address,
+                &relayer_fee,
+            );
+        }
+        token_client.transfer(
+            &env.current_contract_address(),
+            &recipient,
+            &recipient_amount,
+        );
 
         link_info.claimed = true;
         env.storage().persistent().set(&link_hash, &link_info);
@@ -154,7 +177,7 @@ impl AtreusContract {
 
         env.events().publish(
             (symbol_short!("claimed"), link_hash),
-            (recipient, link_info.amount),
+            (recipient, recipient_amount, relayer_address, relayer_fee),
         );
     }
 
