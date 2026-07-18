@@ -3,6 +3,8 @@ import cors from "cors";
 import helmet from "helmet";
 import pino from "pino";
 import { linkRoutes } from "./routes/links.js";
+import { analyticsRoutes } from "./routes/analytics.js";
+import { relayRoutes } from "./routes/relay.js";
 
 const logger = pino(
   process.env.VERCEL
@@ -26,6 +28,8 @@ app.use(cors({ origin: ALLOWED_ORIGINS }));
 app.use(express.json({ limit: "1mb" }));
 
 app.use("/api/links", linkRoutes);
+app.use("/api/analytics", analyticsRoutes);
+app.use("/api/relay", relayRoutes);
 
 app.get("/health", (_req, res) => {
   res.json({ status: "ok", timestamp: new Date().toISOString() });
