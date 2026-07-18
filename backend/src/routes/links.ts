@@ -135,16 +135,37 @@ linkRoutes.get("/:hash", async (req: Request, res: Response) => {
   });
 });
 
+const HEX_64 = /^[0-9a-fA-F]{64}$/;
+const FIELD_HEX = /^(0x)?[0-9a-fA-F]{64}$/;
+
 // POST /api/links/:hash/attest - ZK attestation-oracle endpoint.
-// Verifies a real UltraHonk proof off-chain against public inputs the backend recomputes
-// itself (not client-supplied ones), and if valid, submits a signed on-chain attestation
-// that claim_link requires before releasing funds. See contracts/README.md.
+// Verifies a real UltraHonk proof off-chain against the public inputs the client
+// supplies (recipient, link_hash, nullifier) — never the private secret — and if
+// valid, submits a signed on-chain attestation that claim_link requires before
+// releasing funds. See contracts/README.md.
 linkRoutes.post("/:hash/attest", async (req: Request, res: Response) => {
   const hash = String(req.params.hash);
-  const { recipient, secret, proof, recipient_email_hash } = req.body;
+  const { recipient, proof, link_hash, nullifier, recipient_email_hash } = req.body;
 
-  if (!recipient || !secret || !proof) {
-    res.status(400).json({ error: "Missing recipient, secret, or proof" });
+  if (!recipient || !proof || !link_hash || !nullifier) {
+    res.status(400).json({ error: "Missing recipient, proof, link_hash, or nullifier" });
+    return;
+  }
+
+  if (!HEX_64.test(hash)) {
+    res.status(400).json({ error: "Invalid link hash format" });
+    return;
+  }
+  if (typeof link_hash !== "string" || !FIELD_HEX.test(link_hash)) {
+    res.status(400).json({ error: "Invalid link_hash format" });
+    return;
+  }
+  if (typeof nullifier !== "string" || !FIELD_HEX.test(nullifier)) {
+    res.status(400).json({ error: "Invalid nullifier format" });
+    return;
+  }
+  if (typeof proof !== "string" || !/^[0-9a-fA-F]+$/.test(proof)) {
+    res.status(400).json({ error: "Invalid proof format" });
     return;
   }
 
@@ -154,16 +175,9 @@ linkRoutes.post("/:hash/attest", async (req: Request, res: Response) => {
   }
 
   try {
-    const secretBytes = Uint8Array.from(Buffer.from(secret, "hex"));
     const proofBytes = Uint8Array.from(Buffer.from(proof, "hex"));
 
-    const computedHash = sha256Hex(secretBytes);
-    if (computedHash.toLowerCase() !== hash.toLowerCase()) {
-      res.status(400).json({ error: "secret does not match link_hash" });
-      return;
-    }
-
-    const isValid = await verifyClaimProof(getCircuit().bytecode, proofBytes, secretBytes, recipient);
+    const isValid = await verifyClaimProof(getCircuit().bytecode, proofBytes, recipient, link_hash, nullifier);
     if (!isValid) {
       res.status(400).json({ error: "ZK proof verification failed" });
       return;
