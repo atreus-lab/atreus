@@ -1,6 +1,9 @@
 #![no_std]
 use soroban_sdk::{contract, contractimpl, contracttype, token, vec, Address, Bytes, BytesN, Env, IntoVal, Symbol, Val, symbol_short};
 
+const STORAGE_TTL_THRESHOLD: u32 = 535_679;
+const STORAGE_TTL_EXTEND_TO: u32 = 535_679;
+
 #[contracttype]
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct LinkInfo {
@@ -25,6 +28,7 @@ pub struct AtreusContract;
 impl AtreusContract {
     pub fn __constructor(env: Env, verifier: Address) {
         env.storage().instance().set(&DataKey::VerifierAddress, &verifier);
+        env.storage().instance().extend_ttl(STORAGE_TTL_THRESHOLD, STORAGE_TTL_EXTEND_TO);
     }
 
     pub fn create_link(
@@ -53,6 +57,7 @@ impl AtreusContract {
         };
 
         env.storage().persistent().set(&id, &link_info);
+        env.storage().persistent().extend_ttl(&id, STORAGE_TTL_THRESHOLD, STORAGE_TTL_EXTEND_TO);
 
         env.events().publish(
             (symbol_short!("created"), id),
