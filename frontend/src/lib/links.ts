@@ -13,6 +13,53 @@ export interface StoredLink {
   expiresAt: number;
   claimed: boolean;
   txHash?: string;
+  /** For links claimed by this wallet: the address of the sender who created the link. */
+  counterpartyAddress?: string;
+}
+
+export interface BatchRowResult {
+  row: number;
+  amount: string;
+  email?: string;
+  memo?: string;
+  status: "pending" | "processing" | "success" | "failed";
+  url?: string;
+  txHash?: string;
+  error?: string;
+  attempts?: number;
+}
+
+export interface BatchProgressData {
+  id: string;
+  status: "queued" | "processing" | "completed";
+  totalAmount: string;
+  successCount: number;
+  failureCount: number;
+  rows: BatchRowResult[];
+}
+
+const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL || "http://localhost:3001";
+
+export async function createBatchLinks(csv: string, creator: string): Promise<{ batchId: string }> {
+  const response = await fetch(`${backendUrl}/api/links/batch`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", "X-Correlation-ID": crypto.randomUUID() },
+    body: JSON.stringify({ csv, creator }),
+  });
+  const body = await response.json();
+  if (!response.ok) throw new Error(body.error || "Failed to create batch");
+  return body;
+}
+
+export async function getBatchProgress(batchId: string): Promise<BatchProgressData> {
+  const response = await fetch(`${backendUrl}/api/links/batch/${encodeURIComponent(batchId)}`, { cache: "no-store" });
+  const body = await response.json();
+  if (!response.ok) throw new Error(body.error || "Failed to load batch progress");
+  return body;
+}
+
+export function getBatchResultsUrl(batchId: string): string {
+  return `${backendUrl}/api/links/batch/${encodeURIComponent(batchId)}/results.csv`;
 }
 
 export interface BatchRowResult {
@@ -137,11 +184,12 @@ function extractI128(v: any): bigint | null {
 }
 
 /**
- * Read link info (claimed status + amount) from the contract.
- * Returns { claimed, amount } where amount is in XLM as a string, or null for both if unreadable.
+ * Read link info (claimed status + amount + creator) from the contract.
+ * Returns { claimed, amount, creator } where amount is in XLM as a string and creator is the
+ * sender's address, or null for any field that couldn't be read.
  */
-export async function readLinkInfo(linkHashHex: string): Promise<{ claimed: boolean | null; amount: string | null }> {
-  const result: { claimed: boolean | null; amount: string | null } = { claimed: null, amount: null };
+export async function readLinkInfo(linkHashHex: string): Promise<{ claimed: boolean | null; amount: string | null; creator: string | null }> {
+  const result: { claimed: boolean | null; amount: string | null; creator: string | null } = { claimed: null, amount: null, creator: null };
   const contractId = process.env.NEXT_PUBLIC_CONTRACT_ID;
   if (!contractId || !linkHashHex) return result;
   try {
@@ -169,6 +217,12 @@ export async function readLinkInfo(linkHashHex: string): Promise<{ claimed: bool
                 // Convert stroops to XLM (1 XLM = 10,000,000 stroops)
                 const xlm = Number(i128) / 10_000_000;
                 result.amount = xlm.toFixed(7).replace(/\.?0+$/, '');
+              }
+            } else if (fieldName === 'creator' && v) {
+              try {
+                result.creator = Address.fromScVal(v).toString();
+              } catch {
+                // Not a valid Address ScVal
               }
             }
           }

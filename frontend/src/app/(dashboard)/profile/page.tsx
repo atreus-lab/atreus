@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { loadWallet, getBalances, getTransactions, type StoredWallet } from "@/lib/wallet";
+import { getClaimedLinks } from "@/lib/links";
 import { CheckCircle2, Edit2, ShieldCheck, Lock, Fingerprint, KeyRound, Shield, ChevronRight, Copy, Bell, Palette, Globe, Download, ChevronDown, Trash2 } from "lucide-react";
 import AppHeader from "@/components/AppHeader";
 import SearchDialog from "@/components/SearchDialog";
@@ -57,32 +58,71 @@ export default function ProfilePage() {
       const netLabel = defaultNetwork === 'testnet' ? 'Stellar Testnet' : 'Stellar Mainnet';
       const now = new Date().toLocaleString();
       const counterparties: Record<string, { received: number; sent: number; txs: number; firstSeen: string; lastSeen: string }> = {};
-      let totalReceived = 0, totalSent = 0;
+      const assetTotals: Record<string, { received: number; sent: number }> = {};
       for (const tx of transactions) {
         const counterparty = tx.from === pk ? tx.to : tx.from;
         if (!counterparty || counterparty === pk) continue;
         if (!counterparties[counterparty]) counterparties[counterparty] = { received: 0, sent: 0, txs: 0, firstSeen: tx.created_at, lastSeen: tx.created_at };
         const amount = parseFloat(tx.amount) || 0;
-        if (tx.to === pk) { counterparties[counterparty].received += amount; totalReceived += amount; }
-        else if (tx.from === pk) { counterparties[counterparty].sent += amount; totalSent += amount; }
+        const asset = tx.asset_code || 'XLM';
+        if (!assetTotals[asset]) assetTotals[asset] = { received: 0, sent: 0 };
+        if (tx.to === pk) { counterparties[counterparty].received += amount; assetTotals[asset].received += amount; }
+        else if (tx.from === pk) { counterparties[counterparty].sent += amount; assetTotals[asset].sent += amount; }
         counterparties[counterparty].txs += 1;
         if (tx.created_at < counterparties[counterparty].firstSeen) counterparties[counterparty].firstSeen = tx.created_at;
         if (tx.created_at > counterparties[counterparty].lastSeen) counterparties[counterparty].lastSeen = tx.created_at;
+      }
+      // Include senders of payment links this wallet has claimed — these funds move
+      // via the claim contract, not a Horizon payment, so they're invisible above.
+      const claimedLinks = getClaimedLinks();
+      const claimedLinksCount = claimedLinks.length;
+      let claimedLinksTotal = 0;
+      const claimedLinkCounterparties = new Set<string>();
+      for (const link of claimedLinks) {
+        const amount = parseFloat(link.amount);
+        // readLinkInfo() falls back to a non-numeric placeholder (e.g. "Claimed") when the
+        // on-chain amount can't be read — skip those rather than silently counting them as 0.
+        if (Number.isNaN(amount)) continue;
+        claimedLinksTotal += amount;
+        if (!assetTotals['XLM']) assetTotals['XLM'] = { received: 0, sent: 0 };
+        assetTotals['XLM'].received += amount;
+        const counterparty = link.counterpartyAddress;
+        if (!counterparty || counterparty === pk) continue;
+        claimedLinkCounterparties.add(counterparty);
+        const seenAt = new Date(link.createdAt).toISOString();
+        if (!counterparties[counterparty]) counterparties[counterparty] = { received: 0, sent: 0, txs: 0, firstSeen: seenAt, lastSeen: seenAt };
+        counterparties[counterparty].received += amount;
+        counterparties[counterparty].txs += 1;
+        if (seenAt < counterparties[counterparty].firstSeen) counterparties[counterparty].firstSeen = seenAt;
+        if (seenAt > counterparties[counterparty].lastSeen) counterparties[counterparty].lastSeen = seenAt;
       }
       const sep = '═'.repeat(72);
       let report = `\n${sep}\n  ATREUS ACCOUNT REPORT\n${sep}\n\nGenerated: ${now}\nNetwork:   ${netLabel}\n\n── Account ──────────────────────────────────────────────────────\n  Public Key:  ${pk}\n  Email:       ${storedWallet.email || 'N/A'}\n  Explorer:    https://stellar.expert/explorer/${defaultNetwork === 'testnet' ? 'testnet' : 'public'}/account/${pk}\n`;
       const xlmBal = balances?.find((b: any) => b.asset_type === 'native')?.balance || '0';
       report += `── Summary ──────────────────────────────────────────────────────\n  Total XLM Balance:  ${parseFloat(xlmBal).toLocaleString()}\n  Total Transactions: ${transactions.length}\n  Total Counterparties: ${Object.keys(counterparties).length}\n`;
-      if (totalReceived > 0 || totalSent > 0) report += `  Total Received:     ${totalReceived.toFixed(2)} XLM\n  Total Sent:         ${totalSent.toFixed(2)} XLM\n`;
+      const assetEntries = Object.entries(assetTotals).filter(([, v]) => v.received > 0 || v.sent > 0);
+      if (assetEntries.length > 0) {
+        const receivedList = assetEntries.filter(([, v]) => v.received > 0).map(([asset, v]) => `${v.received.toFixed(2)} ${asset}`).join(', ');
+        const sentList = assetEntries.filter(([, v]) => v.sent > 0).map(([asset, v]) => `${v.sent.toFixed(2)} ${asset}`).join(', ');
+        if (receivedList) report += `  Total Received:     ${receivedList}\n`;
+        if (sentList) report += `  Total Sent:         ${sentList}\n`;
+      }
       report += `\n── Balances ────────────────────────────────────────────────────\n`;
       if (balances && balances.length > 0) { for (const b of balances) { const assetName = b.asset_type === 'native' ? 'XLM' : (b.asset_code || b.asset_type); const amt = parseFloat(b.balance).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 7 }); report += `  ${assetName.padEnd(10)} ${amt}\n`; } }
       else { report += `  No balances found.\n`; }
+      report += `\n── Claimed Payment Links ───────────────────────────────────────\n`;
+      if (claimedLinksCount > 0) {
+        report += `  Links Claimed:       ${claimedLinksCount}\n  Total Claimed:       ${claimedLinksTotal.toFixed(4)} XLM\n  Counterparties:      ${claimedLinkCounterparties.size}\n`;
+        for (const addr of claimedLinkCounterparties) { report += `    ${addr}\n`; }
+      } else {
+        report += `  No claimed payment links.\n`;
+      }
       report += `\n── Activity by Counterparty ────────────────────────────────────\n`;
       const sorted = Object.entries(counterparties).sort((a, b) => b[1].txs - a[1].txs);
-      if (sorted.length > 0) { for (const [addr, info] of sorted) { const shortAddr = `${addr.slice(0, 8)}...${addr.slice(-6)}`; report += `  ${shortAddr.padEnd(40)} ${info.received.toFixed(2).padEnd(12)} ${info.sent.toFixed(2).padEnd(12)} ${String(info.txs).padEnd(6)}  ${new Date(info.lastSeen).toLocaleDateString()}\n`; } }
+      if (sorted.length > 0) { for (const [addr, info] of sorted) { report += `  ${addr}\n    Received: ${info.received.toFixed(2).padEnd(12)} Sent: ${info.sent.toFixed(2).padEnd(12)} Txs: ${String(info.txs).padEnd(6)} Last: ${new Date(info.lastSeen).toLocaleDateString()}\n`; } }
       else { report += `  No transactions yet.\n`; }
       report += `\n── Transaction History ────────────────────────────────────────\n`;
-      if (transactions.length > 0) { for (const tx of transactions) { const date = new Date(tx.created_at).toLocaleDateString(); const amount = (parseFloat(tx.amount) || 0).toFixed(4); const asset = tx.asset_code || 'XLM'; const counterparty = tx.from === pk ? tx.to : tx.from; const cs = counterparty ? `${counterparty.slice(0, 8)}...${counterparty.slice(-6)}` : '(unknown)'; const dir = tx.to === pk ? '← Received from' : '→ Sent to'; report += `  ${date.padEnd(14)} ${(tx.type || 'payment').padEnd(16)} ${amount.padEnd(16)} ${asset.padEnd(10)}  ${dir} ${cs}\n`; } }
+      if (transactions.length > 0) { for (const tx of transactions) { const date = new Date(tx.created_at).toLocaleDateString(); const amount = (parseFloat(tx.amount) || 0).toFixed(4); const asset = tx.asset_code || 'XLM'; const counterparty = tx.from === pk ? tx.to : tx.from; const cs = counterparty || '(unknown)'; const dir = tx.to === pk ? '← Received from' : '→ Sent to'; report += `  ${date.padEnd(14)} ${(tx.type || 'payment').padEnd(16)} ${amount.padEnd(16)} ${asset.padEnd(10)}  ${dir} ${cs}\n`; } }
       else { report += `  No transactions found.\n`; }
       report += `\n${sep}\n  End of report\n${sep}\n`;
       const blob = new Blob([report], { type: 'text/plain;charset=utf-8' });
