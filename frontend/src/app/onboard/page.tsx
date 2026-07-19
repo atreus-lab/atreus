@@ -8,6 +8,8 @@ import { Loader2, ExternalLink, Trash2, Eye, EyeOff, LogIn, Copy, Check, ArrowRi
 import Image from "next/image";
 import logo from "../../media/ateruslogo.jpeg";
 import Link from "next/link";
+import { useWallet } from "@/components/providers";
+import WalletSelector from "@/components/WalletSelector";
 
 type WalletView = "login" | "restore" | "secure" | "ready";
 
@@ -33,10 +35,17 @@ export default function WalletPage() {
   const [mnemonicCopied, setMnemonicCopied] = useState(false);
   const [addressCopied, setAddressCopied] = useState(false);
 
+  const { activeWalletType, publicKey } = useWallet();
+
+  useEffect(() => {
+    if (publicKey && activeWalletType !== "local") {
+      router.push("/dashboard");
+    }
+  }, [publicKey, activeWalletType, router]);
+
   useEffect(() => {
     const existing = loadWallet();
     if (existing) {
-      // Already has a wallet ΓÇö show wallet info
       setWallet(existing);
       setView("ready");
       getBalance(existing.publicKey).then(b => setBalance(b));
@@ -438,9 +447,19 @@ export default function WalletPage() {
                 }
               </button>
 
-              <div className="flex items-center gap-2 mt-6 ml-3">
+              <div className="flex items-center gap-2 mt-6 ml-3 mb-6">
                 <Lock className="w-4 h-4 text-slate-400" />
                 <span className="text-[13px] font-bold text-slate-500 tracking-wide">Secure. Private. Self-custodial.</span>
+              </div>
+
+              <div className="w-full max-w-[420px] mb-6 flex items-center justify-center gap-4 text-[11px] font-extrabold text-slate-400 tracking-wider">
+                <div className="flex-1 h-[1px] bg-slate-200" />
+                OR CONNECT EXISTING WALLET
+                <div className="flex-1 h-[1px] bg-slate-200" />
+              </div>
+
+              <div className="w-full max-w-[420px] bg-white rounded-[2rem] border border-slate-100 p-6 shadow-[0_8px_30px_rgba(0,0,0,0.02)]">
+                <WalletSelector />
               </div>
 
               {error && <p className="text-red-600 mt-4 font-bold text-sm ml-2 bg-red-50 border border-red-100 px-4 py-2.5 rounded-xl shadow-sm">{error}</p>}
