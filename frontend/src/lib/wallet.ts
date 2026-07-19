@@ -1,16 +1,62 @@
 import { Keypair, TransactionBuilder, Networks, BASE_FEE, Operation, Asset, Horizon } from "@stellar/stellar-sdk";
 import * as bip39 from "bip39";
+import { WalletProvider, WalletType } from "./walletTypes";
+import { LocalWalletProvider } from "./wallets/local";
+import { FreighterWalletProvider } from "./wallets/freighter";
+import { XBullWalletProvider } from "./wallets/xbull";
+import { LobstrWalletProvider } from "./wallets/lobstr";
 
 const STORAGE_KEY = "atreus_wallet";
 const HORIZON_URL = "https://horizon-testnet.stellar.org";
 const server = new Horizon.Server(HORIZON_URL);
 const networkPassphrase = Networks.TESTNET;
 
+export type { WalletProvider, WalletType };
+
 export interface StoredWallet {
   publicKey: string;
   secretKey: string;
   mnemonic: string;
   email?: string;
+}
+
+export function getActiveWalletType(): WalletType {
+  if (typeof window === "undefined") return "local";
+  return (localStorage.getItem("atreus_active_wallet") as WalletType) || "local";
+}
+
+export function setActiveWalletType(type: WalletType) {
+  if (typeof window !== "undefined") {
+    localStorage.setItem("atreus_active_wallet", type);
+  }
+}
+
+export function getActiveWalletProvider(): WalletProvider {
+  const type = getActiveWalletType();
+  switch (type) {
+    case "freighter":
+      return new FreighterWalletProvider();
+    case "xbull":
+      return new XBullWalletProvider();
+    case "lobstr":
+      return new LobstrWalletProvider();
+    case "local":
+    default:
+      return new LocalWalletProvider();
+  }
+}
+
+export async function getActivePublicKey(): Promise<string> {
+  const type = getActiveWalletType();
+  if (type === "local") {
+    const wallet = loadWallet();
+    if (!wallet) throw new Error("No wallet found. Create one first.");
+    return wallet.publicKey;
+  }
+  const stored = typeof window !== "undefined" ? localStorage.getItem("atreus_wallet_public_key") : null;
+  if (stored) return stored;
+  const provider = getActiveWalletProvider();
+  return await provider.getPublicKey();
 }
 
 export function loadWallet(): StoredWallet | null {
@@ -96,7 +142,6 @@ export async function getTransactions(address: string, limit = 10): Promise<any[
     .filter((p: any) => p.type === "payment" || p.type === "path_payment" || p.type === "create_account")
     .map(p => {
       const rec = p as any;
-      // create_account uses funder/account/starting_balance instead of from/to/amount
       const isCreate = rec.type === "create_account";
       return {
         id: rec.transaction_hash,
@@ -112,8 +157,7 @@ export async function getTransactions(address: string, limit = 10): Promise<any[
 }
 
 export async function sendXLM(destination: string, amount: string): Promise<string> {
-  const kp = getKeypair();
-  const source = kp.publicKey();
+  const source = await getActivePublicKey();
   const account = await server.loadAccount(source);
 
   const tx = new TransactionBuilder(account, {
@@ -128,14 +172,15 @@ export async function sendXLM(destination: string, amount: string): Promise<stri
     .setTimeout(30)
     .build();
 
-  tx.sign(kp);
-  const result = await server.submitTransaction(tx);
+  const provider = getActiveWalletProvider();
+  const signedXdr = await provider.signTransaction(tx.toXDR());
+  const signedTx = TransactionBuilder.fromXDR(signedXdr, networkPassphrase);
+  const result = await server.submitTransaction(signedTx);
   return result.hash;
 }
 
 export async function addTrustline(assetCode: string, assetIssuer: string): Promise<string> {
-  const kp = getKeypair();
-  const source = kp.publicKey();
+  const source = await getActivePublicKey();
   const account = await server.loadAccount(source);
 
   const tx = new TransactionBuilder(account, {
@@ -148,8 +193,10 @@ export async function addTrustline(assetCode: string, assetIssuer: string): Prom
     .setTimeout(30)
     .build();
 
-  tx.sign(kp);
-  const result = await server.submitTransaction(tx);
+  const provider = getActiveWalletProvider();
+  const signedXdr = await provider.signTransaction(tx.toXDR());
+  const signedTx = TransactionBuilder.fromXDR(signedXdr, networkPassphrase);
+  const result = await server.submitTransaction(signedTx);
   return result.hash;
 }
 
@@ -187,16 +234,13 @@ export async function swapTokens(
   destIssuer: string,
   amount: string
 ): Promise<string> {
-  const kp = getKeypair();
-  const source = kp.publicKey();
-
+  const source = await getActivePublicKey();
   const sourceAsset = buildAsset(sourceCode, sourceIssuer);
   const destAsset = buildAsset(destCode, destIssuer);
 
-  // Single loadAccount — reused for trustline check and tx building
   let account = await server.loadAccount(source);
+  const provider = getActiveWalletProvider();
 
-  // Add dest trustline if needed (issued asset and not already trusted)
   if (destCode !== "XLM") {
     const hasTrust = account.balances.some(
       (b: any) => b.asset_code === destCode && b.asset_issuer === destIssuer
@@ -210,16 +254,14 @@ export async function swapTokens(
         .setTimeout(30)
         .build();
 
-      trustTx.sign(kp);
-      await server.submitTransaction(trustTx);
-      // Reload after trustline (seq number changed)
+      const signedTrustXdr = await provider.signTransaction(trustTx.toXDR());
+      const signedTrustTx = TransactionBuilder.fromXDR(signedTrustXdr, networkPassphrase);
+      await server.submitTransaction(signedTrustTx);
       account = await server.loadAccount(source);
     }
   }
 
   const destMin = (parseFloat(amount) * 0.01).toFixed(7);
-
-  // Strategies: direct pair first, then via XLM intermediary
   const strategies: Array<{ path: Asset[]; label: string }> = [
     { path: [], label: "direct pair" },
   ];
@@ -249,8 +291,9 @@ export async function swapTokens(
         .setTimeout(30)
         .build();
 
-      tx.sign(kp);
-      const result = await server.submitTransaction(tx);
+      const signedXdr = await provider.signTransaction(tx.toXDR());
+      const signedTx = TransactionBuilder.fromXDR(signedXdr, networkPassphrase);
+      const result = await server.submitTransaction(signedTx);
       return result.hash;
     } catch (err: any) {
       const msg = err?.response?.data?.extras?.result_codes

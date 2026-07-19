@@ -10,6 +10,8 @@
   },
   "dependencies": {
     "@aztec/bb.js": "5.0.0-nightly.20260522",
+    "@creit.tech/xbull-wallet-connect": "^0.4.0",
+    "@lobstrco/signer-extension-api": "^2.0.0",
     "@noir-lang/acvm_js": "1.0.0-beta.22",
     "@noir-lang/barretenberg": "^2.19.0",
     "@noir-lang/noir_js": "1.0.0-beta.22",
@@ -20,6 +22,7 @@
     "@react-three/fiber": "^9.0.0",
     "@stellar/freighter-api": "^6.0.1",
     "@stellar/stellar-sdk": "^16.0.1",
+    "@walletconnect/modal": "^2.7.0",
     "bip39": "^3.1.0",
     "buffer": "^6.0.3",
     "clsx": "^2.1.1",

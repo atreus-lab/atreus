@@ -1,5 +1,5 @@
-import { Horizon, Networks, TransactionBuilder, Asset, Contract, Address, nativeToScVal, xdr, rpc, Keypair, BASE_FEE, Operation } from "@stellar/stellar-sdk";
-import { getKeypair, loadWallet } from "./wallet";
+import { Horizon, Networks, TransactionBuilder, Asset, Contract, Address, nativeToScVal, xdr, rpc, BASE_FEE, Operation } from "@stellar/stellar-sdk";
+import { getActiveWalletProvider, getActivePublicKey } from "./wallet";
 
 export const HORIZON_URL = "https://horizon-testnet.stellar.org";
 export const SOROBAN_RPC_URL = "https://soroban-testnet.stellar.org";
@@ -29,9 +29,7 @@ export interface Transaction {
 }
 
 export const connectWallet = async (): Promise<string> => {
-  const wallet = loadWallet();
-  if (!wallet) throw new Error("No wallet found. Create one on the wallet page.");
-  return wallet.publicKey;
+  return await getActivePublicKey();
 };
 
 export const xlmToStroops = (amount: string): bigint => {
@@ -65,7 +63,6 @@ export const createEscrowTx = async (creator: string, amount: string, hash: Uint
   const tokenId = process.env.NEXT_PUBLIC_TOKEN_ID;
   if (!tokenId) throw new Error("NEXT_PUBLIC_TOKEN_ID is not configured");
 
-  // Balance check — friendly error if insufficient funds
   const balance = await getNativeBalance(creator);
   const amountNum = parseFloat(amount);
   const estimatedFee = 0.01; // 100,000 stroops
@@ -115,12 +112,13 @@ export const createEscrowTx = async (creator: string, amount: string, hash: Uint
     throw new Error(`Failed to simulate transaction: ${err?.message || err}`);
   }
 
-  const kp = getKeypair();
-  tx.sign(kp);
+  const provider = getActiveWalletProvider();
+  const signedXdr = await provider.signTransaction(tx.toXDR());
+  const signedTx = TransactionBuilder.fromXDR(signedXdr, networkPassphrase);
 
   let sendResult;
   try {
-    sendResult = await rpcServer.sendTransaction(tx as any);
+    sendResult = await rpcServer.sendTransaction(signedTx as any);
   } catch (err: any) {
     throw new Error(`Could not reach the Stellar network: ${err?.message || err}`);
   }
@@ -141,7 +139,6 @@ export const claimLinkTx = async (
   const contractId = process.env.NEXT_PUBLIC_CONTRACT_ID;
   if (!contractId) throw new Error("NEXT_PUBLIC_CONTRACT_ID is not configured");
 
-  // Check recipient is funded on testnet — clear error instead of opaque RPC failure
   let account;
   try {
     account = await rpcServer.getAccount(recipient);
@@ -163,20 +160,17 @@ export const claimLinkTx = async (
 
   tx = await rpcServer.prepareTransaction(tx) as any;
 
-  const kp = getKeypair();
-  tx.sign(kp);
+  const provider = getActiveWalletProvider();
+  const signedXdr = await provider.signTransaction(tx.toXDR());
+  const signedTx = TransactionBuilder.fromXDR(signedXdr, networkPassphrase);
 
-  const sendResult = await rpcServer.sendTransaction(tx as any);
+  const sendResult = await rpcServer.sendTransaction(signedTx as any);
 
   if (sendResult.status === "ERROR") {
     throw new Error(`Tx submission failed: ${(sendResult as any).errorResultXdr || (sendResult as any).errorResult}`);
   }
   return sendResult.hash;
 };
-
-// submitProofTx removed — replaced by the attestation-oracle pattern.
-// Real ZK proofs are now verified off-chain by the backend attester, which submits
-// a signed attestation to the VerifierContract. See frontend/src/lib/zk.ts.
 
 export const getAccountBalances = async (address: string): Promise<Balance[]> => {
   const account = await server.loadAccount(address);
@@ -211,10 +205,11 @@ export const sendXLM = async (sender: string, destination: string, amount: strin
 
   tx = await rpcServer.prepareTransaction(tx) as any;
 
-  const kp = getKeypair();
-  tx.sign(kp);
+  const provider = getActiveWalletProvider();
+  const signedXdr = await provider.signTransaction(tx.toXDR());
+  const signedTx = TransactionBuilder.fromXDR(signedXdr, networkPassphrase);
 
-  const result = await rpcServer.sendTransaction(tx as any);
+  const result = await rpcServer.sendTransaction(signedTx as any);
   if (result.status === "ERROR") throw new Error("Transaction failed");
   return result.hash;
 };
@@ -258,10 +253,11 @@ export const swapXLM = async (sender: string, destAsset: Asset, destAmount: stri
 
   tx = await rpcServer.prepareTransaction(tx) as any;
 
-  const kp = getKeypair();
-  tx.sign(kp);
+  const provider = getActiveWalletProvider();
+  const signedXdr = await provider.signTransaction(tx.toXDR());
+  const signedTx = TransactionBuilder.fromXDR(signedXdr, networkPassphrase);
 
-  const result = await rpcServer.sendTransaction(tx as any);
+  const result = await rpcServer.sendTransaction(signedTx as any);
   if (result.status === "ERROR") throw new Error("Swap failed");
   return result.hash;
 };
