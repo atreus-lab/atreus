@@ -1,12 +1,8 @@
-import { isConnected, getAddress, signTransaction } from "@stellar/freighter-api";
+import { getAddress, signTransaction } from "@stellar/freighter-api";
 import { WalletProvider } from "../walletTypes";
 
 export class FreighterWalletProvider implements WalletProvider {
   async connect(): Promise<string> {
-    const status = await isConnected();
-    if (!status.isConnected) {
-      throw new Error("Freighter wallet is not connected or installed.");
-    }
     const res = await getAddress();
     if (res.error) {
       throw new Error(res.error);
