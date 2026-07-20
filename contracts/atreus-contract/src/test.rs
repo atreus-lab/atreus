@@ -2,8 +2,10 @@
 
 use super::*;
 use soroban_sdk::{
-    contract, contractimpl, testutils::Address as _, testutils::Ledger,
-    token::StellarAssetClient, Address, Bytes, BytesN, Env, Symbol,
+    contract, contractimpl,
+    testutils::{Address as _, Ledger, MockAuth, MockAuthInvoke},
+    token::{Client as TokenClient, StellarAssetClient},
+    Address, Bytes, BytesN, Env, IntoVal, Symbol,
 };
 
 // Minimal mock verifier that always returns true for is_attested
@@ -101,6 +103,132 @@ fn test_create_and_claim() {
     let recipient = Address::generate(&env);
     let (relayer, fee) = no_relayer(&env);
     client.claim_link(&link_hash, &recipient, &secret, &empty_email_hash(&env), &relayer, &fee);
+}
+
+#[test]
+fn test_claim_pays_fee_bound_relayer_and_remainder_to_recipient() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let (client, sender, token) = setup_test(&env);
+    let (secret, link_hash) = make_secret(&env, 2);
+    let amount = 1000i128;
+    let relayer_fee = 125i128;
+    let expiry = env.ledger().timestamp() + 1000;
+    let policy_params = Bytes::new(&env);
+    client.create_link(&link_hash, &0u32, &policy_params, &amount, &token, &expiry, &sender);
+
+    let recipient = Address::generate(&env);
+    let relayer = Address::generate(&env);
+    let recipient_email_hash = empty_email_hash(&env);
+
+    client
+        .mock_auths(&[MockAuth {
+            address: &recipient,
+            invoke: &MockAuthInvoke {
+                contract: &client.address,
+                fn_name: "claim_link",
+                args: (
+                    link_hash.clone(),
+                    recipient.clone(),
+                    secret.clone(),
+                    recipient_email_hash.clone(),
+                    relayer.clone(),
+                    relayer_fee,
+                )
+                    .into_val(&env),
+                sub_invokes: &[],
+            },
+        }])
+        .claim_link(
+            &link_hash,
+            &recipient,
+            &secret,
+            &recipient_email_hash,
+            &relayer,
+            &relayer_fee,
+        );
+
+    let token_client = TokenClient::new(&env, &token);
+    assert_eq!(token_client.balance(&recipient), amount - relayer_fee);
+    assert_eq!(token_client.balance(&relayer), relayer_fee);
+}
+
+#[test]
+fn test_claim_rejects_tampered_fee_not_covered_by_user_authorization() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let (client, sender, token) = setup_test(&env);
+    let (secret, link_hash) = make_secret(&env, 4);
+    let amount = 1000i128;
+    let signed_fee = 125i128;
+    let tampered_fee = 126i128;
+    let expiry = env.ledger().timestamp() + 1000;
+    let policy_params = Bytes::new(&env);
+    client.create_link(&link_hash, &0u32, &policy_params, &amount, &token, &expiry, &sender);
+
+    let recipient = Address::generate(&env);
+    let relayer = Address::generate(&env);
+    let recipient_email_hash = empty_email_hash(&env);
+
+    assert!(client
+        .mock_auths(&[MockAuth {
+            address: &recipient,
+            invoke: &MockAuthInvoke {
+                contract: &client.address,
+                fn_name: "claim_link",
+                args: (
+                    link_hash.clone(),
+                    recipient.clone(),
+                    secret.clone(),
+                    recipient_email_hash.clone(),
+                    relayer.clone(),
+                    signed_fee,
+                )
+                    .into_val(&env),
+                sub_invokes: &[],
+            },
+        }])
+        .try_claim_link(
+            &link_hash,
+            &recipient,
+            &secret,
+            &recipient_email_hash,
+            &relayer,
+            &tampered_fee,
+        )
+        .is_err());
+
+    let token_client = TokenClient::new(&env, &token);
+    assert_eq!(token_client.balance(&recipient), 0);
+    assert_eq!(token_client.balance(&relayer), 0);
+}
+
+#[test]
+fn test_claim_rejects_fee_greater_than_amount() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let (client, sender, token) = setup_test(&env);
+    let (secret, link_hash) = make_secret(&env, 3);
+    let amount = 1000i128;
+    let expiry = env.ledger().timestamp() + 1000;
+    let policy_params = Bytes::new(&env);
+    client.create_link(&link_hash, &0u32, &policy_params, &amount, &token, &expiry, &sender);
+
+    let recipient = Address::generate(&env);
+    let relayer = Address::generate(&env);
+    assert!(client
+        .try_claim_link(
+            &link_hash,
+            &recipient,
+            &secret,
+            &empty_email_hash(&env),
+            &relayer,
+            &(amount + 1),
+        )
+        .is_err());
 }
 
 #[test]
