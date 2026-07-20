@@ -135,6 +135,9 @@ export const claimLinkTx = async (
   recipient: string,
   linkHash: Uint8Array,
   secret: Uint8Array,
+  emailHash?: Uint8Array,
+  relayerAddress?: string,
+  relayerFee?: string,
 ) => {
   const contractId = process.env.NEXT_PUBLIC_CONTRACT_ID;
   if (!contractId) throw new Error("NEXT_PUBLIC_CONTRACT_ID is not configured");
@@ -153,6 +156,9 @@ export const claimLinkTx = async (
     xdr.ScVal.scvBytes(Buffer.from(linkHash)),
     new Address(recipient).toScVal(),
     xdr.ScVal.scvBytes(Buffer.from(secret)),
+    xdr.ScVal.scvBytes(Buffer.from(emailHash ?? new Uint8Array(32))),
+    new Address(relayerAddress ?? recipient).toScVal(),
+    nativeToScVal(BigInt(relayerFee ?? '0'), { type: 'i128' }),
   );
 
   let tx = new TransactionBuilder(account, { fee: "100000", networkPassphrase })
