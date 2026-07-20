@@ -1,5 +1,9 @@
 #![no_std]
-use soroban_sdk::{contract, contractimpl, contracttype, token, vec, Address, Bytes, BytesN, Env, IntoVal, Symbol, Val, symbol_short};
+#![allow(clippy::too_many_arguments)]
+use soroban_sdk::{
+    contract, contractimpl, contracttype, symbol_short, token, vec, Address, Bytes, BytesN, Env,
+    IntoVal, Symbol, Val,
+};
 
 const STORAGE_TTL_THRESHOLD: u32 = 535_679;
 const STORAGE_TTL_EXTEND_TO: u32 = 535_679;
@@ -27,8 +31,12 @@ pub struct AtreusContract;
 #[contractimpl]
 impl AtreusContract {
     pub fn __constructor(env: Env, verifier: Address) {
-        env.storage().instance().set(&DataKey::VerifierAddress, &verifier);
-        env.storage().instance().extend_ttl(STORAGE_TTL_THRESHOLD, STORAGE_TTL_EXTEND_TO);
+        env.storage()
+            .instance()
+            .set(&DataKey::VerifierAddress, &verifier);
+        env.storage()
+            .instance()
+            .extend_ttl(STORAGE_TTL_THRESHOLD, STORAGE_TTL_EXTEND_TO);
     }
 
     pub fn create_link(
@@ -61,12 +69,12 @@ impl AtreusContract {
         };
 
         env.storage().persistent().set(&id, &link_info);
-        env.storage().persistent().extend_ttl(&id, STORAGE_TTL_THRESHOLD, STORAGE_TTL_EXTEND_TO);
+        env.storage()
+            .persistent()
+            .extend_ttl(&id, STORAGE_TTL_THRESHOLD, STORAGE_TTL_EXTEND_TO);
 
-        env.events().publish(
-            (symbol_short!("created"), id),
-            (sender, amount, asset),
-        );
+        env.events()
+            .publish((symbol_short!("created"), id), (sender, amount, asset));
     }
 
     pub fn claim_link(
@@ -90,7 +98,11 @@ impl AtreusContract {
             panic!("invalid secret");
         }
 
-        let mut link_info: LinkInfo = env.storage().persistent().get(&link_hash).expect("Link not found");
+        let mut link_info: LinkInfo = env
+            .storage()
+            .persistent()
+            .get(&link_hash)
+            .expect("Link not found");
 
         // If policy_type == 1 (email-restricted), verify the claimer's email hash
         // matches the intended recipient's email hash stored at link creation.
@@ -108,13 +120,15 @@ impl AtreusContract {
         // releasing funds. The attestation is only recorded by VerifierContract::attest()
         // after a trusted attester has verified a real UltraHonk proof off-chain — see the
         // doc comment on VerifierContract::verify_proof for why this indirection exists.
-        let verifier: Address = env.storage().instance().get(&DataKey::VerifierAddress).expect("verifier not set");
-        let args: soroban_sdk::Vec<Val> = vec![
-            &env,
-            link_hash.into_val(&env),
-            recipient.into_val(&env),
-        ];
-        let attested: bool = env.invoke_contract(&verifier, &Symbol::new(&env, "is_attested"), args);
+        let verifier: Address = env
+            .storage()
+            .instance()
+            .get(&DataKey::VerifierAddress)
+            .expect("verifier not set");
+        let args: soroban_sdk::Vec<Val> =
+            vec![&env, link_hash.into_val(&env), recipient.into_val(&env)];
+        let attested: bool =
+            env.invoke_contract(&verifier, &Symbol::new(&env, "is_attested"), args);
         if !attested {
             panic!("no valid ZK attestation for this claim");
         }
@@ -129,10 +143,8 @@ impl AtreusContract {
 
         // Double-claim prevention via nullifier
         let link_hash_bytes = Bytes::from_array(&env, &link_hash.to_array());
-        let nullifier_key = BytesN::from_array(
-            &env,
-            &env.crypto().sha256(&link_hash_bytes).to_array(),
-        );
+        let nullifier_key =
+            BytesN::from_array(&env, &env.crypto().sha256(&link_hash_bytes).to_array());
         if env.storage().persistent().has(&nullifier_key) {
             panic!("nullifier already used");
         }
@@ -169,7 +181,11 @@ impl AtreusContract {
     }
 
     pub fn refund_link(env: Env, link_hash: BytesN<32>) {
-        let link_info: LinkInfo = env.storage().persistent().get(&link_hash).expect("Link not found");
+        let link_info: LinkInfo = env
+            .storage()
+            .persistent()
+            .get(&link_hash)
+            .expect("Link not found");
 
         link_info.creator.require_auth();
 
@@ -182,7 +198,11 @@ impl AtreusContract {
         }
 
         let token_client = token::Client::new(&env, &link_info.asset);
-        token_client.transfer(&env.current_contract_address(), &link_info.creator, &link_info.amount);
+        token_client.transfer(
+            &env.current_contract_address(),
+            &link_info.creator,
+            &link_info.amount,
+        );
 
         env.storage().persistent().remove(&link_hash);
 

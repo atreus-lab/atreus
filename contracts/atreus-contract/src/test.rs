@@ -15,7 +15,9 @@ pub struct MockVerifier;
 #[contractimpl]
 impl MockVerifier {
     pub fn __constructor(env: Env, _vk: Bytes, _attester: Address) {
-        env.storage().instance().set(&Symbol::new(&env, "init"), &true);
+        env.storage()
+            .instance()
+            .set(&Symbol::new(&env, "init"), &true);
     }
 
     pub fn is_attested(_env: Env, _link_hash: BytesN<32>, _recipient: Address) -> bool {
@@ -73,7 +75,15 @@ fn test_email_restricted_claim() {
     let policy_params = Bytes::from_array(&env, &intended_hash.to_array());
 
     // Create link with email restriction (policy_type=1)
-    client.create_link(&link_hash, &1u32, &policy_params, &amount, &token, &expiry, &sender);
+    client.create_link(
+        &link_hash,
+        &1u32,
+        &policy_params,
+        &amount,
+        &token,
+        &expiry,
+        &sender,
+    );
 
     let recipient = Address::generate(&env);
 
@@ -81,10 +91,19 @@ fn test_email_restricted_claim() {
 
     // Try claiming with wrong email hash — should fail
     let wrong_hash = email_hash(&env, "bob@example.com");
-    assert!(client.try_claim_link(&link_hash, &recipient, &secret, &wrong_hash, &relayer, &fee).is_err());
+    assert!(client
+        .try_claim_link(&link_hash, &recipient, &secret, &wrong_hash, &relayer, &fee)
+        .is_err());
 
     // Claim with correct email hash — should succeed
-    client.claim_link(&link_hash, &recipient, &secret, &intended_hash, &relayer, &fee);
+    client.claim_link(
+        &link_hash,
+        &recipient,
+        &secret,
+        &intended_hash,
+        &relayer,
+        &fee,
+    );
 }
 
 #[test]
@@ -98,11 +117,26 @@ fn test_create_and_claim() {
     let expiry = env.ledger().timestamp() + 1000;
     let policy_params = Bytes::new(&env);
 
-    client.create_link(&link_hash, &0u32, &policy_params, &amount, &token, &expiry, &sender);
+    client.create_link(
+        &link_hash,
+        &0u32,
+        &policy_params,
+        &amount,
+        &token,
+        &expiry,
+        &sender,
+    );
 
     let recipient = Address::generate(&env);
     let (relayer, fee) = no_relayer(&env);
-    client.claim_link(&link_hash, &recipient, &secret, &empty_email_hash(&env), &relayer, &fee);
+    client.claim_link(
+        &link_hash,
+        &recipient,
+        &secret,
+        &empty_email_hash(&env),
+        &relayer,
+        &fee,
+    );
 }
 
 #[test]
@@ -116,7 +150,15 @@ fn test_claim_pays_fee_bound_relayer_and_remainder_to_recipient() {
     let relayer_fee = 125i128;
     let expiry = env.ledger().timestamp() + 1000;
     let policy_params = Bytes::new(&env);
-    client.create_link(&link_hash, &0u32, &policy_params, &amount, &token, &expiry, &sender);
+    client.create_link(
+        &link_hash,
+        &0u32,
+        &policy_params,
+        &amount,
+        &token,
+        &expiry,
+        &sender,
+    );
 
     let recipient = Address::generate(&env);
     let relayer = Address::generate(&env);
@@ -166,7 +208,15 @@ fn test_claim_rejects_tampered_fee_not_covered_by_user_authorization() {
     let tampered_fee = 126i128;
     let expiry = env.ledger().timestamp() + 1000;
     let policy_params = Bytes::new(&env);
-    client.create_link(&link_hash, &0u32, &policy_params, &amount, &token, &expiry, &sender);
+    client.create_link(
+        &link_hash,
+        &0u32,
+        &policy_params,
+        &amount,
+        &token,
+        &expiry,
+        &sender,
+    );
 
     let recipient = Address::generate(&env);
     let relayer = Address::generate(&env);
@@ -215,7 +265,15 @@ fn test_claim_rejects_fee_greater_than_amount() {
     let amount = 1000i128;
     let expiry = env.ledger().timestamp() + 1000;
     let policy_params = Bytes::new(&env);
-    client.create_link(&link_hash, &0u32, &policy_params, &amount, &token, &expiry, &sender);
+    client.create_link(
+        &link_hash,
+        &0u32,
+        &policy_params,
+        &amount,
+        &token,
+        &expiry,
+        &sender,
+    );
 
     let recipient = Address::generate(&env);
     let relayer = Address::generate(&env);
@@ -243,11 +301,28 @@ fn test_wrong_secret_fails() {
     let expiry = env.ledger().timestamp() + 1000;
     let policy_params = Bytes::new(&env);
 
-    client.create_link(&link_hash, &0u32, &policy_params, &amount, &token, &expiry, &sender);
+    client.create_link(
+        &link_hash,
+        &0u32,
+        &policy_params,
+        &amount,
+        &token,
+        &expiry,
+        &sender,
+    );
 
     let recipient = Address::generate(&env);
     let (relayer, fee) = no_relayer(&env);
-    assert!(client.try_claim_link(&link_hash, &recipient, &wrong_secret, &empty_email_hash(&env), &relayer, &fee).is_err());
+    assert!(client
+        .try_claim_link(
+            &link_hash,
+            &recipient,
+            &wrong_secret,
+            &empty_email_hash(&env),
+            &relayer,
+            &fee
+        )
+        .is_err());
 }
 
 #[test]
@@ -261,13 +336,37 @@ fn test_double_claim_fails() {
     let expiry = env.ledger().timestamp() + 1000;
     let policy_params = Bytes::new(&env);
 
-    client.create_link(&link_hash, &0u32, &policy_params, &amount, &token, &expiry, &sender);
+    client.create_link(
+        &link_hash,
+        &0u32,
+        &policy_params,
+        &amount,
+        &token,
+        &expiry,
+        &sender,
+    );
 
     let recipient = Address::generate(&env);
     let (relayer, fee) = no_relayer(&env);
-    client.claim_link(&link_hash, &recipient, &secret, &empty_email_hash(&env), &relayer, &fee);
+    client.claim_link(
+        &link_hash,
+        &recipient,
+        &secret,
+        &empty_email_hash(&env),
+        &relayer,
+        &fee,
+    );
 
-    assert!(client.try_claim_link(&link_hash, &recipient, &secret, &empty_email_hash(&env), &relayer, &fee).is_err());
+    assert!(client
+        .try_claim_link(
+            &link_hash,
+            &recipient,
+            &secret,
+            &empty_email_hash(&env),
+            &relayer,
+            &fee
+        )
+        .is_err());
 }
 
 #[test]
@@ -281,7 +380,15 @@ fn test_refund_after_expiry() {
     let expiry = env.ledger().timestamp() + 1;
     let policy_params = Bytes::new(&env);
 
-    client.create_link(&link_hash, &0u32, &policy_params, &amount, &token, &expiry, &sender);
+    client.create_link(
+        &link_hash,
+        &0u32,
+        &policy_params,
+        &amount,
+        &token,
+        &expiry,
+        &sender,
+    );
 
     env.ledger().set_timestamp(expiry + 1);
     client.refund_link(&link_hash);
@@ -298,13 +405,30 @@ fn test_claim_expired_fails() {
     let expiry = env.ledger().timestamp() + 1;
     let policy_params = Bytes::new(&env);
 
-    client.create_link(&link_hash, &0u32, &policy_params, &amount, &token, &expiry, &sender);
+    client.create_link(
+        &link_hash,
+        &0u32,
+        &policy_params,
+        &amount,
+        &token,
+        &expiry,
+        &sender,
+    );
 
     env.ledger().set_timestamp(expiry + 1);
 
     let recipient = Address::generate(&env);
     let (relayer, fee) = no_relayer(&env);
-    assert!(client.try_claim_link(&link_hash, &recipient, &secret, &empty_email_hash(&env), &relayer, &fee).is_err());
+    assert!(client
+        .try_claim_link(
+            &link_hash,
+            &recipient,
+            &secret,
+            &empty_email_hash(&env),
+            &relayer,
+            &fee
+        )
+        .is_err());
 }
 
 #[test]
@@ -319,8 +443,26 @@ fn test_duplicate_link_fails() {
     let policy_params = Bytes::new(&env);
 
     // First create should succeed
-    client.create_link(&link_hash, &0u32, &policy_params, &amount, &token, &expiry, &sender);
+    client.create_link(
+        &link_hash,
+        &0u32,
+        &policy_params,
+        &amount,
+        &token,
+        &expiry,
+        &sender,
+    );
 
     // Second create with same ID should fail
-    assert!(client.try_create_link(&link_hash, &0u32, &policy_params, &amount, &token, &expiry, &sender).is_err());
+    assert!(client
+        .try_create_link(
+            &link_hash,
+            &0u32,
+            &policy_params,
+            &amount,
+            &token,
+            &expiry,
+            &sender
+        )
+        .is_err());
 }
