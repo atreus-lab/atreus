@@ -10,7 +10,6 @@ Thumbs.db
 *.tsbuildinfo
 test_snapshots/
 coverage/
-*.wasm.gz
 .opencode/
 .vercel
 .env*
