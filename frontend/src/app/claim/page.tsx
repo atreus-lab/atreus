@@ -3,12 +3,14 @@
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { loadWallet } from '@/lib/wallet';
-import { connectWallet, claimLinkTx } from '@/lib/stellar';
+import { loadWallet, getActiveWalletProvider } from '@/lib/wallet';
+import { connectWallet, networkPassphrase, rpcServer, waitForTransaction } from '@/lib/stellar';
 import { bytesToHex } from '@/lib/proof';
 import { generateClaimProof, requestAttestation } from '@/lib/zk';
 import { updateLinkStatus, checkLinkOnChain, saveClaimedLink, readLinkInfo } from '@/lib/links';
 import { Loader2, CheckCircle2, XCircle, ArrowLeft, Link2, Mail } from 'lucide-react';
+import { Address, Contract, TransactionBuilder, nativeToScVal, xdr } from '@stellar/stellar-sdk';
+import { Buffer } from 'buffer';
 
 type ClaimStatus =
   | 'idle'
@@ -55,14 +57,33 @@ function getFriendlyErrorMessage(err: any): { title: string; description: string
   const rawMsg = err?.message || err?.toString() || '';
   const msg = rawMsg.toLowerCase();
 
-  // Check for already-claimed before anything else — it can show up directly
-  // or as a WasmVm UnreachableCodeReached trap (when the panic message doesn't
-  // propagate cleanly from the contract VM).
+  // ── Ordered checks: specific contract panics FIRST ──
+  // These must come BEFORE the HostError/WasmVm trap block because when Soroban's
+  // prepareTransaction fails it wraps the contract panic in a "HostError" that also
+  // contains the outer function name ("claim_link"), which would trigger the generic
+  // VM trap handler first and mask the real error.
+
+  if (msg.includes('invalid secret'))
+    return { title: 'Invalid link', description: 'The secret key for this link is incorrect. Please check the link and try again.' };
+  if (msg.includes('link expired') || msg.includes('expired'))
+    return { title: 'Link expired', description: 'This payment link has expired and can no longer be claimed.' };
+  if (msg.includes('no valid zk attestation'))
+    return { title: 'Proof verification pending', description: 'The ZK proof attestation has not been recorded yet. Please complete the full claim flow.' };
+  if (msg.includes('link not found'))
+    return { title: 'Link not found', description: 'This payment link does not exist in the contract. It may have been refunded or never created.' };
+  if (msg.includes('nullifier already used'))
+    return { title: 'Already claimed', description: 'This payment link has already been claimed with a different wallet.' };
   if (msg.includes('already claimed'))
     return { title: 'Funds already claimed', description: 'This payment link has already been claimed. The funds are no longer available.' };
+  if (msg.includes('invalid relayer fee'))
+    return { title: 'Configuration error', description: 'The relayer fee is invalid. Please contact support.' };
+  if (msg.includes('relayer request failed'))
+    return { title: 'Relay service error', description: 'The gasless relay service could not process the claim. Please try again later.' };
 
-  // WasmVm trap that happens when claim_link panics (secret verified, attestation
-  // passed, then claimed check triggers panic! which shows as UnreachableCodeReached)
+  // ── WasmVm / HostError trap fallback ──
+  // When the contract VM crashes instead of cleanly panicking (e.g. UnreachableCodeReached
+  // after a successful attestation check), we catch that here.  But specific panics
+  // are already handled above.
   if (
     msg.includes('wasmvm') ||
     msg.includes('invalidaction') ||
@@ -78,16 +99,6 @@ function getFriendlyErrorMessage(err: any): { title: string; description: string
     return { title: 'Contract error', description: 'The transaction could not be completed. This link may have already been claimed or is invalid. Please check the link and try again.' };
   }
 
-  if (msg.includes('invalid secret'))
-    return { title: 'Invalid link', description: 'The secret key for this link is incorrect. Please check the link and try again.' };
-  if (msg.includes('link expired') || msg.includes('expired'))
-    return { title: 'Link expired', description: 'This payment link has expired and can no longer be claimed.' };
-  if (msg.includes('no valid zk attestation'))
-    return { title: 'Proof verification pending', description: 'The ZK proof attestation has not been recorded yet. Please complete the full claim flow.' };
-  if (msg.includes('link not found'))
-    return { title: 'Link not found', description: 'This payment link does not exist in the contract. It may have been refunded or never created.' };
-  if (msg.includes('nullifier already used'))
-    return { title: 'Already claimed', description: 'This payment link has already been claimed with a different wallet.' };
   if (msg.includes('insufficient balance'))
     return { title: 'Insufficient funds', description: rawMsg };
   if (msg.includes('recipient account') || msg.includes('funded'))
@@ -148,8 +159,10 @@ const parseLinkInput = () => {
       const proofHex = bytesToHex(proof);
       // Compute email hash if this is an email-restricted link
       let recipientEmailHash: string | undefined;
+      const emailHashBytes = intendedEmail
+        ? new Uint8Array(await sha256Hash(intendedEmail))
+        : new Uint8Array(32);
       if (intendedEmail) {
-        const emailHashBytes = new Uint8Array(await sha256Hash(intendedEmail));
         recipientEmailHash = Array.from(emailHashBytes)
           .map((b) => b.toString(16).padStart(2, '0'))
           .join('');
@@ -171,7 +184,53 @@ const parseLinkInput = () => {
 
       setStatus('claiming');
       const linkHash = new Uint8Array(await crypto.subtle.digest('SHA-256', secretBytes));
-      const hash = await claimLinkTx(recipient, linkHash, secretBytes);
+
+      const contractId = process.env.NEXT_PUBLIC_CONTRACT_ID;
+      const relayerAddress = process.env.NEXT_PUBLIC_RELAYER_ADDRESS;
+      const relayerFee = process.env.NEXT_PUBLIC_RELAYER_FEE_STROOPS;
+      if (!contractId || !relayerAddress || !relayerFee) {
+        throw new Error('Gasless claim configuration is incomplete.');
+      }
+      if (!/^\d+$/.test(relayerFee)) {
+        throw new Error('invalid relayer fee');
+      }
+
+      const contract = new Contract(contractId);
+      const claimOperation = contract.call(
+        'claim_link',
+        xdr.ScVal.scvBytes(Buffer.from(linkHash)),
+        new Address(recipient).toScVal(),
+        xdr.ScVal.scvBytes(Buffer.from(secretBytes)),
+        xdr.ScVal.scvBytes(Buffer.from(emailHashBytes)),
+        new Address(relayerAddress).toScVal(),
+        nativeToScVal(BigInt(relayerFee), { type: 'i128' }),
+      );
+
+      const account = await rpcServer.getAccount(recipient);
+      let transaction = new TransactionBuilder(account, {
+        fee: '100000',
+        networkPassphrase,
+      })
+        .addOperation(claimOperation)
+        .setTimeout(120)
+        .build();
+      transaction = (await rpcServer.prepareTransaction(transaction)) as typeof transaction;
+
+      const provider = getActiveWalletProvider();
+      const signedXdr = await provider.signTransaction(transaction.toXDR());
+      const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:3001';
+      const relayResponse = await fetch(`${backendUrl}/api/relay`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ transactionXdr: signedXdr }),
+      });
+      const relayResult = await relayResponse.json().catch(() => null);
+      if (!relayResponse.ok || typeof relayResult?.hash !== 'string') {
+        throw new Error(relayResult?.error || 'Relayer request failed.');
+      }
+
+      const hash = relayResult.hash;
+      await waitForTransaction(hash, { timeoutMs: 30_000 });
       setTxHash(hash);
 
       setStatus('success');
