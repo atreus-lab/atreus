@@ -57,7 +57,7 @@ export async function verifyClaimProof(
 
   // Fresh instance per call (not the shared singleton) — this is destroyed below, and
   // destroying the singleton would break any other request verifying concurrently.
-  const api = await Barretenberg.new({ threads: 1, wasmPath: resolve(process.cwd(), 'wasm/barretenberg-threads.wasm.gz') });
+  const api = await Barretenberg.new({ threads: 1, wasmPath: resolve(process.cwd(), 'wasm/barretenberg-threads.wasm') });
   const backend = new UltraHonkBackend(circuitBytecode, api);
   try {
     return await backend.verifyProof({
