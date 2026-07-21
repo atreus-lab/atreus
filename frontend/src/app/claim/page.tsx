@@ -7,8 +7,9 @@ import { loadWallet, getActiveWalletProvider } from '@/lib/wallet';
 import { connectWallet, networkPassphrase, rpcServer, waitForTransaction } from '@/lib/stellar';
 import { bytesToHex } from '@/lib/proof';
 import { generateClaimProof, requestAttestation } from '@/lib/zk';
+import { startEmailVerification, confirmEmailVerification } from '@/lib/emailVerify';
 import { updateLinkStatus, checkLinkOnChain, saveClaimedLink, readLinkInfo } from '@/lib/links';
-import { Loader2, CheckCircle2, XCircle, ArrowLeft, Link2, Mail } from 'lucide-react';
+import { Loader2, CheckCircle2, XCircle, ArrowLeft, Link2, Mail, Shield } from 'lucide-react';
 import { Address, Contract, TransactionBuilder, nativeToScVal, xdr } from '@stellar/stellar-sdk';
 import { Buffer } from 'buffer';
 
@@ -31,6 +32,12 @@ export default function ClaimPage() {
   const [linkInput, setLinkInput] = useState('');
   const [intendedEmail, setIntendedEmail] = useState<string | null>(null);
   const [walletEmail, setWalletEmail] = useState<string | null>(null);
+  const [emailVerified, setEmailVerified] = useState(false);
+  const [emailChallenge, setEmailChallenge] = useState<string | null>(null);
+  const [emailVerifyTo, setEmailVerifyTo] = useState<string | null>(null);
+  const [rawEmailMessage, setRawEmailMessage] = useState('');
+  const [emailBusy, setEmailBusy] = useState(false);
+  const [emailError, setEmailError] = useState('');
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
@@ -45,6 +52,37 @@ export default function ClaimPage() {
       setWalletEmail(wallet.email);
     }
   }, []);
+
+  async function handleStartEmailVerify() {
+    if (!intendedEmail) return;
+    setEmailBusy(true);
+    setEmailError('');
+    try {
+      const result = await startEmailVerification(intendedEmail);
+      setEmailChallenge(result.challenge);
+      setEmailVerifyTo(result.verifyTo);
+      setEmailVerified(false);
+    } catch (err: any) {
+      setEmailError(err?.message || 'Failed to start email verification');
+    } finally {
+      setEmailBusy(false);
+    }
+  }
+
+  async function handleConfirmEmailVerify() {
+    if (!intendedEmail || !rawEmailMessage.trim()) return;
+    setEmailBusy(true);
+    setEmailError('');
+    try {
+      await confirmEmailVerification(intendedEmail, rawEmailMessage);
+      setEmailVerified(true);
+    } catch (err: any) {
+      setEmailError(err?.message || 'Email verification failed');
+      setEmailVerified(false);
+    } finally {
+      setEmailBusy(false);
+    }
+  }
 
   async function sha256Hash(str: string): Promise<Uint8Array> {
     const encoder = new TextEncoder();
@@ -152,6 +190,24 @@ const parseLinkInput = () => {
         return;
       }
 
+      // Email-restricted links require DKIM ownership proof before attestation.
+      if (intendedEmail) {
+        const wallet = loadWallet();
+        const authedEmail = wallet?.email;
+        if (!authedEmail || authedEmail.toLowerCase().trim() !== intendedEmail.toLowerCase().trim()) {
+          setErrorKind('error');
+          setErrorMsg(`This link is intended for ${intendedEmail}. Please log in with that email to claim.`);
+          setStatus('error');
+          return;
+        }
+        if (!emailVerified) {
+          setErrorKind('error');
+          setErrorMsg('Prove email ownership (DKIM) before claiming. Use the verification panel above.');
+          setStatus('error');
+          return;
+        }
+      }
+
       setStatus('generating_proof');
       const { proof, linkHashHex, linkHashFieldHex, nullifierFieldHex } = await generateClaimProof(secretBytes, recipient);
 
@@ -169,18 +225,6 @@ const parseLinkInput = () => {
       }
 
       await requestAttestation(linkHashHex, proofHex, recipient, linkHashFieldHex, nullifierFieldHex, recipientEmailHash);
-
-      // Email verification: if the link was created for a specific email, check it matches
-      if (intendedEmail) {
-        const wallet = loadWallet();
-        const authedEmail = wallet?.email;
-        if (!authedEmail || authedEmail.toLowerCase().trim() !== intendedEmail.toLowerCase().trim()) {
-          setErrorKind('error');
-          setErrorMsg(`This link is intended for ${intendedEmail}. Please log in with that email to claim.`);
-          setStatus('error');
-          return;
-        }
-      }
 
       setStatus('claiming');
       const linkHash = new Uint8Array(await crypto.subtle.digest('SHA-256', secretBytes));
@@ -282,7 +326,8 @@ const parseLinkInput = () => {
     status === 'connecting' ||
     status === 'generating_proof' ||
     status === 'attesting' ||
-    status === 'claiming';
+    status === 'claiming' ||
+    (Boolean(intendedEmail) && !emailVerified);
 
   return (
     <div className="min-h-screen bg-[#FAFBFF] flex items-center justify-center p-4">
@@ -303,22 +348,81 @@ const parseLinkInput = () => {
             </p>
 
             {intendedEmail && (
-              <div className={`p-4 rounded-xl text-sm font-medium border ${
-                walletEmail && walletEmail.toLowerCase().trim() === intendedEmail.toLowerCase().trim()
-                  ? 'bg-green-50 border-green-100 text-green-700'
-                  : 'bg-amber-50 border-amber-100 text-amber-700'
-              }`}>
-                <p className="flex items-center gap-2">
-                  <Mail className="w-4 h-4 shrink-0" />
-                  Intended for: <strong>{intendedEmail}</strong>
-                </p>
-                {walletEmail && walletEmail.toLowerCase().trim() === intendedEmail.toLowerCase().trim() ? (
-                  <p className="text-xs mt-1 text-green-600">✓ Your email matches!</p>
-                ) : walletEmail ? (
-                  <p className="text-xs mt-1 text-amber-600">You are logged in as {walletEmail}. Only {intendedEmail} can claim this link.</p>
-                ) : (
-                  <p className="text-xs mt-1 text-amber-600">Log in with {intendedEmail} to claim this link.</p>
-                )}
+              <div className="space-y-3">
+                <div className={`p-4 rounded-xl text-sm font-medium border ${
+                  walletEmail && walletEmail.toLowerCase().trim() === intendedEmail.toLowerCase().trim()
+                    ? 'bg-green-50 border-green-100 text-green-700'
+                    : 'bg-amber-50 border-amber-100 text-amber-700'
+                }`}>
+                  <p className="flex items-center gap-2">
+                    <Mail className="w-4 h-4 shrink-0" />
+                    Intended for: <strong>{intendedEmail}</strong>
+                  </p>
+                  {walletEmail && walletEmail.toLowerCase().trim() === intendedEmail.toLowerCase().trim() ? (
+                    <p className="text-xs mt-1 text-green-600">✓ Your email matches!</p>
+                  ) : walletEmail ? (
+                    <p className="text-xs mt-1 text-amber-600">You are logged in as {walletEmail}. Only {intendedEmail} can claim this link.</p>
+                  ) : (
+                    <p className="text-xs mt-1 text-amber-600">Log in with {intendedEmail} to claim this link.</p>
+                  )}
+                </div>
+
+                <div className="p-4 rounded-xl text-sm border border-slate-200 bg-slate-50 space-y-3">
+                  <p className="flex items-center gap-2 font-semibold text-slate-800">
+                    <Shield className="w-4 h-4 text-indigo-600" />
+                    DKIM email ownership verification
+                  </p>
+                  {emailVerified ? (
+                    <p className="text-xs text-green-700 font-medium">
+                      Email ownership verified. You can claim this link.
+                    </p>
+                  ) : (
+                    <>
+                      <p className="text-xs text-slate-600">
+                        Prove you control this address by sending a DKIM-signed message that includes a challenge token, then paste the raw email source below.
+                      </p>
+                      {!emailChallenge ? (
+                        <button
+                          type="button"
+                          disabled={emailBusy}
+                          onClick={handleStartEmailVerify}
+                          className="w-full py-2.5 rounded-xl text-xs font-bold text-white bg-slate-900 hover:bg-slate-800 disabled:opacity-50"
+                        >
+                          {emailBusy ? 'Starting…' : 'Start email verification'}
+                        </button>
+                      ) : (
+                        <div className="space-y-2">
+                          <p className="text-xs text-slate-600">
+                            Send mail from <strong>{intendedEmail}</strong>
+                            {emailVerifyTo ? <> to <strong>{emailVerifyTo}</strong></> : null}
+                            {' '}with challenge token:
+                          </p>
+                          <code className="block text-[11px] break-all bg-white border border-slate-200 rounded-lg p-2 text-slate-800">
+                            {emailChallenge}
+                          </code>
+                          <textarea
+                            value={rawEmailMessage}
+                            onChange={(e) => setRawEmailMessage(e.target.value)}
+                            placeholder="Paste full raw email source (including DKIM-Signature header)…"
+                            rows={5}
+                            className="w-full p-2.5 rounded-xl border border-slate-200 text-xs font-mono text-slate-800 focus:outline-none focus:border-indigo-500"
+                          />
+                          <button
+                            type="button"
+                            disabled={emailBusy || !rawEmailMessage.trim()}
+                            onClick={handleConfirmEmailVerify}
+                            className="w-full py-2.5 rounded-xl text-xs font-bold text-white bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50"
+                          >
+                            {emailBusy ? 'Verifying DKIM…' : 'Confirm with raw message'}
+                          </button>
+                        </div>
+                      )}
+                      {emailError && (
+                        <p className="text-xs text-red-600 font-medium">{emailError}</p>
+                      )}
+                    </>
+                  )}
+                </div>
               </div>
             )}
 
