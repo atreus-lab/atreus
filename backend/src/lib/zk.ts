@@ -1,5 +1,6 @@
 import { StrKey } from "@stellar/stellar-sdk";
 import { Barretenberg, UltraHonkBackend } from "@aztec/bb.js";
+import { resolve } from "path";
 import { createHash } from "crypto";
 
 // BN254 (alt_bn128) scalar field order — matches Noir/Barretenberg's Field type.
@@ -56,7 +57,7 @@ export async function verifyClaimProof(
 
   // Fresh instance per call (not the shared singleton) — this is destroyed below, and
   // destroying the singleton would break any other request verifying concurrently.
-  const api = await Barretenberg.new({ threads: 1 });
+  const api = await Barretenberg.new({ threads: 1, wasmPath: resolve(process.cwd(), 'wasm/barretenberg-threads.wasm.gz'), crsPath: '/tmp/.bb-crs' });
   const backend = new UltraHonkBackend(circuitBytecode, api);
   try {
     return await backend.verifyProof({
