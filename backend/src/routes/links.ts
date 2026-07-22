@@ -5,6 +5,8 @@ import { fileURLToPath } from "url";
 import { sha256Hex, verifyClaimProof } from "../lib/zk.js";
 import { createBatchEscrowTransaction, submitAttestation } from "../lib/stellar.js";
 import { batchResultsCsv, createBatchRecord, parseBatchCsv, processBatch, type BatchRecord } from "../lib/batch.js";
+import { isEmailHashHex } from "../lib/emailHash.js";
+import { isEmailHashVerified } from "../lib/emailVerificationStore.js";
 import pino from "pino";
 
 let circuit: any = undefined;
@@ -167,29 +169,51 @@ const FIELD_HEX = /^(0x)?[0-9a-fA-F]{64}$/;
 // valid, submits a signed on-chain attestation that claim_link requires before
 // releasing funds. See contracts/README.md.
 linkRoutes.post("/:hash/attest", async (req: Request, res: Response) => {
+  const correlationId = String(req.header("x-correlation-id") || crypto.randomUUID());
   const hash = String(req.params.hash);
   const { recipient, proof, link_hash, nullifier, recipient_email_hash } = req.body;
 
   if (!recipient || !proof || !link_hash || !nullifier) {
-    res.status(400).json({ error: "Missing recipient, proof, link_hash, or nullifier" });
+    res.status(400).json({ error: "Missing recipient, proof, link_hash, or nullifier", correlationId });
     return;
   }
 
   if (!HEX_64.test(hash)) {
-    res.status(400).json({ error: "Invalid link hash format" });
+    res.status(400).json({ error: "Invalid link hash format", correlationId });
     return;
   }
   if (typeof link_hash !== "string" || !FIELD_HEX.test(link_hash)) {
-    res.status(400).json({ error: "Invalid link_hash format" });
+    res.status(400).json({ error: "Invalid link_hash format", correlationId });
     return;
   }
   if (typeof nullifier !== "string" || !FIELD_HEX.test(nullifier)) {
-    res.status(400).json({ error: "Invalid nullifier format" });
+    res.status(400).json({ error: "Invalid nullifier format", correlationId });
     return;
   }
   if (typeof proof !== "string" || !/^[0-9a-fA-F]+$/.test(proof)) {
-    res.status(400).json({ error: "Invalid proof format" });
+    res.status(400).json({ error: "Invalid proof format", correlationId });
     return;
+  }
+
+  // Email-restricted links must prove ownership via DKIM before attestation.
+  if (recipient_email_hash !== undefined && recipient_email_hash !== null && recipient_email_hash !== "") {
+    if (typeof recipient_email_hash !== "string" || !isEmailHashHex(recipient_email_hash.toLowerCase())) {
+      res.status(400).json({
+        error: "Invalid recipient_email_hash format (expected 64 hex chars)",
+        correlationId,
+      });
+      return;
+    }
+    const emailHash = recipient_email_hash.toLowerCase();
+    if (!isEmailHashVerified(emailHash)) {
+      logger.warn({ correlationId, emailHash, hash }, "attest rejected: email not DKIM-verified");
+      res.status(403).json({
+        error:
+          "Email ownership not verified. Complete POST /api/email/verify and /api/email/confirm with a DKIM-signed message before attesting an email-restricted link.",
+        correlationId,
+      });
+      return;
+    }
   }
 
   try {
@@ -197,16 +221,16 @@ linkRoutes.post("/:hash/attest", async (req: Request, res: Response) => {
 
     const isValid = await verifyClaimProof((await getCircuit()).bytecode, proofBytes, recipient, link_hash, nullifier);
     if (!isValid) {
-      res.status(400).json({ error: "ZK proof verification failed" });
+      res.status(400).json({ error: "ZK proof verification failed", correlationId });
       return;
     }
 
     const linkHashBytes = Uint8Array.from(Buffer.from(hash, "hex"));
     const txHash = await submitAttestation(linkHashBytes, recipient);
 
-    res.json({ success: true, hash, recipient, attestationTx: txHash });
+    res.json({ success: true, hash, recipient, attestationTx: txHash, correlationId });
   } catch (err: any) {
-    console.error(err);
-    res.status(500).json({ error: err?.message || "Attestation failed" });
+    logger.error({ correlationId, error: err?.message }, "attestation failed");
+    res.status(500).json({ error: err?.message || "Attestation failed", correlationId });
   }
 });
