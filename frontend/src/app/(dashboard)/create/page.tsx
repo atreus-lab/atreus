@@ -153,9 +153,14 @@ export default function CreatePage() {
             disabled={isCreating}
           />
           {recipientEmail.trim() && (
-            <p className="flex items-center gap-1 text-xs text-amber-500 mt-1">
-              <Shield className="w-3 h-3" /> Only {recipientEmail.trim()} will be able to claim this link
-            </p>
+            <div className="space-y-1 mt-1">
+              <p className="flex items-center gap-1 text-xs text-amber-500">
+                <Shield className="w-3 h-3" /> Only {recipientEmail.trim()} will be able to claim this link
+              </p>
+              <p className="text-xs text-secondary">
+                The recipient must prove email ownership with a DKIM-signed verification message before the attester will approve the claim.
+              </p>
+            </div>
           )}
         </div>
 
