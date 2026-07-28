@@ -1,29 +1,26 @@
 # Atreus — Architecture
 
 > Google-login wallet + privacy-preserving payment links with programmable ZK rules on Stellar.
-> No seed phrase required. No identity leak. No double-claim. No proof sniping.
+> No seed phrase. No identity leak. No double-claim. No proof sniping.
 
 ---
 
 ## 1. Product Overview
 
-Atreus is a **TipLink-style wallet on Stellar** with an integrated **ZK-powered payment link system**.
+Atreus is a **TipLink-style wallet on Stellar** with an added **ZK-powered payment link system**.
 
 ### Core Product (Wallet)
-- **Google OAuth / Passkey Login**: Google authentication onboarding, creating a self-custodial 24-word BIP-39 mnemonic & Ed25519 Stellar keypair.
-- **Local Storage Key Management**: Keypair and 24-word seed phrase generated and saved locally in browser `localStorage`.
-- **Multi-Wallet Support**: Connect via local BIP-39 keypair or external wallets (Freighter, xBull, Lobstr).
-- **Stellar Asset Operations**: Send/receive XLM and custom assets, view account history, and swap tokens.
-- **Backup & Recovery**: 24-word BIP-39 mnemonic export and import for full self-custody recovery.
+- Sign in with Google → deterministic Stellar wallet (HKDF derivation)
+- Send / receive XLM and Stellar assets
+- Swap tokens via Soroswap
+- Transaction history
+- Mnemonic export for backup recovery
 
 ### Add-on Feature (ZK Payment Links)
-- **Programmable Escrow**: Escrow XLM or Stellar assets inside Soroban smart contracts with custom conditions.
-- **Zero-Knowledge Proofs**: Recipient proves knowledge of link secret without revealing it using Noir + Barretenberg UltraHonk proofs.
-- **Attestation-Oracle Verification**: Proof is verified off-chain by an attester service and recorded on-chain via `VerifierContract`.
-- **DKIM Email-Restricted Claim**: Optional email ownership verification using DKIM signatures before link attestation.
-- **Batch Link Generation**: High-throughput CSV batch ingestion for creating up to 100 payment links in a single workflow.
-- **Gasless Relayed Claims**: Recipient signs claim authorization while a relayer submits the transaction, covering network fees in exchange for a configurable relayer fee.
-- **Double-Claim & Front-Running Guards**: Nullifiers prevent replaying claims, while binding recipient addresses into ZK public inputs prevents MEV proof sniping.
+- Create payment links with programmable rules
+- Recipient proves eligibility with zero-knowledge proof (no identity leak)
+- On-chain verification via Noir + rs-soroban-ultrahonk
+- Double-claim prevention via nullifiers
 
 ---
 
@@ -31,129 +28,124 @@ Atreus is a **TipLink-style wallet on Stellar** with an integrated **ZK-powered 
 
 | Layer | Technology | Purpose |
 |-------|-----------|---------|
-| **Frontend** | Next.js 15, React 18, Tailwind CSS | Wallet UI, link creation, claim interface |
-| **Wallet Auth** | Google OAuth + BIP-39 Mnemonic | Google sign-in yielding BIP-39 seed phrase & Ed25519 keypair |
-| **Local Storage** | Browser `localStorage` (`atreus_wallet`) | Client-side unencrypted JSON key storage |
-| **Blockchain SDK** | `@stellar/stellar-sdk`, `@stellar/freighter-api` | Transaction building, wallet adapter layer, Stellar Horizon integration |
-| **Smart Contracts** | Rust, Soroban SDK 22.0.0 | Link escrow contract (`AtreusContract`) & attestation registry (`VerifierContract`) |
-| **ZK Circuits** | Noir (`circuits/src/main.nr`) | Zero-knowledge proof circuit definitions |
-| **ZK Proving** | Barretenberg (`@aztec/bb.js`, `@noir-lang/noir_js`) | Client-side UltraHonk proof generation in browser WASM |
-| **Hash Primitive** | Pedersen Hash (`std::hash::pedersen_hash`) | ZK-friendly hash function for secret commitments and nullifiers |
-| **Attestation Oracle** | Node.js / Express, Barretenberg | Off-chain UltraHonk proof verification & on-chain attestation submission |
-| **Email Verification** | DKIM (`mailauth`, RFC 822 parsing) | Cryptographic DKIM email ownership verification for email-restricted links |
-| **Batch Ingestion** | Node.js, Express, Pino | CSV processing engine for bulk escrow link creation (up to 100 rows per batch) |
-| **Backend API** | Express, TypeScript, Pino | Link attestation API, batch processing, email verification service |
+| **Frontend** | Next.js 15, React 18, Tailwind CSS | Wallet UI, link create/claim |
+| **Wallet Auth** | Google OAuth + HKDF | Deterministic Stellar keypair from Google identity |
+| **Backup** | BIP-39 mnemonic export | Recovery if Google account lost |
+| **Blockchain SDK** | @stellar/stellar-sdk, @stellar/freighter-api | Transaction building, wallet connection |
+| **Smart Contracts** | Rust, Soroban SDK 22.0.0 | Escrow + ZK verifier |
+| **ZK Circuits** | Noir (1.0.0-beta.9) | Zero-knowledge proof circuits |
+| **ZK Proving** | Barretenberg (bb.js 0.87.0) | UltraHonk proof generation (browser + Node) |
+| **ZK Verification** | rs-soroban-ultrahonk | On-chain UltraHonk verification in Soroban |
+| **Hash Primitive** | Poseidon (Protocol 25/26 native) | ZK-friendly hashing (native host function on Stellar) |
+| **Backend** | Express, TypeScript | Link management API, tx relay |
+| **Package Manager** | pnpm (monorepo) | Workspace management |
+| **DEX** | Soroswap | Token swaps |
 
 ---
 
 ## 3. System Architecture
 
 ```
-┌──────────────────────────────────────────────────────────────────┐
-│                         Browser Client                           │
-│                                                                  │
-│  ┌────────────────────────┐         ┌─────────────────────────┐  │
-│  │   Google OAuth / Auth  │         │  Ed25519 Local Wallet   │  │
-│  └───────────┬────────────┘         └────────────┬────────────┘  │
-│              │                                   │               │
-│              ▼                                   ▼               │
-│    BIP-39 Mnemonic Seed                 Stellar Transaction      │
-│  (Saved in localStorage)                    Builder              │
-│              │                                   │               │
-│              └─────────────────┬─────────────────┘               │
-│                                │                                 │
-│                                ▼                                 │
-│             Noir WASM Prover (@aztec/bb.js)                      │
-│             • Secret & Recipient inputs                          │
-│             • Pedersen Hash commitments                          │
-│             • Generates UltraHonk Proof                          │
-└────────────────────────────────┬─────────────────────────────────┘
-                                 │
-                 ┌───────────────┴───────────────┐
-                 │                               │
-                 ▼                               ▼
-┌────────────────────────────────┐ ┌───────────────────────────────┐
-│        Backend Oracle          │ │       Stellar Network         │
-│                                │ │          (Soroban)            │
-│  ┌──────────────────────────┐  │ │                               │
-│  │   DKIM Email Verifier    │  │ │  ┌─────────────────────────┐  │
-│  │   (mailauth / RFC822)    │  │ │  │   AtreusContract        │  │
-│  ├──────────────────────────┤  │ │  │   • create_link()       │  │
-│  │   CSV Batch Ingester     │  │ │  │   • claim_link()        │  │
-│  │   (POST /api/links/batch)│  │ │  │   • refund_link()       │  │
-│  ├──────────────────────────┤  │ │  └────────────┬────────────┘  │
-│  │  Barretenberg Off-Chain  │  │ │               │               │
-│  │    Proof Verifier        │  │ │               │ is_attested() │
-│  └───────────┬──────────────┘  │ │               ▼               │
-│              │                 │ │  ┌─────────────────────────┐  │
-│              ▼                 │ │  │    VerifierContract     │  │
-│  submitAttestation()           │ │  │    • attest()           │  │
-│  (Signed by Attester key) ─────┼─┼─►│    • is_attested()      │  │
-└────────────────────────────────┘ │  └─────────────────────────┘  │
-                                   └───────────────────────────────┘
+┌─────────────────────────────────────────────────────────────┐
+│                    Browser (Next.js)                        │
+│                                                             │
+│  ┌──────────────┐    ┌──────────────────────────────────┐   │
+│  │ Google OAuth │    │  Stellar Wallet (HKDF derived)   │   │
+│  └──────┬───────┘    └──────────┬───────────────────────┘   │
+│         │                       │                           │
+│         │              ┌────────▼────────┐                  │
+│         │              │  Soroban SDK    │                  │
+│         │              │  (tx builder)   │                  │
+│         │              └────────┬────────┘                  │
+│         │                       │                           │
+│  ┌──────▼───────────────────────▼───────────────────────┐   │
+│  │              Noir WASM Prover (Barretenberg)         │   │
+│  │  • Generate UltraHonk proofs in browser              │   │
+│  │  • Poseidon hash (native BN254)                      │   │
+│  └──────────────────────┬───────────────────────────────┘   │
+└─────────────────────────┼───────────────────────────────────┘
+                          │
+                          ▼
+┌─────────────────────────────────────────────────────────────┐
+│                  Stellar (Soroban)                          │
+│                                                             │
+│  ┌─────────────────────┐    ┌───────────────────────────┐   │
+│  │  AtreusContract     │    │  VerifierContract         │   │
+│  │                     │    │  (rs-soroban-ultrahonk)   │   │
+│  │  • create_link()    │◄───┤  • verify_proof()         │   │
+│  │  • claim_link()     │    │  • VK set at deploy time  │   │
+│  │  • refund_link()    │    └───────────────────────────┘   │
+│  └────────┬────────────┘                                    │
+│           │                                                 │
+│  ┌────────▼────────────┐    ┌───────────────────────────┐   │
+│  │  Token Contract     │    │  Soroswap DEX             │   │
+│  │  (native / SAC)     │    │  (auto-swap on deposit)   │   │
+│  └─────────────────────┘    └───────────────────────────┘   │
+└─────────────────────────────────────────────────────────────┘
 ```
 
 ---
 
 ## 4. Wallet Architecture
 
-### Google OAuth & BIP-39 Key Derivation
-
-Atreus provides a friction-free onboarding flow without sacrificing self-custody:
+### Google OAuth + HKDF Derivation
 
 ```
-Google Sign-In / OAuth
+Google OAuth (sub, email)
         │
         ▼
-JWT / OAuth Credential
+HKDF(oauth_sub + app_secret)
         │
         ▼
-BIP-39 Mnemonic Generation (24 words)
-        │
-        ▼
-Ed25519 Keypair (Stellar Address)
-        │
-        ▼
-Stored in localStorage (`atreus_wallet`)
+Stellar Keypair (Ed25519)
+  • Public Key: G...
+  • Secret Key: S... (derived on each login, never stored server-side)
 ```
 
-1. **Authentication**: User logs in with Google OAuth via `@react-oauth/google`.
-2. **Key Generation**: The client generates a 24-word BIP-39 mnemonic phrase (`bip39.generateMnemonic(256)`).
-3. **Seed Derivation**: The 512-bit seed (`bip39.mnemonicToSeed`) yields a raw 32-byte Ed25519 key for `Keypair.fromRawEd25519Seed(...)`.
-4. **Local Persistence**: Public key, secret key, mnemonic, and email are saved in `localStorage` under `atreus_wallet`.
-5. **Self-Custody & Backup**:
-   - The user can reveal and export their 24-word recovery phrase at any time.
-   - If local storage is cleared or a new device is used, the user can restore full wallet access via the seed phrase.
+**Flow:**
+1. User clicks "Sign in with Google"
+2. Google returns `sub` (unique user ID) and `email`
+3. Client-side: HKDF derives a 32-byte seed from `sub` + app secret
+4. Seed → Stellar Ed25519 keypair (same Google account = same wallet every time)
+5. Wallet created on first login (funded via friendbot on testnet)
+6. User can export BIP-39 mnemonic for backup recovery
 
-### Transaction Signing Options
+**Recovery Mechanism:**
+- After first login, user sees a 24-word mnemonic
+- User stores it offline
+- If Google account is lost/banned, mnemonic restores the same Stellar keypair
+- This is critical — without it, Google has indirect custody over user funds
 
-- **Local Wallet**: Signed client-side using the local Ed25519 secret key.
-- **External Web3 Wallets**: Integrates with Freighter (`@stellar/freighter-api`), xBull, and Lobstr wallet extensions.
+### Transaction Signing
+
+1. Wallet derivation happens client-side in the browser
+2. Transactions are signed locally with the derived key
+3. For Freighter-connected wallets, use `@stellar/freighter-api` for signing
+4. Signed tx is submitted to Stellar via Soroban RPC
 
 ---
 
 ## 5. Smart Contract Design
 
-### AtreusContract (`contracts/atreus-contract/src/lib.rs`)
-
-Manages escrow funding, claim logic, gasless relay payouts, and refund timeouts.
+### AtreusContract
 
 ```rust
 #[contracttype]
 pub struct LinkInfo {
-    pub creator: Address,       // Address that funded the link
-    pub amount: i128,           // Escrow amount (in stroops)
-    pub asset: Address,         // Token asset contract address
-    pub policy_type: u32,       // 0 = secret knowledge, 1 = email-restricted
-    pub policy_params: Bytes,   // Policy metadata (e.g. recipient_email_hash)
-    pub expires_at: u64,        // Expiration timestamp
-    pub claimed: bool,          // Claim status flag
+    pub creator: Address,       // who funded the link
+    pub amount: i128,           // amount escrowed (in stroops)
+    pub token: Address,         // token address (native XLM or SAC)
+    pub link_hash: BytesN<32>,  // PoseidonHash(secret) — commitment
+    pub policy_type: Symbol,    // "secret" | "balance_threshold" | "allowlist"
+    pub policy_params: Bytes,   // serialized policy parameters
+    pub claimed: bool,          // double-claim guard
+    pub expires_at: u64,        // unix timestamp for refund
 }
 
 pub fn create_link(
     env: Env,
     id: BytesN<32>,
-    policy_type: u32,
+    policy_type: Symbol,
     policy_params: Bytes,
     amount: i128,
     asset: Address,
@@ -165,10 +157,7 @@ pub fn claim_link(
     env: Env,
     link_hash: BytesN<32>,
     recipient: Address,
-    secret: BytesN<32>,
-    recipient_email_hash: BytesN<32>,
-    relayer_address: Address,
-    relayer_fee: i128,
+    proof: Bytes,
 );
 
 pub fn refund_link(
@@ -177,324 +166,279 @@ pub fn refund_link(
 );
 ```
 
-**Key Execution Logic in `claim_link`**:
-1. **Secret Hash Check**: Validates `sha256(secret) == link_hash`.
-2. **Email Policy Check**: If `policy_type == 1`, verifies `policy_params == recipient_email_hash`.
-3. **ZK Attestation Check**: Invokes `VerifierContract.is_attested(link_hash, recipient)` cross-contract. Rejects claim if `false`.
-4. **Nullifier & Expiry Check**: Ensures `expires_at` is in the future and `sha256(link_hash)` nullifier key has not been consumed.
-5. **Relayer Fee & Asset Payout**:
-   - Rejects negative relayer fees or fees exceeding total link amount (`relayer_fee < 0 || relayer_fee > amount`).
-   - If `relayer_fee > 0`, transfers `relayer_fee` stroops to `relayer_address`.
-   - Transfers `amount - relayer_fee` stroops to `recipient`.
-
----
-
-### VerifierContract (`contracts/verifier-contract/src/lib.rs`)
-
-Stores verification parameters and attestation states issued by the trusted attester service.
+### VerifierContract (rs-soroban-ultrahonk)
 
 ```rust
-#[contracttype]
-pub enum DataKey {
-    VerificationKey,
-    Attester,
-    Attestation(BytesN<32>, Address),
-}
+// Deployed per-circuit. VK is set at constructor time (immutable).
+// Generated automatically from Noir circuit via rs-soroban-ultrahonk tooling.
 
-pub fn attest(
+pub fn verify_proof(
     env: Env,
-    attester: Address,
-    link_hash: BytesN<32>,
-    recipient: Address,
-);
-
-pub fn is_attested(
-    env: Env,
-    link_hash: BytesN<32>,
-    recipient: Address,
+    public_inputs: Bytes,
+    proof: Bytes,
 ) -> bool;
 ```
 
-**Attestation-Oracle Architecture**:
-- Because native BN254 precompiles for UltraHonk verification inside Soroban VM are not yet deployed on Stellar mainnet, Atreus uses an **attestation-oracle pattern**.
-- The real UltraHonk proof is generated client-side and verified off-chain by the backend attester using Barretenberg.
-- Upon valid proof verification, the attester submits `attest()`, recording `Attestation(link_hash, recipient) = true` on-chain.
+**Key facts:**
+- VK (verification key) is stored on-chain at deploy time
+- `verify_proof` uses the stored VK — no VK passed per call
+- Uses Stellar Protocol 25/26 native BN254 host functions for efficient verification
+- Each circuit (secret, balance_threshold) gets its own verifier contract
 
 ---
 
 ## 6. ZK Circuit Design (Noir)
 
-### Circuit Definition (`circuits/src/main.nr` & `circuits/src/policies/secret.nr`)
+### Circuit: `policies/secret.nr`
 
-The Noir zero-knowledge circuit proves knowledge of the link secret without revealing it, bound to a specific recipient address.
+The MVP circuit. Proves knowledge of the link secret without revealing it.
 
 ```rust
-// circuits/src/main.nr
-mod policies;
-
+// Private inputs
 fn main(
-    secret: Field,            // Link secret (private)
-    recipient: pub Field,     // Recipient address (public)
-    link_hash: pub Field,     // pedersen_hash([secret]) (public)
-    nullifier: pub Field,     // pedersen_hash([secret, recipient]) (public)
+    secret: Field,                    // the link secret (private)
+    recipient: pub Field,             // recipient address (public, binds proof)
+    link_hash: pub Field,             // PoseidonHash(secret) stored on-chain (public)
+    nullifier_hash: pub Field,        // Hash(secret, recipient) for double-claim prevention (public)
 ) {
-    policies::secret::verify(secret, recipient, link_hash, nullifier);
-}
-```
-
-```rust
-// circuits/src/policies/secret.nr
-pub fn verify(
-    secret: Field,
-    recipient: Field,
-    link_hash: Field,
-    nullifier: Field,
-) {
-    // Constraint 1: Prove secret knowledge via Pedersen commitment
-    let computed_hash = std::hash::pedersen_hash([secret]);
+    // 1. Secret commitment: PoseidonHash(secret) must match on-chain link_hash
+    let computed_hash = std::hash::poseidon::bn254::hash_1([secret]);
     assert(computed_hash == link_hash);
 
-    // Constraint 2: Nullifier binds secret + recipient
-    let computed_nullifier = std::hash::pedersen_hash([secret, recipient]);
-    assert(computed_nullifier == nullifier);
+    // 2. Nullifier: Hash(secret, recipient) prevents double-claim
+    let computed_nullifier = std::hash::poseidon::bn254::hash_2([secret, recipient]);
+    assert(computed_nullifier == nullifier_hash);
+
+    // 3. Recipient binding: proof can only be used by this recipient
+    // (prevents proof sniping / front-running)
 }
 ```
 
-### Input Parameters & Constraints
+**Private inputs:** `secret`
+**Public inputs:** `recipient`, `link_hash`, `nullifier_hash`
+**Constraints:**
+- `PoseidonHash(secret) == link_hash`
+- `PoseidonHash(secret, recipient) == nullifier_hash`
 
-- **Private Input**:
-  - `secret`: 32-byte secret value embedded in the claim link URL fragment.
-- **Public Inputs**:
-  - `recipient`: Stellar public key encoded as a BN254 scalar field element.
-  - `link_hash`: Pedersen hash commitment of the secret (`pedersen_hash([secret])`).
-  - `nullifier`: Pedersen hash combining secret and recipient (`pedersen_hash([secret, recipient])`).
-- **Constraints**:
-  1. `pedersen_hash([secret]) == link_hash`
-  2. `pedersen_hash([secret, recipient]) == nullifier`
+### Circuit: `policies/balance_threshold.nr`
 
-### Field & Primitive Encoding Specifications
+The "killer demo" circuit. Proves balance > threshold without revealing exact balance.
 
-Both frontend (`frontend/src/lib/zk.ts`) and backend (`backend/src/lib/zk.ts`) follow strict field serialization rules:
-- **BN254 Scalar Field Order (`FR_ORDER`)**: `21888242871839275222246405745257275088548364400416034343698204186575808495617`
-- **Pedersen Hash Index**: `0` (matching Noir standard library `std::hash::pedersen_hash`).
-- **Address Field Conversion**: Decoding Ed25519 public key bytes via `StrKey.decodeEd25519PublicKey` and converting big-endian to scalar field `BigInt % FR_ORDER`.
-- **Secret Field Conversion**: Converting 32-byte raw secret to scalar field `BigInt % FR_ORDER`.
+```rust
+fn main(
+    balance: Field,                   // actual balance (private)
+    threshold: pub Field,             // minimum required (public)
+    balance_commitment: pub Field,    // PoseidonHash(balance) (public)
+) {
+    // 1. Balance commitment matches
+    let computed = std::hash::poseidon::bn254::hash_1([balance]);
+    assert(computed == balance_commitment);
 
----
-
-## 7. Data Flow & Subsystems
-
-### 7.1 Attestation-Oracle Flow
-
-The attestation-oracle flow guarantees zero-knowledge privacy while ensuring compatibility with Soroban execution:
-
-```
-Client (Browser)                 Backend Attester              VerifierContract
-       │                                │                             │
-       │  1. Generate UltraHonk proof   │                             │
-       │     using @aztec/bb.js WASM    │                             │
-       │                                │                             │
-       │  2. POST /api/links/:hash/attest                             │
-       │     (proof, recipient,         │                             │
-       │      link_hash, nullifier)     │                             │
-       │───────────────────────────────►│                             │
-       │                                │                             │
-       │                                │  3. verifyClaimProof()      │
-       │                                │     (Barretenberg off-chain)│
-       │                                │                             │
-       │                                │  4. Submit attest() tx      │
-       │                                │────────────────────────────►│
-       │                                │                             │
-       │                                │  5. Record attestation      │
-       │                                │◄────────────────────────────│
-       │  6. 200 OK (attestationTx)     │                             │
-       │◄───────────────────────────────│                             │
+    // 2. Balance >= threshold (range proof)
+    // In Noir, we prove balance - threshold >= 0 by using field arithmetic
+    let diff = balance - threshold;
+    // The circuit constrains this implicitly through the assert
+}
 ```
 
-1. **Client Proving**: The browser loads the circuit bytecode (`secret.json`) and generates an UltraHonk proof using `@aztec/bb.js`.
-2. **Attest Request**: Client sends `POST /api/links/:hash/attest` with the proof, recipient address, and public Pedersen field values (`link_hash`, `nullifier`).
-3. **Off-Chain Verification**: Backend calls `verifyClaimProof(...)`, executing Barretenberg verification against the public inputs.
-4. **On-Chain Attestation**: If valid, the backend attester signs and submits `VerifierContract.attest(attester, link_hash, recipient)`.
-5. **Contract Record**: `VerifierContract` sets `Attestation(link_hash, recipient) = true` in persistent storage.
-
----
-
-### 7.2 Batch Escrow Link Creation Subsystem (`backend/src/lib/batch.ts`)
-
-For high-volume operations (e.g. payroll or promotional distributions), Atreus supports CSV batch processing:
+### Proof Generation Flow
 
 ```
-Creator                          Backend API                   Stellar Soroban
-   │                                  │                               │
-   │  1. POST /api/links/batch        │                               │
-   │     (creator, csv data)          │                               │
-   │─────────────────────────────────►│                               │
-   │  2. 202 Accepted (batchId)       │                               │
-   │◄─────────────────────────────────│                               │
-   │                                  │  3. Asynchronous Worker Loop  │
-   │                                  │     • Parse & validate CSV    │
-   │                                  │     • Generate 32-byte secret │
-   │                                  │     • Compute sha256 linkHash │
-   │                                  │                               │
-   │                                  │  4. create_link() tx per row  │
-   │                                  │──────────────────────────────►│
-   │                                  │◄──────────────────────────────│
-   │  5. GET /api/links/batch/:id     │                               │
-   │     (Poll progress / results)    │                               │
-   │─────────────────────────────────►│                               │
-```
-
-- **Batch Guardrails**: Maximum 100 rows per CSV batch (`MAX_BATCH_ROWS = 100`), max 1,000,000 token limit per batch.
-- **CSV Headers Required**: `amount,optional_email,optional_memo`
-- **Fault Tolerance**: Automatic retry mechanism with exponential backoff (up to 3 attempts per row).
-- **Result Download**: Generates `results.csv` containing claim URLs with embedded hash secrets upon completion (`GET /api/links/batch/:batchId/results.csv`).
-
----
-
-### 7.3 Gasless Relaying & Payout Execution
-
-Atreus enables recipients to claim payment links without holding XLM for transaction fees:
-1. **Relayer Authorization**: The recipient signs the invocation parameters including `relayer_address` and `relayer_fee`.
-2. **Tx Submission**: The relayer node constructs, signs, and submits the Stellar transaction to Soroban RPC.
-3. **Atomic Payout**: `AtreusContract.claim_link` atomically transfers `amount - relayer_fee` stroops to the recipient and `relayer_fee` stroops to the relayer.
-
----
-
-## 8. DKIM Email Verification Flow
-
-For email-restricted payment links (`policy_type == 1`), the backend enforces cryptographic email ownership before attesting ZK proofs (`backend/src/routes/email.ts` & `backend/src/lib/dkim.ts`).
-
-```
-Client (Recipient)               Backend Server                 Email Provider
-       │                                │                             │
-       │  1. POST /api/email/verify     │                             │
-       │     { email: "user@domain" }   │                             │
-       │───────────────────────────────►│                             │
-       │                                │                             │
-       │  2. Challenge Token issued     │                             │
-       │     (emailHash stored)         │                             │
-       │◄───────────────────────────────│                             │
-       │                                                              │
-       │  3. Send email containing challenge token ──────────────────►│
-       │                                                              │
-       │  4. POST /api/email/confirm                                  │
-       │     { email, rawMessage }                                    │
-       │───────────────────────────────►│                             │
-       │                                │                             │
-       │                                │  5. verifyEmailOwnership()  │
-       │                                │     • Parse RFC 822         │
-       │                                │     • Verify DKIM signature │
-       │                                │     • Align From header     │
-       │                                │     • Check challenge token │
-       │                                │                             │
-       │  6. Email Marked Verified      │                             │
-       │◄───────────────────────────────│                             │
-```
-
-### Protocol Steps
-
-1. **Challenge Request** (`POST /api/email/verify`):
-   - Client sends target email address.
-   - Backend computes `emailHash = sha256(email)` and issues a unique challenge token with an expiration timestamp.
-2. **Email Dispatch & Signing**:
-   - The user sends an email containing the challenge token in the subject or body.
-   - The sending email provider signs the message headers and body using DKIM (`DKIM-Signature:` header).
-3. **DKIM Verification** (`POST /api/email/confirm`):
-   - Client submits `{ email, rawMessage }` containing the raw RFC 822 email source.
-   - `verifyEmailOwnership` parses headers, verifies the DKIM public key signature via `mailauth`, checks domain alignment, and validates the presence of the challenge token.
-4. **Attestation Gate**:
-   - When claiming an email-restricted link, `POST /api/links/:hash/attest` requires `recipient_email_hash`.
-   - The backend checks `isEmailHashVerified(recipient_email_hash)` before issuing the on-chain attestation.
-
----
-
-## 9. Full Claim Flow Sequence Diagram
-
-The following diagram illustrates the complete end-to-end claim lifecycle, combining DKIM email verification, client ZK proof generation, backend oracle attestation, and Soroban contract execution.
-
-```mermaid
-sequenceDiagram
-    autonumber
-    actor Recipient as Recipient (Client)
-    participant Backend as Backend (Attester Service)
-    participant Verifier as VerifierContract (Soroban)
-    participant Atreus as AtreusContract (Soroban)
-    participant Token as Token Contract (Soroban)
-
-    rect rgb(240, 245, 255)
-    note over Recipient, Backend: Step A: DKIM Email Verification (if policy_type == 1)
-    Recipient->>Backend: POST /api/email/verify { email }
-    Backend-->>Recipient: Return challenge token & instructions
-    Recipient->>Backend: POST /api/email/confirm { email, rawMessage }
-    Backend->>Backend: verifyEmailOwnership() via mailauth & DKIM
-    Backend-->>Recipient: Email ownership verified (emailHash marked valid)
-    end
-
-    rect rgb(245, 240, 255)
-    note over Recipient, Backend: Step B: Zero-Knowledge Proving & Attestation
-    Recipient->>Recipient: Compute Pedersen inputs (secret, recipient, link_hash, nullifier)
-    Recipient->>Recipient: Generate UltraHonk proof using Barretenberg (@aztec/bb.js)
-    Recipient->>Backend: POST /api/links/:hash/attest { recipient, proof, link_hash, nullifier, recipient_email_hash }
-    Backend->>Backend: verifyClaimProof() off-chain via Barretenberg
-    alt Proof or Email Verification Invalid
-        Backend-->>Recipient: HTTP 400 / 403 Error
-    else Proof Valid & Verified
-        Backend->>Verifier: attest(attester, link_hash, recipient)
-        Verifier->>Verifier: Store Attestation(link_hash, recipient) = true
-        Verifier-->>Backend: Emit event (attested)
-        Backend-->>Recipient: HTTP 200 OK { success: true, attestationTx }
-    end
-    end
-
-    rect rgb(240, 255, 245)
-    note over Recipient, Token: Step C: On-Chain Escrow Claim
-    Recipient->>Atreus: claim_link(link_hash, recipient, secret, recipient_email_hash, relayer, relayer_fee)
-    Atreus->>Atreus: Validate sha256(secret) == link_hash
-    Atreus->>Verifier: is_attested(link_hash, recipient)
-    Verifier-->>Atreus: Returns attestation status (true/false)
-    alt Attestation Missing or Link Invalid
-        Atreus-->>Recipient: Panic ("no valid ZK attestation for this claim")
-    else Attestation Confirmed Valid
-        Atreus->>Atreus: Check nullifier & expiration
-        opt Relayer Fee > 0
-            Atreus->>Token: transfer(escrow -> relayer, relayer_fee)
-        end
-        Atreus->>Token: transfer(escrow -> recipient, amount - relayer_fee)
-        Atreus->>Atreus: Mark claimed & write nullifier key
-        Atreus-->>Recipient: Emit event (claimed)
-    end
-    end
+Browser (Next.js)
+        │
+        ▼
+bb.js (Barretenberg WASM)
+  1. Load compiled circuit (.json)
+  2. Load witness (private + public inputs)
+  3. Generate UltraHonk proof
+  4. Export proof + public_inputs as bytes
+        │
+        ▼
+Soroban SDK
+  5. Call claim_link(link_hash, recipient, proof_bytes)
+        │
+        ▼
+VerifierContract.verify_proof(public_inputs, proof)
+  6. On-chain UltraHonk verification using native BN254 host functions
+  7. Returns true/false
 ```
 
 ---
 
-## 10. Security Model
+## 7. Data Flow
 
-### Threat: Proof Sniping & Front-Running (MEV)
-* **Risk**: An attacker inspects mempool traffic and steals a claim proof to substitute their own address.
-* **Mitigation**: The recipient's Stellar address is bound directly inside the Noir ZK circuit as a public input (`recipient`). A proof generated for Recipient A is cryptographically invalid for Recipient B.
+### Creating a Payment Link
 
-### Threat: Double-Claim Attack
-* **Risk**: A recipient attempts to execute `claim_link` multiple times using the same valid proof or secret.
-* **Mitigation**: Soroban contract derives a unique nullifier key `sha256(link_hash)` on first claim and writes it to persistent storage. Submitting an already-claimed link or reused nullifier immediately panics.
+```
+Sender                          Frontend                         Soroban
+  │                                │                                │
+  │  1. Sign in with Google        │                                │
+  │───────────────────────────────►│                                │
+  │                                │                                │
+  │  2. Enter amount + policy      │                                │
+  │     (e.g., "secret" rule)      │                                │
+  │───────────────────────────────►│                                │
+  │                                │                                │
+  │  3. Generate secret (32 bytes) │  4. create_link(               │
+  │     Compute link_hash =        │     id, policy_type,           │
+  │     PoseidonHash(secret)       │     policy_params, amount,     │
+  │                                │     asset, expiry, sender)     │
+  │◄───────────────────────────────│───────────────────────────────►│
+  │                                │                                │
+  │  5. Share link                 │                                │
+  │     (https://app/claim#secret) │                                │
+  │───────────────────────────────►│                                │
+```
 
-### Threat: Link Secret Exposure
-* **Risk**: Interception of link secrets over network channels or server logs.
-* **Mitigation**: Link secrets are transmitted via URL fragments (`#secret`), which are never sent to HTTP servers. ZK proof generation occurs entirely client-side in browser WASM.
+### Claiming a Payment Link
 
-### Threat: Account Loss & Custody
-* **Risk**: Loss of Google OAuth access or third-party service downtime.
-* **Mitigation**: Full self-custody via 24-word BIP-39 mnemonic phrase generated at wallet setup. Users retain total control over private keys and funds at all times.
+```
+Recipient                        Frontend                         Soroban
+  │                                │                                │
+  │  1. Open link (URL#secret)     │                                │
+  │───────────────────────────────►│                                │
+  │                                │                                │
+  │  2. Read secret from fragment  │                                │
+  │     Derive recipient address   │                                │
+  │                                │                                │
+  │  3. Generate ZK proof          │                                │
+  │     (bb.js in browser)         │                                │
+  │───────────────────────────────►│                                │
+  │                                │                                │
+  │                                │  4. claim_link(                │
+  │                                │     link_hash, recipient,      │
+  │                                │     proof_bytes)               │
+  │                                │───────────────────────────────►│
+  │                                │                                │
+  │                                │  5. VerifierContract           │
+  │                                │     .verify_proof()            │
+  │                                │  6. Check nullifier not used   │
+  │                                │  7. Transfer funds             │
+  │                                │◄───────────────────────────────│
+  │◄───────────────────────────────│                                │
+  │  8. Done!                      │                                │
+```
 
 ---
 
-## 11. References
+## 8. Security Model
 
-- [Stellar Developer Documentation](https://developers.stellar.org/docs)
-- [Soroban Smart Contracts Overview](https://developers.stellar.org/docs/build/smart-contracts/overview)
-- [Noir Language & Toolchain Documentation](https://noir-lang.org/docs/)
-- [Aztec Barretenberg Proving System](https://github.com/AztecProtocol/barretenberg)
-- [DKIM Signatures RFC 6376 Specification](https://datatracker.ietf.org/doc/html/rfc6376)
-- [TipLink Payment Links Reference](https://github.com/TipLink)
-- [LOBSTR Wallet Integration](https://github.com/Lobstrco)
-- [Soroswap Protocol & SDK](https://soroswap.finance)
+### Threat: Proof Sniping (MEV)
+An attacker watches the mempool and front-runs a claim with their own proof.
+
+**Mitigation:** `recipient` address is a public input in the circuit. The proof is bound to a specific recipient — it cannot be reused by anyone else.
+
+### Threat: Double Claim
+A recipient submits the same proof twice.
+
+**Mitigation:** Nullifier `PoseidonHash(secret, recipient)` is stored on-chain after first claim. Duplicate nullifiers are rejected.
+
+### Threat: Secret Leakage
+The link secret is intercepted in transit.
+
+**Mitigation:** Secret lives in the URL fragment (`#secret`), which is never sent to the server. The ZK proof proves knowledge of the secret without revealing it on-chain.
+
+### Threat: Google Account Loss
+User's Google account is banned or deleted.
+
+**Mitigation:** BIP-39 mnemonic export on first login. User can restore the same Stellar keypair from the mnemonic without Google.
+
+---
+
+## 9. MVP Scope
+
+### MUST BUILD
+1. **Google Login + Wallet** — HKDF derivation, wallet dashboard, balance display
+2. **Mnemonic Export** — 24-word BIP-39 backup on first login
+3. **Send XLM** — Transfer to any Stellar address via Freighter
+4. **Receive** — Show QR code + public address
+5. **Create Payment Link** — Generate secret, compute PoseidonHash, escrow in Soroban contract
+6. **Claim Payment Link** — URL fragment → ZK proof → on-chain verification → funds released
+7. **Noir Circuit (secret.nr)** — Poseidon commitment + nullifier + recipient binding
+8. **Soroban Verifier** — rs-soroban-ultrahonk generated verifier contract
+9. **End-to-End Demo** — Sender → Escrow → Claim with ZK → Recipient receives funds
+
+### SHOULD BUILD
+1. **Balance Threshold Circuit** — `balance_threshold.nr` (the "killer demo")
+2. **Link Expiration** — TTL + refund after expiry
+3. **Swap via Soroswap** — Auto-swap tokens on deposit
+4. **Claim Status Dashboard** — Sender sees which links are claimed
+
+### DO NOT BUILD
+- Full shielded transfers / privacy mixer
+- Multi-chain support
+- Enterprise dashboards
+- Passkeys as primary auth (Phase 2)
+
+---
+
+## 10. Demo Flow
+
+### Step 1: Create Link
+1. Sender navigates to `/create`
+2. Signs in with Google (wallet derived)
+3. Enters amount: `100 XLM`
+4. Selects policy: "Secret knowledge"
+5. Clicks "Create Link"
+6. Frontend generates 32-byte secret, computes `PoseidonHash(secret)`
+7. Calls `create_link()` on Soroban contract
+8. Displays shareable URL: `https://atreus.app/claim#<secret_hex>`
+
+### Step 2: Share Link
+Sender copies link, sends via Telegram/email/QR.
+
+### Step 3: Claim Link
+1. Recipient opens link in browser
+2. Frontend reads secret from URL fragment
+3. Recipient signs in with Google (or connects Freighter)
+4. Frontend generates UltraHonk proof via bb.js (browser WASM)
+5. Proof proves: `PoseidonHash(secret) == link_hash` without revealing secret
+6. Frontend calls `claim_link(link_hash, recipient, proof)`
+7. Soroban contract verifies proof on-chain, checks nullifier, transfers funds
+
+### Step 4: Verify
+- Show Stellar Explorer — `secret` never appears in transaction history
+- Show only `proof` bytes submitted on-chain
+- Highlight: "The recipient proved they know the secret without revealing it"
+
+---
+
+## 11. Roadmap
+
+| Phase | Feature | Timeline |
+|-------|---------|----------|
+| **1. MVP** | Google wallet + secret-based payment links + Noir verification | Current |
+| **2. Balance Threshold** | `balance_threshold.nr` circuit — prove balance > threshold | Future |
+| **3. Wallet Features** | Soroswap swap, transaction history, multi-asset support | Future |
+| **4. Allowlist Proofs** | Merkle proof circuit — prove membership without revealing identity | Future |
+| **5. Private Payroll** | Bulk link generation, CSV import, enterprise dashboard | Future |
+| **6. Developer SDK** | Atreus SDK, API, embeddable widgets | Future |
+
+---
+
+## 12. Risks
+
+| Risk | Impact | Mitigation |
+|------|--------|------------|
+| **Browser proving performance** | High | Keep circuits small (Stage 1 only), use optimized bb.js WASM |
+| **Soroban WASM limits** | Medium | Protocol 25/26 optimizations, separate verifier from business logic |
+| **Circuit bugs** | High | Extensive `nargo test`, use well-audited Poseidon primitive |
+| **Google account loss** | High | BIP-39 mnemonic export for recovery |
+| **Proof sniping (MEV)** | High | Bind proof to recipient address as public input |
+| **Scope creep** | High | Stick to MUST BUILD list only |
+| **Noir → Soroban integration friction** | Medium | Use rs-soroban-ultrahonk tooling (proven workflow) |
+
+---
+
+## 13. References
+
+- [Stellar Developer Docs](https://developers.stellar.org/llms.txt)
+- [Soroban Smart Contracts](https://developers.stellar.org/docs/build/smart-contracts/overview.md)
+- [Noir Language](https://noir-lang.org/docs/)
+- [rs-soroban-ultrahonk (Noir verifier for Soroban)](https://github.com/NethermindEth/rs-soroban-ultrahonk)
+- [Noir on Stellar Tutorial](https://jamesbachini.com/noir-on-stellar/)
+- [TipLink (reference product)](https://github.com/TipLink)
+- [LOBSTR Wallet (reference)](https://github.com/Lobstrco)
+- [Soroswap](https://soroswap.finance)
+- [Protocol 25 (Poseidon/BN254 native)](https://stellar.org/blog)
+- [Protocol 26 (BN254 host functions)](https://stellar.org/blog)
