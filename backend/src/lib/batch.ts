@@ -153,7 +153,7 @@ export async function processBatch(
         status: result.status === "success" ? "success" : "failed",
         url: result.url,
         txHash: result.txHash,
-        error: result.error ?? null,
+        error: result.status === "success" ? null : (result.error ?? null),
         completedAt: new Date().toISOString(),
       };
       // Deliver async — do not block row processing on webhook delivery
