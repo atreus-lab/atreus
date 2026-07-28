@@ -5,6 +5,7 @@ import { fileURLToPath } from "url";
 import { sha256Hex, verifyClaimProof } from "../lib/zk.js";
 import { createBatchEscrowTransaction, submitAttestation } from "../lib/stellar.js";
 import { batchResultsCsv, createBatchRecord, parseBatchCsv, processBatch, type BatchRecord } from "../lib/batch.js";
+import { saveBatch, listBatches } from "../lib/batchStore.js";
 import { isEmailHashHex } from "../lib/emailHash.js";
 import { isEmailHashVerified } from "../lib/emailVerificationStore.js";
 import pino from "pino";
@@ -64,6 +65,12 @@ async function getCircuit(): Promise<any> {
 
 export const linkRoutes: Router = Router();
 const batches = new Map<string, BatchRecord>();
+
+export function hydrateBatches(): void {
+  for (const batch of listBatches()) {
+    batches.set(batch.id, batch);
+  }
+}
 const logger = pino({ level: process.env.LOG_LEVEL || "info" });
 
 // POST /api/links/batch - Validate and enqueue a CSV batch.
@@ -79,6 +86,7 @@ linkRoutes.post("/batch", async (req: Request, res: Response) => {
     const rows = parseBatchCsv(csv);
     const batch = createBatchRecord(creator, correlationId, rows);
     batches.set(batch.id, batch);
+    saveBatch(batch);
     logger.info({ correlationId, batchId: batch.id, creator, rowCount: rows.length, totalAmount: batch.totalAmount }, "batch queued");
     const origin = process.env.FRONTEND_URL || `${req.protocol}://${req.get("host")}`;
     setImmediate(() => {
@@ -86,9 +94,11 @@ linkRoutes.post("/batch", async (req: Request, res: Response) => {
         const hash = Buffer.from(sha256Hex(secret), "hex");
         logger.info({ correlationId, batchId: batch.id, row: row.row }, "processing batch row");
         return createBatchEscrowTransaction(creator, row, hash);
-      }, origin).then(() => {
+      }, origin, { onRowSaved: () => saveBatch(batch) }).then(() => {
+        saveBatch(batch);
         logger.info({ correlationId, batchId: batch.id, successCount: batch.successCount, failureCount: batch.failureCount }, "batch completed");
       }).catch((error) => {
+        saveBatch(batch);
         logger.error({ correlationId, batchId: batch.id, error }, "batch processor failed");
       });
     });
