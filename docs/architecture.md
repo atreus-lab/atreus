@@ -456,10 +456,10 @@ sequenceDiagram
         Atreus-->>Recipient: Panic ("no valid ZK attestation for this claim")
     else Attestation Confirmed Valid
         Atreus->>Atreus: Check nullifier & expiration
-        Atreus->>Token: transfer(escrow -> recipient, amount - relayer_fee)
         opt Relayer Fee > 0
             Atreus->>Token: transfer(escrow -> relayer, relayer_fee)
         end
+        Atreus->>Token: transfer(escrow -> recipient, amount - relayer_fee)
         Atreus->>Atreus: Mark claimed & write nullifier key
         Atreus-->>Recipient: Emit event (claimed)
     end
