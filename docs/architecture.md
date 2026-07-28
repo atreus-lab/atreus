@@ -10,9 +10,9 @@
 Atreus is a **TipLink-style wallet on Stellar** with an integrated **ZK-powered payment link system**.
 
 ### Core Product (Wallet)
-- **Google OAuth / Passkey Login**: Direct Google authentication driving a deterministic BIP-39 mnemonic & Ed25519 Stellar keypair.
+- **Google OAuth / Passkey Login**: Google authentication onboarding, creating a self-custodial 24-word BIP-39 mnemonic & Ed25519 Stellar keypair.
 - **Local Storage Key Management**: Keypair and 24-word seed phrase generated and saved locally in browser `localStorage`.
-- **Multi-Wallet Support**: Connect via local Google-derived keypair or external wallets (Freighter, xBull, Lobstr).
+- **Multi-Wallet Support**: Connect via local BIP-39 keypair or external wallets (Freighter, xBull, Lobstr).
 - **Stellar Asset Operations**: Send/receive XLM and custom assets, view account history, and swap tokens.
 - **Backup & Recovery**: 24-word BIP-39 mnemonic export and import for full self-custody recovery.
 
