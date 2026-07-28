@@ -1,4 +1,5 @@
 import { createHash, randomBytes, randomUUID } from "crypto";
+import { deliverWebhook, type WebhookPayload } from "./webhook.js";
 
 export const MAX_BATCH_ROWS = 100;
 export const MAX_BATCH_AMOUNT = 1_000_000;
@@ -31,6 +32,7 @@ export interface BatchRecord {
   successCount: number;
   failureCount: number;
   rows: BatchResultRow[];
+  webhookUrl?: string;
 }
 
 function parseCsvLine(line: string): string[] {
@@ -89,7 +91,12 @@ export function parseBatchCsv(csv: string): BatchInputRow[] {
   });
 }
 
-export function createBatchRecord(creator: string, correlationId: string, rows: BatchInputRow[]): BatchRecord {
+export function createBatchRecord(
+  creator: string,
+  correlationId: string,
+  rows: BatchInputRow[],
+  webhookUrl?: string,
+): BatchRecord {
   const totalStroops = rows.reduce((sum, row) => {
     const [whole, fraction = ""] = row.amount.split(".");
     return sum + BigInt(whole) * 10_000_000n + BigInt(fraction.padEnd(7, "0"));
@@ -99,6 +106,7 @@ export function createBatchRecord(creator: string, correlationId: string, rows: 
     id: randomUUID(), correlationId, creator, createdAt: new Date().toISOString(), status: "queued",
     totalAmount, successCount: 0, failureCount: 0,
     rows: rows.map((row) => ({ ...row, status: "pending" })),
+    webhookUrl,
   };
 }
 
@@ -133,6 +141,25 @@ export async function processBatch(
     if (result.status !== "success") {
       result.status = "failed";
       batch.failureCount++;
+    }
+
+    // Fire webhook after each row resolves (success or failure)
+    if (batch.webhookUrl) {
+      const rowIndex = batch.rows.indexOf(result);
+      const payload: WebhookPayload = {
+        batchId: batch.id,
+        rowIndex,
+        row: result.row,
+        status: result.status === "success" ? "success" : "failed",
+        url: result.url,
+        txHash: result.txHash,
+        error: result.error ?? null,
+        completedAt: new Date().toISOString(),
+      };
+      // Deliver async — do not block row processing on webhook delivery
+      deliverWebhook(batch.webhookUrl, payload).catch(() => {
+        // Webhook delivery failure is non-fatal for the batch
+      });
     }
   }
   batch.status = "completed";

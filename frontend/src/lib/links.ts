@@ -40,11 +40,11 @@ export interface BatchProgressData {
 
 const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL || "http://localhost:3001";
 
-export async function createBatchLinks(csv: string, creator: string): Promise<{ batchId: string }> {
+export async function createBatchLinks(csv: string, creator: string, webhookUrl?: string): Promise<{ batchId: string }> {
   const response = await fetch(`${backendUrl}/api/links/batch`, {
     method: "POST",
     headers: { "Content-Type": "application/json", "X-Correlation-ID": crypto.randomUUID() },
-    body: JSON.stringify({ csv, creator }),
+    body: JSON.stringify({ csv, creator, ...(webhookUrl ? { webhookUrl } : {}) }),
   });
   const body = await response.json();
   if (!response.ok) throw new Error(body.error || "Failed to create batch");
