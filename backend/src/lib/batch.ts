@@ -106,11 +106,12 @@ export async function processBatch(
   batch: BatchRecord,
   createLink: (row: BatchInputRow, secret: Uint8Array) => Promise<string>,
   origin: string,
-  options: { maxAttempts?: number; retryDelayMs?: number } = {},
+  options: { maxAttempts?: number; retryDelayMs?: number; onRowSaved?: (batch: BatchRecord) => void } = {},
 ): Promise<void> {
   batch.status = "processing";
   const maxAttempts = options.maxAttempts ?? 3;
   const retryDelayMs = options.retryDelayMs ?? 500;
+  const onRowSaved = options.onRowSaved;
   for (const result of batch.rows) {
     result.status = "processing";
     const secret = randomBytes(32);
@@ -134,9 +135,11 @@ export async function processBatch(
       result.status = "failed";
       batch.failureCount++;
     }
+    onRowSaved?.(batch);
   }
   batch.status = "completed";
   batch.completedAt = new Date().toISOString();
+  onRowSaved?.(batch);
 }
 
 function csvCell(value: unknown): string {
