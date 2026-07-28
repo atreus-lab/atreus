@@ -428,3 +428,17 @@ sequenceDiagram
 ### Threat: Account Loss & Custody
 * **Risk**: Loss of Google OAuth access or third-party service downtime.
 * **Mitigation**: Full self-custody via 24-word BIP-39 mnemonic phrase generated at wallet setup. Users retain total control over private keys and funds at all times.
+
+---
+
+## 11. References
+
+- [Stellar Developer Documentation](https://developers.stellar.org/docs)
+- [Soroban Smart Contracts Overview](https://developers.stellar.org/docs/build/smart-contracts/overview)
+- [Noir Language & Toolchain Documentation](https://noir-lang.org/docs/)
+- [Aztec Barretenberg Proving System](https://github.com/AztecProtocol/barretenberg)
+- [DKIM Signatures RFC 6376 Specification](https://datatracker.ietf.org/doc/html/rfc6376)
+- [TipLink Payment Links Reference](https://github.com/TipLink)
+- [LOBSTR Wallet Integration](https://github.com/Lobstrco)
+- [Soroswap Protocol & SDK](https://soroswap.finance)
+
