@@ -49,6 +49,7 @@ export async function deliverWebhook(
           "X-Atreus-Signature": `sha256=${signature}`,
         },
         body,
+        signal: AbortSignal.timeout(10_000),
       });
       if (res.ok) return;
       lastError = new Error(`Webhook responded with HTTP ${res.status}`);
