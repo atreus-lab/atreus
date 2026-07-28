@@ -21,6 +21,8 @@ Atreus is a **TipLink-style wallet on Stellar** with an integrated **ZK-powered 
 - **Zero-Knowledge Proofs**: Recipient proves knowledge of link secret without revealing it using Noir + Barretenberg UltraHonk proofs.
 - **Attestation-Oracle Verification**: Proof is verified off-chain by an attester service and recorded on-chain via `VerifierContract`.
 - **DKIM Email-Restricted Claim**: Optional email ownership verification using DKIM signatures before link attestation.
+- **Batch Link Generation**: High-throughput CSV batch ingestion for creating up to 100 payment links in a single workflow.
+- **Gasless Relayed Claims**: Recipient signs claim authorization while a relayer submits the transaction, covering network fees in exchange for a configurable relayer fee.
 - **Double-Claim & Front-Running Guards**: Nullifiers prevent replaying claims, while binding recipient addresses into ZK public inputs prevents MEV proof sniping.
 
 ---
@@ -39,6 +41,7 @@ Atreus is a **TipLink-style wallet on Stellar** with an integrated **ZK-powered 
 | **Hash Primitive** | Pedersen Hash (`std::hash::pedersen_hash`) | ZK-friendly hash function for secret commitments and nullifiers |
 | **Attestation Oracle** | Node.js / Express, Barretenberg | Off-chain UltraHonk proof verification & on-chain attestation submission |
 | **Email Verification** | DKIM (`mailauth`, RFC 822 parsing) | Cryptographic DKIM email ownership verification for email-restricted links |
+| **Batch Ingestion** | Node.js, Express, Pino | CSV processing engine for bulk escrow link creation (up to 100 rows per batch) |
 | **Backend API** | Express, TypeScript, Pino | Link attestation API, batch processing, email verification service |
 
 ---
@@ -75,10 +78,10 @@ Atreus is a **TipLink-style wallet on Stellar** with an integrated **ZK-powered 
 │  ┌──────────────────────────┐  │ │                               │
 │  │   DKIM Email Verifier    │  │ │  ┌─────────────────────────┐  │
 │  │   (mailauth / RFC822)    │  │ │  │   AtreusContract        │  │
-│  └───────────┬──────────────┘  │ │  │   • create_link()       │  │
-│              │                 │ │  │   • claim_link()        │  │
-│              ▼                 │ │  │   • refund_link()       │  │
-│  ┌──────────────────────────┐  │ │  └────────────┬────────────┘  │
+│  ├──────────────────────────┤  │ │  │   • create_link()       │  │
+│  │   CSV Batch Ingester     │  │ │  │   • claim_link()        │  │
+│  │   (POST /api/links/batch)│  │ │  │   • refund_link()       │  │
+│  ├──────────────────────────┤  │ │  └────────────┬────────────┘  │
 │  │  Barretenberg Off-Chain  │  │ │               │               │
 │  │    Proof Verifier        │  │ │               │ is_attested() │
 │  └───────────┬──────────────┘  │ │               ▼               │
@@ -133,7 +136,7 @@ Stored in localStorage (`atreus_wallet`)
 
 ### AtreusContract (`contracts/atreus-contract/src/lib.rs`)
 
-Manages escrow funding, claim logic, and refund timeouts.
+Manages escrow funding, claim logic, gasless relay payouts, and refund timeouts.
 
 ```rust
 #[contracttype]
@@ -179,7 +182,10 @@ pub fn refund_link(
 2. **Email Policy Check**: If `policy_type == 1`, verifies `policy_params == recipient_email_hash`.
 3. **ZK Attestation Check**: Invokes `VerifierContract.is_attested(link_hash, recipient)` cross-contract. Rejects claim if `false`.
 4. **Nullifier & Expiry Check**: Ensures `expires_at` is in the future and `sha256(link_hash)` nullifier key has not been consumed.
-5. **Asset Transfer**: Transfers tokens to recipient (minus optional relayer fee for gasless claims).
+5. **Relayer Fee & Asset Payout**:
+   - Rejects negative relayer fees or fees exceeding total link amount (`relayer_fee < 0 || relayer_fee > amount`).
+   - If `relayer_fee > 0`, transfers `relayer_fee` stroops to `relayer_address`.
+   - Transfers `amount - relayer_fee` stroops to `recipient`.
 
 ---
 
@@ -266,9 +272,19 @@ pub fn verify(
   1. `pedersen_hash([secret]) == link_hash`
   2. `pedersen_hash([secret, recipient]) == nullifier`
 
+### Field & Primitive Encoding Specifications
+
+Both frontend (`frontend/src/lib/zk.ts`) and backend (`backend/src/lib/zk.ts`) follow strict field serialization rules:
+- **BN254 Scalar Field Order (`FR_ORDER`)**: `21888242871839275222246405745257275088548364400416034343698204186575808495617`
+- **Pedersen Hash Index**: `0` (matching Noir standard library `std::hash::pedersen_hash`).
+- **Address Field Conversion**: Decoding Ed25519 public key bytes via `StrKey.decodeEd25519PublicKey` and converting big-endian to scalar field `BigInt % FR_ORDER`.
+- **Secret Field Conversion**: Converting 32-byte raw secret to scalar field `BigInt % FR_ORDER`.
+
 ---
 
-## 7. Attestation-Oracle Flow
+## 7. Data Flow & Subsystems
+
+### 7.1 Attestation-Oracle Flow
 
 The attestation-oracle flow guarantees zero-knowledge privacy while ensuring compatibility with Soroban execution:
 
@@ -300,6 +316,47 @@ Client (Browser)                 Backend Attester              VerifierContract
 3. **Off-Chain Verification**: Backend calls `verifyClaimProof(...)`, executing Barretenberg verification against the public inputs.
 4. **On-Chain Attestation**: If valid, the backend attester signs and submits `VerifierContract.attest(attester, link_hash, recipient)`.
 5. **Contract Record**: `VerifierContract` sets `Attestation(link_hash, recipient) = true` in persistent storage.
+
+---
+
+### 7.2 Batch Escrow Link Creation Subsystem (`backend/src/lib/batch.ts`)
+
+For high-volume operations (e.g. payroll or promotional distributions), Atreus supports CSV batch processing:
+
+```
+Creator                          Backend API                   Stellar Soroban
+   │                                  │                               │
+   │  1. POST /api/links/batch        │                               │
+   │     (creator, csv data)          │                               │
+   │─────────────────────────────────►│                               │
+   │  2. 202 Accepted (batchId)       │                               │
+   │◄─────────────────────────────────│                               │
+   │                                  │  3. Asynchronous Worker Loop  │
+   │                                  │     • Parse & validate CSV    │
+   │                                  │     • Generate 32-byte secret │
+   │                                  │     • Compute sha256 linkHash │
+   │                                  │                               │
+   │                                  │  4. create_link() tx per row  │
+   │                                  │──────────────────────────────►│
+   │                                  │◄──────────────────────────────│
+   │  5. GET /api/links/batch/:id     │                               │
+   │     (Poll progress / results)    │                               │
+   │─────────────────────────────────►│                               │
+```
+
+- **Batch Guardrails**: Maximum 100 rows per CSV batch (`MAX_BATCH_ROWS = 100`), max 1,000,000 token limit per batch.
+- **CSV Headers Required**: `amount,optional_email,optional_memo`
+- **Fault Tolerance**: Automatic retry mechanism with exponential backoff (up to 3 attempts per row).
+- **Result Download**: Generates `results.csv` containing claim URLs with embedded hash secrets upon completion (`GET /api/links/batch/:batchId/results.csv`).
+
+---
+
+### 7.3 Gasless Relaying & Payout Execution
+
+Atreus enables recipients to claim payment links without holding XLM for transaction fees:
+1. **Relayer Authorization**: The recipient signs the invocation parameters including `relayer_address` and `relayer_fee`.
+2. **Tx Submission**: The relayer node constructs, signs, and submits the Stellar transaction to Soroban RPC.
+3. **Atomic Payout**: `AtreusContract.claim_link` atomically transfers `amount - relayer_fee` stroops to the recipient and `relayer_fee` stroops to the relayer.
 
 ---
 
@@ -441,4 +498,3 @@ sequenceDiagram
 - [TipLink Payment Links Reference](https://github.com/TipLink)
 - [LOBSTR Wallet Integration](https://github.com/Lobstrco)
 - [Soroswap Protocol & SDK](https://soroswap.finance)
-
