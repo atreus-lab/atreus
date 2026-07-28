@@ -19,8 +19,12 @@ const BASE_DELAY_MS = 500;
  * Returns the signature hex string (without prefix).
  */
 export function signPayload(body: string): string {
-  const secret = process.env.WEBHOOK_SECRET ?? "";
-  return createHmac("sha256", secret).update(body).digest("hex");
+  const secret = process.env.WEBHOOK_SECRET;
+  if (!secret) {
+    // Warn loudly — an empty secret produces a forgeable signature.
+    console.warn("[webhook] WEBHOOK_SECRET is not set; webhook signatures will be insecure");
+  }
+  return createHmac("sha256", secret ?? "").update(body).digest("hex");
 }
 
 /**
