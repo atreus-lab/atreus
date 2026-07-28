@@ -33,7 +33,7 @@ Atreus is a **TipLink-style wallet on Stellar** with an integrated **ZK-powered 
 |-------|-----------|---------|
 | **Frontend** | Next.js 15, React 18, Tailwind CSS | Wallet UI, link creation, claim interface |
 | **Wallet Auth** | Google OAuth + BIP-39 Mnemonic | Google sign-in yielding BIP-39 seed phrase & Ed25519 keypair |
-| **Local Storage** | Browser `localStorage` (`atreus_wallet`) | Client-side encrypted key management |
+| **Local Storage** | Browser `localStorage` (`atreus_wallet`) | Client-side unencrypted JSON key storage |
 | **Blockchain SDK** | `@stellar/stellar-sdk`, `@stellar/freighter-api` | Transaction building, wallet adapter layer, Stellar Horizon integration |
 | **Smart Contracts** | Rust, Soroban SDK 22.0.0 | Link escrow contract (`AtreusContract`) & attestation registry (`VerifierContract`) |
 | **ZK Circuits** | Noir (`circuits/src/main.nr`) | Zero-knowledge proof circuit definitions |
