@@ -3,7 +3,7 @@ import { readFileSync, existsSync } from "fs";
 import { resolve, dirname } from "path";
 import { fileURLToPath } from "url";
 import { sha256Hex, verifyClaimProof } from "../lib/zk.js";
-import { createBatchEscrowTransaction, submitAttestation } from "../lib/stellar.js";
+import { createBatchEscrowTransaction, submitAttestation, getLinkInfo } from "../lib/stellar.js";
 import { batchResultsCsv, createBatchRecord, parseBatchCsv, processBatch, type BatchRecord } from "../lib/batch.js";
 import { saveBatch, listBatches } from "../lib/batchStore.js";
 import { isEmailHashHex } from "../lib/emailHash.js";
@@ -157,17 +157,35 @@ linkRoutes.post("/", async (req: Request, res: Response) => {
   res.status(201).json(link);
 });
 
-// GET /api/links/:hash - Get link details
+// GET /api/links/:hash - Get link details from the AtreusContract.
 linkRoutes.get("/:hash", async (req: Request, res: Response) => {
-  const { hash } = req.params;
-
-  // TODO: Fetch from contract state
-  res.json({
-    hash,
-    creator: "G...",
-    amount: "1000",
-    claimed: false,
-  });
+  const correlationId = String(req.header("x-correlation-id") || crypto.randomUUID());
+  const hash = String(req.params.hash);
+  if (!/^[0-9a-fA-F]{64}$/.test(hash)) {
+    res.status(400).json({ error: "Invalid link hash format", correlationId });
+    return;
+  }
+  try {
+    const info = await getLinkInfo(hash);
+    if (!info) {
+      res.status(404).json({ error: "Link not found", correlationId });
+      return;
+    }
+    res.json({
+      hash,
+      creator: info.creator,
+      amount: info.amount.toString(),
+      asset: info.asset,
+      policyType: info.policyType,
+      policyParams: info.policyParams,
+      expiresAt: info.expiresAt.toString(),
+      claimed: info.claimed,
+      correlationId,
+    });
+  } catch (error: any) {
+    logger.error({ correlationId, hash, error: error?.message }, "link lookup failed");
+    res.status(500).json({ error: "Failed to read link from contract", correlationId });
+  }
 });
 
 const HEX_64 = /^[0-9a-fA-F]{64}$/;
