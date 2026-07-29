@@ -100,9 +100,8 @@ linkRoutes.post("/batch", async (req: Request, res: Response) => {
     const rows = parseBatchCsv(csv);
     const batch = createBatchRecord(creator, correlationId, rows, webhookUrl);
     batches.set(batch.id, batch);
-    logger.info({ correlationId, batchId: batch.id, creator, rowCount: rows.length, totalAmount: batch.totalAmount, hasWebhook: !!webhookUrl }, "batch queued");
     saveBatch(batch);
-    logger.info({ correlationId, batchId: batch.id, creator, rowCount: rows.length, totalAmount: batch.totalAmount }, "batch queued");
+    logger.info({ correlationId, batchId: batch.id, creator, rowCount: rows.length, totalAmount: batch.totalAmount, hasWebhook: !!webhookUrl }, "batch queued");
     const origin = process.env.FRONTEND_URL || `${req.protocol}://${req.get("host")}`;
     setImmediate(() => {
       processBatch(batch, async (row, secret) => {

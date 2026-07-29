@@ -120,7 +120,7 @@ export async function processBatch(
   const maxAttempts = options.maxAttempts ?? 3;
   const retryDelayMs = options.retryDelayMs ?? 500;
   const onRowSaved = options.onRowSaved;
-  for (const result of batch.rows) {
+  for (const [rowIndex, result] of batch.rows.entries()) {
     result.status = "processing";
     const secret = randomBytes(32);
     for (let attempt = 1; attempt <= maxAttempts; attempt++) {
@@ -146,7 +146,6 @@ export async function processBatch(
 
     // Fire webhook after each row resolves (success or failure)
     if (batch.webhookUrl) {
-      const rowIndex = batch.rows.indexOf(result);
       const payload: WebhookPayload = {
         batchId: batch.id,
         rowIndex,
@@ -166,7 +165,6 @@ export async function processBatch(
   }
   batch.status = "completed";
   batch.completedAt = new Date().toISOString();
-  onRowSaved?.(batch);
 }
 
 function csvCell(value: unknown): string {

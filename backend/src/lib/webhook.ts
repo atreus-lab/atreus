@@ -41,6 +41,10 @@ export async function deliverWebhook(
 
   let lastError: unknown;
   for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
+    // ponytail: AbortController timeout polyfill — AbortSignal.timeout requires Node 20+,
+    // but package.json targets >=18, so we manage the abort manually here.
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 10_000);
     try {
       const res = await fetch(webhookUrl, {
         method: "POST",
@@ -49,12 +53,17 @@ export async function deliverWebhook(
           "X-Atreus-Signature": `sha256=${signature}`,
         },
         body,
-        signal: AbortSignal.timeout(10_000),
+        signal: controller.signal,
       });
-      if (res.ok) return;
+      if (res.ok) {
+        clearTimeout(timeoutId);
+        return;
+      }
       lastError = new Error(`Webhook responded with HTTP ${res.status}`);
     } catch (err) {
       lastError = err;
+    } finally {
+      clearTimeout(timeoutId);
     }
 
     if (attempt < MAX_ATTEMPTS) {
