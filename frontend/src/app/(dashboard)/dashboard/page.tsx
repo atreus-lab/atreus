@@ -3,9 +3,9 @@
 import { useEffect, useState, useCallback, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { loadWallet, getBalance, getBalances, getTransactions, type StoredWallet } from "@/lib/wallet";
+import { useWallet } from "@/components/providers";
 import { getStoredLinks, refreshLinkStatuses, getClaimedLinks, refundLink, refundStoredLink, type StoredLink } from "@/lib/links";
 import { Search, Bell, Menu } from "lucide-react";
-
 import BalanceCard from "@/components/BalanceCard";
 import PrivacyScoreCard from "@/components/PrivacyScoreCard";
 import AssetsList from "@/components/AssetsList";
@@ -20,6 +20,7 @@ import { useCreateLink } from "@/components/sidebar-context";
 export default function DashboardPage() {
   const router = useRouter();
   const { setCreateLinkOpen } = useCreateLink();
+  const { activeWalletType, publicKey, isLoading: walletLoading } = useWallet();
   const [storedWallet, setStoredWallet] = useState<StoredWallet | null>(null);
   const [address, setAddress] = useState("");
   const [balance, setBalance] = useState("0");
@@ -205,18 +206,20 @@ export default function DashboardPage() {
 
   // Init
   useEffect(() => {
-    const wallet = loadWallet();
-    if (!wallet) {
+    if (walletLoading) return;
+    if (!publicKey) {
       router.push("/wallet");
       return;
     }
-    setStoredWallet(wallet);
-    const pk = wallet.publicKey;
-    setAddress(pk);
+    setAddress(publicKey);
     setLoading(true);
     setStoredLinks(getStoredLinks());
     setReceivedLinks(getClaimedLinks());
-    loadData(pk).then((result) => {
+
+    const wallet = loadWallet();
+    setStoredWallet(wallet);
+
+    loadData(publicKey).then((result) => {
       const notified = notifiedRef.current;
       if (result) {
         for (const tx of result.txs) {
@@ -231,12 +234,13 @@ export default function DashboardPage() {
         notified.add(`you-claimed-${link.secretHex}`);
       }
     }).finally(() => setLoading(false));
+
     refreshLinkStatuses().then(() => {
       setStoredLinks(getStoredLinks());
       setReceivedLinks(getClaimedLinks());
       checkForNotifications();
     });
-  }, [loadData, router, checkForNotifications]);
+  }, [publicKey, walletLoading, loadData, router, checkForNotifications]);
 
   const emailName = storedWallet?.email ? storedWallet.email.split('@')[0] : 'User';
 

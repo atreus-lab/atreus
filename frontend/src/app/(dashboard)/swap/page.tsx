@@ -2,7 +2,8 @@
 
 import { useState, useEffect, useMemo, useRef } from "react";
 import { useRouter } from "next/navigation";
-import { loadWallet, swapTokens, getSwapEstimate, getBalances, getExplorerUrl, type StoredWallet } from "@/lib/wallet";
+import { swapTokens, getSwapEstimate, getBalances, getExplorerUrl } from "@/lib/wallet";
+import { useWallet } from "@/components/providers";
 import { ChevronDown, Loader2, ExternalLink, RefreshCw, CheckCircle2, ArrowRightLeft, Shield } from "lucide-react";
 import AppHeader from "@/components/AppHeader";
 import SearchDialog from "@/components/SearchDialog";
@@ -21,7 +22,7 @@ function tokenBadge(code: string) {
 
 export default function SwapPage() {
   const router = useRouter();
-  const [storedWallet, setStoredWallet] = useState<StoredWallet | null>(null);
+  const { publicKey, isLoading: walletLoading } = useWallet();
   const [loading, setLoading] = useState(true);
   const [amount, setAmount] = useState("");
   const [balances, setBalances] = useState<any[]>([]);
@@ -38,17 +39,16 @@ export default function SwapPage() {
   const toOptions = useMemo(() => activatedTokens.filter(t => t.code !== fromToken.code), [activatedTokens, fromToken.code]);
 
   useEffect(() => {
-    const wallet = loadWallet();
-    if (!wallet) { router.push("/wallet"); return; }
-    setStoredWallet(wallet);
-    getBalances(wallet.publicKey).then(bals => {
+    if (walletLoading) return;
+    if (!publicKey) { router.push("/wallet"); return; }
+    getBalances(publicKey).then(bals => {
       setBalances(bals);
       const activatedCodes = bals.map((b: any) => b.asset_code).filter(Boolean);
       const firstNonNative = ALL_TOKENS.find(t => t.code !== "XLM" && activatedCodes.includes(t.code));
       if (firstNonNative) setToToken(firstNonNative);
       setLoading(false);
     }).catch(() => setLoading(false));
-  }, [router]);
+  }, [publicKey, walletLoading, router]);
 
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
@@ -62,7 +62,7 @@ export default function SwapPage() {
   const cancelRef = useRef(false);
 
   useEffect(() => {
-    if (!amount || parseFloat(amount) <= 0 || !storedWallet) { setDisplayEstimate(null); return; }
+    if (!amount || parseFloat(amount) <= 0 || !publicKey) { setDisplayEstimate(null); return; }
     setDisplayEstimate(null);
 
     const cacheKey = `${fromToken.code}:${fromToken.issuer}:${toToken.code}:${toToken.issuer}:${amount}`;
@@ -92,7 +92,7 @@ export default function SwapPage() {
     }, 500);
 
     return () => { clearTimeout(timer); cancelRef.current = true; setEstimating(false); };
-  }, [amount, fromToken, toToken, storedWallet]);
+  }, [amount, fromToken, toToken, publicKey]);
 
   const handleFromChange = (code: string) => {
     const newToken = ALL_TOKENS.find(t => t.code === code)!;
@@ -103,10 +103,10 @@ export default function SwapPage() {
   const handleSwapDirection = () => { const temp = fromToken; setFromToken(toToken); setToToken(temp); };
 
   const handleSwap = async () => {
-    const address = storedWallet?.publicKey || "";
+    const address = publicKey || "";
     try {
       setStatus("swapping"); setErrorMsg("");
-      if (!storedWallet) { router.push("/wallet"); return; }
+      if (!publicKey) { router.push("/wallet"); return; }
       if (!amount || parseFloat(amount) <= 0) throw new Error("Enter a valid amount");
       const sourceBalance = fromToken.code === "XLM" ? (balances.find(b => b.asset_type === "native")?.balance || "0") : (balances.find(b => b.asset_code === fromToken.code)?.balance || "0");
       if (parseFloat(sourceBalance) < parseFloat(amount)) throw new Error(`Insufficient ${fromToken.code} balance`);

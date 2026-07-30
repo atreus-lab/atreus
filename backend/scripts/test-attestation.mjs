@@ -139,19 +139,23 @@ async function main() {
 
   await api.destroy();
 
-  // 8. POST to backend attest endpoint
+  // 8. POST to backend attest endpoint — only the proof and its public inputs
+  //    (recipient, link_hash, nullifier) go over the wire. The secret never leaves this script.
   const proofHex = Buffer.from(proofResult.proof).toString("hex");
+  const linkHashFieldHex = "0x" + linkHashField.toString(16).padStart(64, "0");
+  const nullifierFieldHex = "0x" + nullifierField.toString(16).padStart(64, "0");
   const url = `http://localhost:3001/api/links/${linkHashSha}/attest`;
   console.log("\nPOSTing to:", url);
-  console.log("Body: { recipient:", recipient, ", secret:", secretHex.substring(0, 16) + "..., proof:", proofHex.substring(0, 32) + "... }");
+  console.log("Body: { recipient:", recipient, ", proof:", proofHex.substring(0, 32) + "..., link_hash:", linkHashFieldHex, ", nullifier:", nullifierFieldHex, "}");
 
   const resp = await fetch(url, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
       recipient,
-      secret: secretHex,
       proof: proofHex,
+      link_hash: linkHashFieldHex,
+      nullifier: nullifierFieldHex,
     }),
   });
 

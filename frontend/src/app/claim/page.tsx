@@ -3,12 +3,15 @@
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { loadWallet } from '@/lib/wallet';
-import { connectWallet, claimLinkTx } from '@/lib/stellar';
+import { loadWallet, getActiveWalletProvider } from '@/lib/wallet';
+import { connectWallet, networkPassphrase, rpcServer, waitForTransaction } from '@/lib/stellar';
 import { bytesToHex } from '@/lib/proof';
 import { generateClaimProof, requestAttestation } from '@/lib/zk';
+import { startEmailVerification, confirmEmailVerification } from '@/lib/emailVerify';
 import { updateLinkStatus, checkLinkOnChain, saveClaimedLink, readLinkInfo } from '@/lib/links';
-import { Loader2, CheckCircle2, XCircle, ArrowLeft, Link2, Mail } from 'lucide-react';
+import { Loader2, CheckCircle2, XCircle, ArrowLeft, Link2, Mail, Shield } from 'lucide-react';
+import { Address, Contract, TransactionBuilder, nativeToScVal, xdr } from '@stellar/stellar-sdk';
+import { Buffer } from 'buffer';
 
 type ClaimStatus =
   | 'idle'
@@ -29,6 +32,12 @@ export default function ClaimPage() {
   const [linkInput, setLinkInput] = useState('');
   const [intendedEmail, setIntendedEmail] = useState<string | null>(null);
   const [walletEmail, setWalletEmail] = useState<string | null>(null);
+  const [emailVerified, setEmailVerified] = useState(false);
+  const [emailChallenge, setEmailChallenge] = useState<string | null>(null);
+  const [emailVerifyTo, setEmailVerifyTo] = useState<string | null>(null);
+  const [rawEmailMessage, setRawEmailMessage] = useState('');
+  const [emailBusy, setEmailBusy] = useState(false);
+  const [emailError, setEmailError] = useState('');
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
@@ -44,6 +53,37 @@ export default function ClaimPage() {
     }
   }, []);
 
+  async function handleStartEmailVerify() {
+    if (!intendedEmail) return;
+    setEmailBusy(true);
+    setEmailError('');
+    try {
+      const result = await startEmailVerification(intendedEmail);
+      setEmailChallenge(result.challenge);
+      setEmailVerifyTo(result.verifyTo);
+      setEmailVerified(false);
+    } catch (err: any) {
+      setEmailError(err?.message || 'Failed to start email verification');
+    } finally {
+      setEmailBusy(false);
+    }
+  }
+
+  async function handleConfirmEmailVerify() {
+    if (!intendedEmail || !rawEmailMessage.trim()) return;
+    setEmailBusy(true);
+    setEmailError('');
+    try {
+      await confirmEmailVerification(intendedEmail, rawEmailMessage);
+      setEmailVerified(true);
+    } catch (err: any) {
+      setEmailError(err?.message || 'Email verification failed');
+      setEmailVerified(false);
+    } finally {
+      setEmailBusy(false);
+    }
+  }
+
   async function sha256Hash(str: string): Promise<Uint8Array> {
     const encoder = new TextEncoder();
     const data = encoder.encode(str.toLowerCase().trim());
@@ -55,14 +95,33 @@ function getFriendlyErrorMessage(err: any): { title: string; description: string
   const rawMsg = err?.message || err?.toString() || '';
   const msg = rawMsg.toLowerCase();
 
-  // Check for already-claimed before anything else — it can show up directly
-  // or as a WasmVm UnreachableCodeReached trap (when the panic message doesn't
-  // propagate cleanly from the contract VM).
+  // ── Ordered checks: specific contract panics FIRST ──
+  // These must come BEFORE the HostError/WasmVm trap block because when Soroban's
+  // prepareTransaction fails it wraps the contract panic in a "HostError" that also
+  // contains the outer function name ("claim_link"), which would trigger the generic
+  // VM trap handler first and mask the real error.
+
+  if (msg.includes('invalid secret'))
+    return { title: 'Invalid link', description: 'The secret key for this link is incorrect. Please check the link and try again.' };
+  if (msg.includes('link expired') || msg.includes('expired'))
+    return { title: 'Link expired', description: 'This payment link has expired and can no longer be claimed.' };
+  if (msg.includes('no valid zk attestation'))
+    return { title: 'Proof verification pending', description: 'The ZK proof attestation has not been recorded yet. Please complete the full claim flow.' };
+  if (msg.includes('link not found'))
+    return { title: 'Link not found', description: 'This payment link does not exist in the contract. It may have been refunded or never created.' };
+  if (msg.includes('nullifier already used'))
+    return { title: 'Already claimed', description: 'This payment link has already been claimed with a different wallet.' };
   if (msg.includes('already claimed'))
     return { title: 'Funds already claimed', description: 'This payment link has already been claimed. The funds are no longer available.' };
+  if (msg.includes('invalid relayer fee'))
+    return { title: 'Configuration error', description: 'The relayer fee is invalid. Please contact support.' };
+  if (msg.includes('relayer request failed'))
+    return { title: 'Relay service error', description: 'The gasless relay service could not process the claim. Please try again later.' };
 
-  // WasmVm trap that happens when claim_link panics (secret verified, attestation
-  // passed, then claimed check triggers panic! which shows as UnreachableCodeReached)
+  // ── WasmVm / HostError trap fallback ──
+  // When the contract VM crashes instead of cleanly panicking (e.g. UnreachableCodeReached
+  // after a successful attestation check), we catch that here.  But specific panics
+  // are already handled above.
   if (
     msg.includes('wasmvm') ||
     msg.includes('invalidaction') ||
@@ -78,16 +137,6 @@ function getFriendlyErrorMessage(err: any): { title: string; description: string
     return { title: 'Contract error', description: 'The transaction could not be completed. This link may have already been claimed or is invalid. Please check the link and try again.' };
   }
 
-  if (msg.includes('invalid secret'))
-    return { title: 'Invalid link', description: 'The secret key for this link is incorrect. Please check the link and try again.' };
-  if (msg.includes('link expired') || msg.includes('expired'))
-    return { title: 'Link expired', description: 'This payment link has expired and can no longer be claimed.' };
-  if (msg.includes('no valid zk attestation'))
-    return { title: 'Proof verification pending', description: 'The ZK proof attestation has not been recorded yet. Please complete the full claim flow.' };
-  if (msg.includes('link not found'))
-    return { title: 'Link not found', description: 'This payment link does not exist in the contract. It may have been refunded or never created.' };
-  if (msg.includes('nullifier already used'))
-    return { title: 'Already claimed', description: 'This payment link has already been claimed with a different wallet.' };
   if (msg.includes('insufficient balance'))
     return { title: 'Insufficient funds', description: rawMsg };
   if (msg.includes('recipient account') || msg.includes('funded'))
@@ -104,15 +153,17 @@ function getFriendlyErrorMessage(err: any): { title: string; description: string
 }
 
 const parseLinkInput = () => {
-    const hash = linkInput.split('#')[1];
+    const hash = linkInput.split('#')[1]?.split(/[,;\s]/)[0];
     if (hash) {
       setSecretHex(hash);
       setLinkInput('');
     }
   };
 
+  const getHashFromUrl = () => window.location.hash.substring(1).split(/[,;\s]/)[0];
+
   useEffect(() => {
-    const hash = window.location.hash.substring(1);
+    const hash = getHashFromUrl();
     if (hash) setSecretHex(hash);
   }, []);
 
@@ -139,6 +190,7 @@ const parseLinkInput = () => {
         return;
       }
 
+<<<<<<< HEAD
       setStatus('generating_proof');
       const { proof, linkHashHex } = await generateClaimProof(secretBytes, recipient);
 
@@ -157,6 +209,9 @@ const parseLinkInput = () => {
       await requestAttestation(linkHashHex, secretHex, proofHex, recipient, recipientEmailHash);
 
       // Email verification: if the link was created for a specific email, check it matches
+=======
+      // Email-restricted links require DKIM ownership proof before attestation.
+>>>>>>> be39da3417c359e936ceeba0e20d5d4b0f243702
       if (intendedEmail) {
         const wallet = loadWallet();
         const authedEmail = wallet?.email;
@@ -166,11 +221,36 @@ const parseLinkInput = () => {
           setStatus('error');
           return;
         }
+        if (!emailVerified) {
+          setErrorKind('error');
+          setErrorMsg('Prove email ownership (DKIM) before claiming. Use the verification panel above.');
+          setStatus('error');
+          return;
+        }
       }
+
+      setStatus('generating_proof');
+      const { proof, linkHashHex, linkHashFieldHex, nullifierFieldHex } = await generateClaimProof(secretBytes, recipient);
+
+      setStatus('attesting');
+      const proofHex = bytesToHex(proof);
+      // Compute email hash if this is an email-restricted link
+      let recipientEmailHash: string | undefined;
+      const emailHashBytes = intendedEmail
+        ? new Uint8Array(await sha256Hash(intendedEmail))
+        : new Uint8Array(32);
+      if (intendedEmail) {
+        recipientEmailHash = Array.from(emailHashBytes)
+          .map((b) => b.toString(16).padStart(2, '0'))
+          .join('');
+      }
+
+      await requestAttestation(linkHashHex, proofHex, recipient, linkHashFieldHex, nullifierFieldHex, recipientEmailHash);
 
       setStatus('claiming');
       const linkHash = new Uint8Array(await crypto.subtle.digest('SHA-256', secretBytes));
 
+<<<<<<< HEAD
       // Compute email hash bytes for the contract call if email-restricted
       let emailHashBytes: Uint8Array | undefined;
       if (intendedEmail) {
@@ -178,6 +258,54 @@ const parseLinkInput = () => {
       }
 
       const hash = await claimLinkTx(recipient, linkHash, secretBytes, emailHashBytes);
+=======
+      const contractId = process.env.NEXT_PUBLIC_CONTRACT_ID;
+      const relayerAddress = process.env.NEXT_PUBLIC_RELAYER_ADDRESS;
+      const relayerFee = process.env.NEXT_PUBLIC_RELAYER_FEE_STROOPS;
+      if (!contractId || !relayerAddress || !relayerFee) {
+        throw new Error('Gasless claim configuration is incomplete.');
+      }
+      if (!/^\d+$/.test(relayerFee)) {
+        throw new Error('invalid relayer fee');
+      }
+
+      const contract = new Contract(contractId);
+      const claimOperation = contract.call(
+        'claim_link',
+        xdr.ScVal.scvBytes(Buffer.from(linkHash)),
+        new Address(recipient).toScVal(),
+        xdr.ScVal.scvBytes(Buffer.from(secretBytes)),
+        xdr.ScVal.scvBytes(Buffer.from(emailHashBytes)),
+        new Address(relayerAddress).toScVal(),
+        nativeToScVal(BigInt(relayerFee), { type: 'i128' }),
+      );
+
+      const account = await rpcServer.getAccount(recipient);
+      let transaction = new TransactionBuilder(account, {
+        fee: '100000',
+        networkPassphrase,
+      })
+        .addOperation(claimOperation)
+        .setTimeout(120)
+        .build();
+      transaction = (await rpcServer.prepareTransaction(transaction)) as typeof transaction;
+
+      const provider = getActiveWalletProvider();
+      const signedXdr = await provider.signTransaction(transaction.toXDR());
+      const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:3001';
+      const relayResponse = await fetch(`${backendUrl}/api/relay`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ transactionXdr: signedXdr }),
+      });
+      const relayResult = await relayResponse.json().catch(() => null);
+      if (!relayResponse.ok || typeof relayResult?.hash !== 'string') {
+        throw new Error(relayResult?.error || 'Relayer request failed.');
+      }
+
+      const hash = relayResult.hash;
+      await waitForTransaction(hash, { timeoutMs: 30_000 });
+>>>>>>> be39da3417c359e936ceeba0e20d5d4b0f243702
       setTxHash(hash);
 
       setStatus('success');
@@ -197,6 +325,7 @@ const parseLinkInput = () => {
         expiresAt: 0,
         claimed: true,
         txHash: hash,
+        counterpartyAddress: linkInfo.creator || undefined,
       });
     } catch (err: any) {
       console.error(err);
@@ -228,7 +357,8 @@ const parseLinkInput = () => {
     status === 'connecting' ||
     status === 'generating_proof' ||
     status === 'attesting' ||
-    status === 'claiming';
+    status === 'claiming' ||
+    (Boolean(intendedEmail) && !emailVerified);
 
   return (
     <div className="min-h-screen bg-[#FAFBFF] flex items-center justify-center p-4">
@@ -249,22 +379,81 @@ const parseLinkInput = () => {
             </p>
 
             {intendedEmail && (
-              <div className={`p-4 rounded-xl text-sm font-medium border ${
-                walletEmail && walletEmail.toLowerCase().trim() === intendedEmail.toLowerCase().trim()
-                  ? 'bg-green-50 border-green-100 text-green-700'
-                  : 'bg-amber-50 border-amber-100 text-amber-700'
-              }`}>
-                <p className="flex items-center gap-2">
-                  <Mail className="w-4 h-4 shrink-0" />
-                  Intended for: <strong>{intendedEmail}</strong>
-                </p>
-                {walletEmail && walletEmail.toLowerCase().trim() === intendedEmail.toLowerCase().trim() ? (
-                  <p className="text-xs mt-1 text-green-600">✓ Your email matches!</p>
-                ) : walletEmail ? (
-                  <p className="text-xs mt-1 text-amber-600">You are logged in as {walletEmail}. Only {intendedEmail} can claim this link.</p>
-                ) : (
-                  <p className="text-xs mt-1 text-amber-600">Log in with {intendedEmail} to claim this link.</p>
-                )}
+              <div className="space-y-3">
+                <div className={`p-4 rounded-xl text-sm font-medium border ${
+                  walletEmail && walletEmail.toLowerCase().trim() === intendedEmail.toLowerCase().trim()
+                    ? 'bg-green-50 border-green-100 text-green-700'
+                    : 'bg-amber-50 border-amber-100 text-amber-700'
+                }`}>
+                  <p className="flex items-center gap-2">
+                    <Mail className="w-4 h-4 shrink-0" />
+                    Intended for: <strong>{intendedEmail}</strong>
+                  </p>
+                  {walletEmail && walletEmail.toLowerCase().trim() === intendedEmail.toLowerCase().trim() ? (
+                    <p className="text-xs mt-1 text-green-600">✓ Your email matches!</p>
+                  ) : walletEmail ? (
+                    <p className="text-xs mt-1 text-amber-600">You are logged in as {walletEmail}. Only {intendedEmail} can claim this link.</p>
+                  ) : (
+                    <p className="text-xs mt-1 text-amber-600">Log in with {intendedEmail} to claim this link.</p>
+                  )}
+                </div>
+
+                <div className="p-4 rounded-xl text-sm border border-slate-200 bg-slate-50 space-y-3">
+                  <p className="flex items-center gap-2 font-semibold text-slate-800">
+                    <Shield className="w-4 h-4 text-indigo-600" />
+                    DKIM email ownership verification
+                  </p>
+                  {emailVerified ? (
+                    <p className="text-xs text-green-700 font-medium">
+                      Email ownership verified. You can claim this link.
+                    </p>
+                  ) : (
+                    <>
+                      <p className="text-xs text-slate-600">
+                        Prove you control this address by sending a DKIM-signed message that includes a challenge token, then paste the raw email source below.
+                      </p>
+                      {!emailChallenge ? (
+                        <button
+                          type="button"
+                          disabled={emailBusy}
+                          onClick={handleStartEmailVerify}
+                          className="w-full py-2.5 rounded-xl text-xs font-bold text-white bg-slate-900 hover:bg-slate-800 disabled:opacity-50"
+                        >
+                          {emailBusy ? 'Starting…' : 'Start email verification'}
+                        </button>
+                      ) : (
+                        <div className="space-y-2">
+                          <p className="text-xs text-slate-600">
+                            Send mail from <strong>{intendedEmail}</strong>
+                            {emailVerifyTo ? <> to <strong>{emailVerifyTo}</strong></> : null}
+                            {' '}with challenge token:
+                          </p>
+                          <code className="block text-[11px] break-all bg-white border border-slate-200 rounded-lg p-2 text-slate-800">
+                            {emailChallenge}
+                          </code>
+                          <textarea
+                            value={rawEmailMessage}
+                            onChange={(e) => setRawEmailMessage(e.target.value)}
+                            placeholder="Paste full raw email source (including DKIM-Signature header)…"
+                            rows={5}
+                            className="w-full p-2.5 rounded-xl border border-slate-200 text-xs font-mono text-slate-800 focus:outline-none focus:border-indigo-500"
+                          />
+                          <button
+                            type="button"
+                            disabled={emailBusy || !rawEmailMessage.trim()}
+                            onClick={handleConfirmEmailVerify}
+                            className="w-full py-2.5 rounded-xl text-xs font-bold text-white bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50"
+                          >
+                            {emailBusy ? 'Verifying DKIM…' : 'Confirm with raw message'}
+                          </button>
+                        </div>
+                      )}
+                      {emailError && (
+                        <p className="text-xs text-red-600 font-medium">{emailError}</p>
+                      )}
+                    </>
+                  )}
+                </div>
               </div>
             )}
 

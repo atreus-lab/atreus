@@ -2,7 +2,8 @@
 
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
-import { loadWallet, sendXLM, getBalance, getExplorerUrl, type StoredWallet } from "@/lib/wallet";
+import { sendXLM, getBalance, getExplorerUrl } from "@/lib/wallet";
+import { useWallet } from "@/components/providers";
 import { 
   Send, ArrowUpRight, User, Shield, ShieldCheck,
   CheckCircle2, ExternalLink, Loader2
@@ -13,7 +14,7 @@ import SearchDialog from "@/components/SearchDialog";
 
 export default function SendPage() {
   const router = useRouter();
-  const [storedWallet, setStoredWallet] = useState<StoredWallet | null>(null);
+  const { publicKey, isLoading: walletLoading } = useWallet();
   const [mounted, setMounted] = useState(false);
   const [balance, setBalance] = useState("0.00");
   const [searchOpen, setSearchOpen] = useState(false);
@@ -26,19 +27,18 @@ export default function SendPage() {
 
   useEffect(() => {
     setMounted(true);
-    const wallet = loadWallet();
-    if (!wallet) {
+    if (walletLoading) return;
+    if (!publicKey) {
       router.push("/wallet");
       return;
     }
-    setStoredWallet(wallet);
 
     const params = new URLSearchParams(window.location.search);
     const to = params.get("to");
     if (to) setDestination(to);
 
-    getBalance(wallet.publicKey).then(setBalance).catch(console.error);
-  }, [router]);
+    getBalance(publicKey).then(setBalance).catch(console.error);
+  }, [publicKey, walletLoading, router]);
 
   // ⌘K keyboard shortcut
   useEffect(() => {
@@ -57,12 +57,11 @@ export default function SendPage() {
       setStatus("sending");
       setErrorMsg("");
 
-      const wallet = loadWallet();
-      if (!wallet) { router.push("/wallet"); return; }
+      if (!publicKey) { router.push("/wallet"); return; }
       if (!destination.trim()) throw new Error("Enter a destination address");
       if (!amount || parseFloat(amount) <= 0) throw new Error("Enter a valid amount");
 
-      const bal = await getBalance(wallet.publicKey);
+      const bal = await getBalance(publicKey);
       if (parseFloat(bal) < parseFloat(amount) + 0.001) throw new Error("Insufficient balance");
 
       const hash = await sendXLM(destination.trim(), amount);

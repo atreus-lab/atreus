@@ -3,6 +3,10 @@
 import Image from "next/image";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+<<<<<<< HEAD
+=======
+import { useState, useEffect } from "react";
+>>>>>>> be39da3417c359e936ceeba0e20d5d4b0f243702
 import { ChevronLeft, ChevronUp, LayoutDashboard, Wallet, Link2, ArrowRightLeft, BarChart3, Activity, Shield, Settings, User } from "lucide-react";
 import logo from "../media/ateruslogo.jpeg";
 import { useSidebar } from "./sidebar-context";
@@ -24,7 +28,9 @@ const NAV_ITEMS = [
 export default function DashboardSidebar() {
   const pathname = usePathname();
   const { collapsed, toggleCollapsed, setProfileOpen } = useSidebar();
-  const wallet = loadWallet();
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => { setMounted(true); }, []);
+  const wallet = mounted ? loadWallet() : null;
   const emailName = wallet?.email ? wallet.email.split('@')[0] : 'User';
   const displayAddress = wallet?.publicKey ? `${wallet.publicKey.slice(0, 5)}...${wallet.publicKey.slice(-4)}` : '';
 
