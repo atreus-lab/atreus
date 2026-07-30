@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useRef, useState, type DragEvent } from 'react';
-import { Download, FileUp, Loader2 } from 'lucide-react';
+import { Download, FileUp, HelpCircle, Loader2 } from 'lucide-react';
 import { connectWallet } from '@/lib/stellar';
 import { createBatchLinks, getBatchProgress, getBatchResultsUrl, type BatchProgressData } from '@/lib/links';
 import { BatchProgress } from './BatchProgress';
@@ -35,6 +35,8 @@ export function BatchUpload() {
   const [error, setError] = useState('');
   const [batch, setBatch] = useState<BatchProgressData | null>(null);
   const [submitting, setSubmitting] = useState(false);
+  const [webhookUrl, setWebhookUrl] = useState('');
+  const [showTooltip, setShowTooltip] = useState(false);
 
   useEffect(() => {
     if (!batch || batch.status === 'completed') return;
@@ -57,11 +59,22 @@ export function BatchUpload() {
   };
 
   const drop = (event: DragEvent<HTMLDivElement>) => { event.preventDefault(); void loadFile(event.dataTransfer.files[0]); };
+
   const submit = async () => {
+    // Validate webhook URL if provided
+    if (webhookUrl.trim()) {
+      try {
+        const parsed = new URL(webhookUrl.trim());
+        if (parsed.protocol !== 'https:') throw new Error('must be https');
+      } catch {
+        setError('Webhook URL must be a valid https:// URL');
+        return;
+      }
+    }
     try {
       setSubmitting(true); setError('');
       const creator = await connectWallet();
-      const { batchId } = await createBatchLinks(csv, creator);
+      const { batchId } = await createBatchLinks(csv, creator, webhookUrl.trim() || undefined);
       setBatch(await getBatchProgress(batchId));
     } catch (err) { setError(err instanceof Error ? err.message : 'Batch submission failed'); }
     finally { setSubmitting(false); }
@@ -75,6 +88,43 @@ export function BatchUpload() {
       <p className="mt-1 text-xs text-secondary">amount,optional_email,optional_memo · maximum 100 rows</p>
       <input ref={inputRef} className="hidden" type="file" accept=".csv,text/csv" onChange={(event) => void loadFile(event.target.files?.[0])} />
     </div>
+
+    {/* Webhook URL input */}
+    <div className="space-y-1.5">
+      <div className="flex items-center gap-1.5">
+        <label htmlFor="webhookUrl" className="text-xs font-semibold text-secondary">
+          Webhook URL <span className="text-[var(--text-tertiary,#888)]">(optional)</span>
+        </label>
+        <div className="relative">
+          <button
+            type="button"
+            aria-label="Webhook URL help"
+            onMouseEnter={() => setShowTooltip(true)}
+            onMouseLeave={() => setShowTooltip(false)}
+            onFocus={() => setShowTooltip(true)}
+            onBlur={() => setShowTooltip(false)}
+            className="flex items-center text-secondary hover:text-primary"
+          >
+            <HelpCircle className="h-3.5 w-3.5" />
+          </button>
+          {showTooltip && (
+            <div role="tooltip" className="absolute bottom-full left-1/2 z-50 mb-2 w-64 -translate-x-1/2 rounded-lg border border-[var(--border-default)] bg-elevated px-3 py-2 text-xs font-medium text-primary shadow-lg">
+              We&apos;ll POST a signed event here for each row — no need to poll.
+              <div className="absolute left-1/2 top-full -translate-x-1/2 border-4 border-transparent border-t-[var(--border-default)]" />
+            </div>
+          )}
+        </div>
+      </div>
+      <input
+        id="webhookUrl"
+        type="url"
+        value={webhookUrl}
+        onChange={(e) => setWebhookUrl(e.target.value)}
+        placeholder="https://your-server.com/webhook"
+        className="w-full rounded-lg border border-[var(--border-default)] bg-elevated px-3 py-2 text-sm text-primary placeholder:text-secondary focus:border-accent focus:outline-none"
+      />
+    </div>
+
     {error && <div className="rounded-lg border border-[rgba(248,113,113,0.15)] bg-[rgba(248,113,113,0.08)] p-3 text-sm font-semibold text-error">{error}</div>}
     {rows.length > 0 && !batch && <>
       <div className="max-h-64 overflow-auto rounded-lg border border-[var(--border-default)]">
@@ -82,12 +132,12 @@ export function BatchUpload() {
           <tbody>{rows.map((row, index) => <tr key={index} className="border-t border-[var(--border-default)]"><td className="p-2">{index + 2}</td><td className="p-2">{row.amount}</td><td className="p-2">{row.email || '—'}</td><td className="max-w-40 truncate p-2">{row.memo || '—'}</td></tr>)}</tbody></table>
       </div>
       <button onClick={submit} disabled={submitting} className="btn-primary flex w-full items-center justify-center gap-2 rounded-lg py-3 text-sm font-bold">
-        {submitting ? <><Loader2 className="h-4 w-4 animate-spin" /> Starting batch…</> : `Create ${rows.length} Links`}
+        {submitting ? <><Loader2 className="h-4 w-4 animate-spin" />Starting batch…</> : `Create ${rows.length} Links`}
       </button>
     </>}
     {batch && <>
       <BatchProgress batch={batch} />
-      {batch.status === 'completed' && <a href={getBatchResultsUrl(batch.id)} className="btn-primary flex w-full items-center justify-center gap-2 rounded-lg py-3 text-sm font-bold"><Download className="h-4 w-4" /> Download Results CSV</a>}
+      {batch.status === 'completed' && <a href={getBatchResultsUrl(batch.id)} className="btn-primary flex w-full items-center justify-center gap-2 rounded-lg py-3 text-sm font-bold"><Download className="h-4 w-4" />Download Results CSV</a>}
     </>}
   </div>;
 }
