@@ -95,8 +95,9 @@ describe("deliverWebhook", () => {
     vi.stubGlobal("fetch", fetchMock);
 
     const promise = deliverWebhook("https://example.com/webhook", SAMPLE_PAYLOAD);
+    const assertion = expect(promise).rejects.toThrow("HTTP 500");
     await vi.runAllTimersAsync();
-    await expect(promise).rejects.toThrow("HTTP 500");
+    await assertion;
     expect(fetchMock).toHaveBeenCalledTimes(3);
   });
 
@@ -105,8 +106,9 @@ describe("deliverWebhook", () => {
     vi.stubGlobal("fetch", fetchMock);
 
     const promise = deliverWebhook("https://example.com/webhook", SAMPLE_PAYLOAD);
+    const assertion = expect(promise).rejects.toThrow("Network failure");
     await vi.runAllTimersAsync();
-    await expect(promise).rejects.toThrow("Network failure");
+    await assertion;
     expect(fetchMock).toHaveBeenCalledTimes(3);
   });
 
@@ -132,8 +134,9 @@ describe("deliverWebhook", () => {
     vi.stubGlobal("fetch", fetchMock);
 
     const promise = deliverWebhook("https://example.com/webhook", SAMPLE_PAYLOAD);
+    const caught = promise.catch(() => {});
     await vi.runAllTimersAsync();
-    await promise.catch(() => {});
+    await caught;
 
     expect(callTimes).toHaveLength(3);
     // Gap between attempt 1→2 should be ~500ms, 2→3 ~1000ms
