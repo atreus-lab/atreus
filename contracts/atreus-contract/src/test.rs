@@ -23,6 +23,10 @@ impl MockVerifier {
     pub fn is_attested(_env: Env, _link_hash: BytesN<32>, _recipient: Address) -> bool {
         true
     }
+
+    pub fn is_email_attested(_env: Env, _link_hash: BytesN<32>, _recipient: Address, _email_hash: BytesN<32>) -> bool {
+        true
+    }
 }
 
 fn setup_test(env: &Env) -> (AtreusContractClient<'_>, Address, Address) {

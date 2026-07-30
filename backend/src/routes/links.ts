@@ -8,6 +8,7 @@ import { batchResultsCsv, createBatchRecord, parseBatchCsv, processBatch, type B
 import { saveBatch, listBatches } from "../lib/batchStore.js";
 import { isEmailHashHex } from "../lib/emailHash.js";
 import { isEmailHashVerified } from "../lib/emailVerificationStore.js";
+import { isNullifierUsedLocally, markNullifierUsedLocally, normalizeNullifierHex } from "../lib/nullifierStore.js";
 import pino from "pino";
 
 let circuit: any = undefined;
@@ -73,7 +74,8 @@ export function hydrateBatches(): void {
 }
 const logger = pino({ level: process.env.LOG_LEVEL || "info" });
 
-// POST /api/links/batch - Validate and enqueue a CSV batch.
+// POST /api/links/batch - Validate and enqueue a CSV batch. The body remains JSON so
+// clients can send the exact CSV text without a multipart parsing dependency.
 linkRoutes.post("/batch", async (req: Request, res: Response) => {
   const correlationId = String(req.header("x-correlation-id") || crypto.randomUUID());
   try {
@@ -237,6 +239,11 @@ linkRoutes.post("/:hash/attest", async (req: Request, res: Response) => {
     return;
   }
 
+  let emailHashBytes: Uint8Array | undefined;
+  if (recipient_email_hash && typeof recipient_email_hash === "string" && recipient_email_hash.length === 64) {
+    emailHashBytes = Uint8Array.from(Buffer.from(recipient_email_hash, "hex"));
+  }
+
   // Email-restricted links must prove ownership via DKIM before attestation.
   if (recipient_email_hash !== undefined && recipient_email_hash !== null && recipient_email_hash !== "") {
     if (typeof recipient_email_hash !== "string" || !isEmailHashHex(recipient_email_hash.toLowerCase())) {
@@ -258,6 +265,29 @@ linkRoutes.post("/:hash/attest", async (req: Request, res: Response) => {
     }
   }
 
+  // Nullifier replay guard, two-tier: an in-memory cache is checked first (fast
+  // path, no RPC call), and only on a cache miss do we fall back to querying the
+  // VerifierContract on-chain — this is what keeps replay protection correct
+  // across a backend restart, when the in-memory cache is empty. Both run before
+  // the expensive ZK proof verification below.
+  const nullifierHex = normalizeNullifierHex(nullifier);
+  const nullifierBytes = Uint8Array.from(Buffer.from(nullifierHex, "hex"));
+  if (isNullifierUsedLocally(nullifierHex)) {
+    res.status(409).json({ error: "Nullifier already used", correlationId });
+    return;
+  }
+  try {
+    if (await checkNullifierOnChain(nullifierBytes)) {
+      markNullifierUsedLocally(nullifierHex);
+      res.status(409).json({ error: "Nullifier already used", correlationId });
+      return;
+    }
+  } catch (err: any) {
+    logger.error({ correlationId, error: err?.message }, "checkNullifierOnChain failed");
+    res.status(503).json({ error: "Unable to verify nullifier status, try again", correlationId });
+    return;
+  }
+
   try {
     const proofBytes = Uint8Array.from(Buffer.from(proof, "hex"));
 
@@ -268,7 +298,12 @@ linkRoutes.post("/:hash/attest", async (req: Request, res: Response) => {
     }
 
     const linkHashBytes = Uint8Array.from(Buffer.from(hash, "hex"));
-    const txHash = await submitAttestation(linkHashBytes, recipient);
+    const txHash = await submitAttestation(linkHashBytes, recipient, emailHashBytes);
+
+    markNullifierUsedLocally(nullifierHex);
+    markNullifierOnChain(nullifierBytes).catch((err: any) => {
+      logger.error({ correlationId, error: err?.message }, "markNullifierOnChain failed");
+    });
 
     res.json({ success: true, hash, recipient, attestationTx: txHash, correlationId });
   } catch (err: any) {

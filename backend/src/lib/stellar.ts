@@ -137,8 +137,15 @@ export const createBatchEscrowTransaction = async (
  * Submits VerifierContract.attest(attester, link_hash, recipient) signed by the
  * backend's dedicated attester keypair. Called only after verifyClaimProof() confirms
  * the real UltraHonk proof is valid for this exact (secret, recipient) pair.
+ *
+ * If emailHash is provided (when policy_type == 1), also submits
+ * VerifierContract.attest_email(attester, link_hash, recipient, email_hash).
  */
-export const submitAttestation = async (linkHash: Uint8Array, recipient: string): Promise<string> => {
+export const submitAttestation = async (
+  linkHash: Uint8Array,
+  recipient: string,
+  emailHash?: Uint8Array
+): Promise<string> => {
   const verifierContractId = process.env.NEXT_PUBLIC_VERIFIER_CONTRACT_ID;
   if (!verifierContractId) throw new Error("NEXT_PUBLIC_VERIFIER_CONTRACT_ID is not configured");
 
@@ -148,18 +155,35 @@ export const submitAttestation = async (linkHash: Uint8Array, recipient: string)
   const attesterKp = Keypair.fromSecret(attesterSecret);
   const contract = new Contract(verifierContractId);
 
-  const op = contract.call(
-    "attest",
-    new Address(attesterKp.publicKey()).toScVal(),
-    xdr.ScVal.scvBytes(Buffer.from(linkHash)),
-    new Address(recipient).toScVal(),
-  );
+  // Build operations: always attest the ZK proof binding
+  const ops = [
+    contract.call(
+      "attest",
+      new Address(attesterKp.publicKey()).toScVal(),
+      xdr.ScVal.scvBytes(Buffer.from(linkHash)),
+      new Address(recipient).toScVal(),
+    ),
+  ];
+
+  // If email hash is provided, also attest the email binding
+  if (emailHash && emailHash.length === 32) {
+    ops.push(
+      contract.call(
+        "attest_email",
+        new Address(attesterKp.publicKey()).toScVal(),
+        xdr.ScVal.scvBytes(Buffer.from(linkHash)),
+        new Address(recipient).toScVal(),
+        xdr.ScVal.scvBytes(Buffer.from(emailHash)),
+      )
+    );
+  }
 
   const account = await rpcServer.getAccount(attesterKp.publicKey());
-  let tx = new TransactionBuilder(account, { fee: "100000", networkPassphrase })
-    .addOperation(op)
-    .setTimeout(60)
-    .build();
+  let builder = new TransactionBuilder(account, { fee: "200000", networkPassphrase });
+  for (const op of ops) {
+    builder = builder.addOperation(op);
+  }
+  let tx = builder.setTimeout(60).build();
 
   tx = (await rpcServer.prepareTransaction(tx)) as any;
   tx.sign(attesterKp);
@@ -179,4 +203,84 @@ export const submitAttestation = async (linkHash: Uint8Array, recipient: string)
     await new Promise((resolve) => setTimeout(resolve, 1500));
   }
   throw new Error(`Timed out waiting for attestation tx (hash: ${sendResult.hash})`);
+};
+
+/**
+ * Read-only check of VerifierContract.is_nullifier_used(nullifier), via simulation
+ * only — nothing is submitted or signed. This is the restart-safe fallback the
+ * /attest handler falls back to when a nullifier isn't found in the in-memory cache
+ * (e.g. right after a backend restart).
+ */
+export const checkNullifierOnChain = async (nullifier: Uint8Array): Promise<boolean> => {
+  const verifierContractId = process.env.NEXT_PUBLIC_VERIFIER_CONTRACT_ID;
+  if (!verifierContractId) throw new Error("NEXT_PUBLIC_VERIFIER_CONTRACT_ID is not configured");
+
+  const attesterSecret = process.env.ATTESTER_SECRET_KEY;
+  if (!attesterSecret) throw new Error("ATTESTER_SECRET_KEY is not configured");
+  const attesterKp = Keypair.fromSecret(attesterSecret);
+
+  const contract = new Contract(verifierContractId);
+  // A read-only simulation never touches the source account's actual sequence
+  // number, so a throwaway Account avoids an extra getAccount RPC round trip.
+  const account = new Account(attesterKp.publicKey(), "0");
+  const tx = new TransactionBuilder(account, { fee: "100", networkPassphrase })
+    .addOperation(contract.call("is_nullifier_used", xdr.ScVal.scvBytes(Buffer.from(nullifier))))
+    .setTimeout(30)
+    .build();
+
+  const sim = await rpcServer.simulateTransaction(tx);
+  if (rpc.Api.isSimulationError(sim)) {
+    throw new Error(`is_nullifier_used simulation failed: ${sim.error}`);
+  }
+  if (!rpc.Api.isSimulationSuccess(sim) || !sim.result) {
+    return false;
+  }
+  return Boolean(scValToNative(sim.result.retval));
+};
+
+/**
+ * Submits VerifierContract.mark_nullifier(attester, nullifier) signed by the backend's
+ * attester keypair, recording the nullifier as used on-chain so replay protection
+ * survives a backend restart. Intended to be called after a successful attestation;
+ * callers may await it or fire-and-forget since it does not gate the attest response.
+ */
+export const markNullifierOnChain = async (nullifier: Uint8Array): Promise<string> => {
+  const verifierContractId = process.env.NEXT_PUBLIC_VERIFIER_CONTRACT_ID;
+  if (!verifierContractId) throw new Error("NEXT_PUBLIC_VERIFIER_CONTRACT_ID is not configured");
+
+  const attesterSecret = process.env.ATTESTER_SECRET_KEY;
+  if (!attesterSecret) throw new Error("ATTESTER_SECRET_KEY is not configured");
+  const attesterKp = Keypair.fromSecret(attesterSecret);
+
+  const contract = new Contract(verifierContractId);
+  const operation = contract.call(
+    "mark_nullifier",
+    new Address(attesterKp.publicKey()).toScVal(),
+    xdr.ScVal.scvBytes(Buffer.from(nullifier)),
+  );
+
+  const account = await rpcServer.getAccount(attesterKp.publicKey());
+  let tx = new TransactionBuilder(account, { fee: "200000", networkPassphrase })
+    .addOperation(operation)
+    .setTimeout(60)
+    .build();
+
+  tx = (await rpcServer.prepareTransaction(tx)) as any;
+  tx.sign(attesterKp);
+
+  const sendResult = await rpcServer.sendTransaction(tx as any);
+  if (sendResult.status === "ERROR") {
+    throw new Error(`mark_nullifier tx rejected: ${(sendResult as any).errorResultXdr || (sendResult as any).errorResult}`);
+  }
+
+  const start = Date.now();
+  while (Date.now() - start < 30_000) {
+    const result = await rpcServer.getTransaction(sendResult.hash);
+    if (result.status === rpc.Api.GetTransactionStatus.SUCCESS) return sendResult.hash;
+    if (result.status === rpc.Api.GetTransactionStatus.FAILED) {
+      throw new Error(`mark_nullifier tx failed on-chain (hash: ${sendResult.hash})`);
+    }
+    await new Promise((resolve) => setTimeout(resolve, 1500));
+  }
+  throw new Error(`Timed out waiting for mark_nullifier tx (hash: ${sendResult.hash})`);
 };
