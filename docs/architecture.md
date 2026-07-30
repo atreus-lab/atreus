@@ -49,48 +49,42 @@ Atreus is a **TipLink-style wallet on Stellar** with an integrated **ZK-powered 
 ## 3. System Architecture
 
 ```
-┌──────────────────────────────────────────────────────────────────┐
-│                         Browser Client                           │
-│                                                                  │
-│  ┌────────────────────────┐         ┌─────────────────────────┐  │
-│  │   Google OAuth / Auth  │         │  Ed25519 Local Wallet   │  │
-│  └───────────┬────────────┘         └────────────┬────────────┘  │
-│              │                                   │               │
-│              ▼                                   ▼               │
-│    BIP-39 Mnemonic Seed                 Stellar Transaction      │
-│  (Saved in localStorage)                    Builder              │
-│              │                                   │               │
-│              └─────────────────┬─────────────────┘               │
-│                                │                                 │
-│                                ▼                                 │
-│             Noir WASM Prover (@aztec/bb.js)                      │
-│             • Secret & Recipient inputs                          │
-│             • Pedersen Hash commitments                          │
-│             • Generates UltraHonk Proof                          │
-└────────────────────────────────┬─────────────────────────────────┘
-                                 │
-                 ┌───────────────┴───────────────┐
-                 │                               │
-                 ▼                               ▼
-┌────────────────────────────────┐ ┌───────────────────────────────┐
-│        Backend Oracle          │ │       Stellar Network         │
-│                                │ │          (Soroban)            │
-│  ┌──────────────────────────┐  │ │                               │
-│  │   DKIM Email Verifier    │  │ │  ┌─────────────────────────┐  │
-│  │   (mailauth / RFC822)    │  │ │  │   AtreusContract        │  │
-│  ├──────────────────────────┤  │ │  │   • create_link()       │  │
-│  │   CSV Batch Ingester     │  │ │  │   • claim_link()        │  │
-│  │   (POST /api/links/batch)│  │ │  │   • refund_link()       │  │
-│  ├──────────────────────────┤  │ │  └────────────┬────────────┘  │
-│  │  Barretenberg Off-Chain  │  │ │               │               │
-│  │    Proof Verifier        │  │ │               │ is_attested() │
-│  └───────────┬──────────────┘  │ │               ▼               │
-│              │                 │ │  ┌─────────────────────────┐  │
-│              ▼                 │ │  │    VerifierContract     │  │
-│  submitAttestation()           │ │  │    • attest()           │  │
-│  (Signed by Attester key) ─────┼─┼─►│    • is_attested()      │  │
-└────────────────────────────────┘ │  └─────────────────────────┘  │
-                                   └───────────────────────────────┘
+┌─────────────────────────────────────────────────────────────┐
+│                    Browser (Next.js)                        │
+│                                                             │
+│  ┌──────────────┐    ┌──────────────────────────────────┐   │
+│  │ Google OAuth │    │  Stellar Wallet (HKDF derived)   │   │
+│  └──────┬───────┘    └──────────┬───────────────────────┘   │
+│         │                       │                           │
+│         │              ┌────────▼────────┐                  │
+│         │              │  Soroban SDK    │                  │
+│         │              │  (tx builder)   │                  │
+│         │              └────────┬────────┘                  │
+│         │                       │                           │
+│  ┌──────▼───────────────────────▼───────────────────────┐   │
+│  │              Noir WASM Prover (Barretenberg)         │   │
+│  │  • Generate UltraHonk proofs in browser              │   │
+│  │  • Poseidon hash (native BN254)                      │   │
+│  └──────────────────────┬───────────────────────────────┘   │
+└─────────────────────────┼───────────────────────────────────┘
+                          │
+                          ▼
+┌─────────────────────────────────────────────────────────────┐
+│                  Stellar (Soroban)                          │
+│                                                             │
+│  ┌─────────────────────┐    ┌───────────────────────────┐   │
+│  │  AtreusContract     │    │  VerifierContract         │   │
+│  │                     │    │  (rs-soroban-ultrahonk)   │   │
+│  │  • create_link()    │◄───┤  • verify_proof()         │   │
+│  │  • claim_link()     │    │  • VK set at deploy time  │   │
+│  │  • refund_link()    │    └───────────────────────────┘   │
+│  └────────┬────────────┘                                    │
+│           │                                                 │
+│  ┌────────▼────────────┐    ┌───────────────────────────┐   │
+│  │  Token Contract     │    │  Soroswap DEX             │   │
+│  │  (native / SAC)     │    │  (auto-swap on deposit)   │   │
+│  └─────────────────────┘    └───────────────────────────┘   │
+└─────────────────────────────────────────────────────────────┘
 ```
 
 ---
@@ -282,33 +276,56 @@ Both frontend (`frontend/src/lib/zk.ts`) and backend (`backend/src/lib/zk.ts`) f
 
 ---
 
-## 7. Data Flow & Subsystems
+```
+Sender                          Frontend                         Soroban
+  │                                │                                │
+  │  1. Sign in with Google        │                                │
+  │───────────────────────────────►│                                │
+  │                                │                                │
+  │  2. Enter amount + policy      │                                │
+  │     (e.g., "secret" rule)      │                                │
+  │───────────────────────────────►│                                │
+  │                                │                                │
+  │  3. Generate secret (32 bytes) │  4. create_link(               │
+  │     Compute link_hash =        │     id, policy_type,           │
+  │     PoseidonHash(secret)       │     policy_params, amount,     │
+  │                                │     asset, expiry, sender)     │
+  │◄───────────────────────────────│───────────────────────────────►│
+  │                                │                                │
+  │  5. Share link                 │                                │
+  │     (https://app/claim#secret) │                                │
+  │───────────────────────────────►│                                │
+```
 
 ### 7.1 Attestation-Oracle Flow
 
 The attestation-oracle flow guarantees zero-knowledge privacy while ensuring compatibility with Soroban execution:
 
 ```
-Client (Browser)                 Backend Attester              VerifierContract
-       │                                │                             │
-       │  1. Generate UltraHonk proof   │                             │
-       │     using @aztec/bb.js WASM    │                             │
-       │                                │                             │
-       │  2. POST /api/links/:hash/attest                             │
-       │     (proof, recipient,         │                             │
-       │      link_hash, nullifier)     │                             │
-       │───────────────────────────────►│                             │
-       │                                │                             │
-       │                                │  3. verifyClaimProof()      │
-       │                                │     (Barretenberg off-chain)│
-       │                                │                             │
-       │                                │  4. Submit attest() tx      │
-       │                                │────────────────────────────►│
-       │                                │                             │
-       │                                │  5. Record attestation      │
-       │                                │◄────────────────────────────│
-       │  6. 200 OK (attestationTx)     │                             │
-       │◄───────────────────────────────│                             │
+Recipient                        Frontend                         Soroban
+  │                                │                                │
+  │  1. Open link (URL#secret)     │                                │
+  │───────────────────────────────►│                                │
+  │                                │                                │
+  │  2. Read secret from fragment  │                                │
+  │     Derive recipient address   │                                │
+  │                                │                                │
+  │  3. Generate ZK proof          │                                │
+  │     (bb.js in browser)         │                                │
+  │───────────────────────────────►│                                │
+  │                                │                                │
+  │                                │  4. claim_link(                │
+  │                                │     link_hash, recipient,      │
+  │                                │     proof_bytes)               │
+  │                                │───────────────────────────────►│
+  │                                │                                │
+  │                                │  5. VerifierContract           │
+  │                                │     .verify_proof()            │
+  │                                │  6. Check nullifier not used   │
+  │                                │  7. Transfer funds             │
+  │                                │◄───────────────────────────────│
+  │◄───────────────────────────────│                                │
+  │  8. Done!                      │                                │
 ```
 
 1. **Client Proving**: The browser loads the circuit bytecode (`secret.json`) and generates an UltraHonk proof using `@aztec/bb.js`.
