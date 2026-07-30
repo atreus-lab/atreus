@@ -82,13 +82,9 @@ impl AtreusContract {
         link_hash: BytesN<32>,
         recipient: Address,
         secret: BytesN<32>,
-<<<<<<< HEAD
         _recipient_email_hash: BytesN<32>,
-=======
-        recipient_email_hash: BytesN<32>,
         relayer_address: Address,
         relayer_fee: i128,
->>>>>>> be39da3417c359e936ceeba0e20d5d4b0f243702
     ) {
         // Soroban authorizes the complete invocation, including relayer_address
         // and relayer_fee. This makes the recipient's signature an explicit
@@ -110,7 +106,11 @@ impl AtreusContract {
 
         // Retrieve verifier early — needed by both the ZK attestation check and the
         // email-restricted policy check below.
-        let verifier: Address = env.storage().instance().get(&DataKey::VerifierAddress).expect("verifier not set");
+        let verifier: Address = env
+            .storage()
+            .instance()
+            .get(&DataKey::VerifierAddress)
+            .expect("verifier not set");
 
         // If policy_type == 1 (email-restricted), verify the claimer's email
         // through the attestation system, not a plaintext argument. The trusted
@@ -143,24 +143,10 @@ impl AtreusContract {
         // releasing funds. The attestation is only recorded by VerifierContract::attest()
         // after a trusted attester has verified a real UltraHonk proof off-chain — see the
         // doc comment on VerifierContract::verify_proof for why this indirection exists.
-<<<<<<< HEAD
-        let args: soroban_sdk::Vec<Val> = vec![
-            &env,
-            link_hash.into_val(&env),
-            recipient.into_val(&env),
-        ];
-        let attested: bool = env.invoke_contract(&verifier, &Symbol::new(&env, "is_attested"), args);
-=======
-        let verifier: Address = env
-            .storage()
-            .instance()
-            .get(&DataKey::VerifierAddress)
-            .expect("verifier not set");
         let args: soroban_sdk::Vec<Val> =
             vec![&env, link_hash.into_val(&env), recipient.into_val(&env)];
         let attested: bool =
             env.invoke_contract(&verifier, &Symbol::new(&env, "is_attested"), args);
->>>>>>> be39da3417c359e936ceeba0e20d5d4b0f243702
         if !attested {
             panic!("no valid ZK attestation for this claim");
         }
@@ -175,15 +161,8 @@ impl AtreusContract {
 
         // Double-claim prevention via nullifier
         let link_hash_bytes = Bytes::from_array(&env, &link_hash.to_array());
-<<<<<<< HEAD
-        let nullifier_key = BytesN::from_array(
-            &env,
-            &env.crypto().sha256(&link_hash_bytes).to_array(),
-        );
-=======
         let nullifier_key =
             BytesN::from_array(&env, &env.crypto().sha256(&link_hash_bytes).to_array());
->>>>>>> be39da3417c359e936ceeba0e20d5d4b0f243702
         if env.storage().persistent().has(&nullifier_key) {
             panic!("nullifier already used");
         }

@@ -12,6 +12,7 @@ pub enum DataKey {
     Attester,
     Attestation(BytesN<32>, Address),
     EmailAttestation(BytesN<32>, Address, BytesN<32>),
+    Nullifier(BytesN<32>),
 }
 
 #[contract]
@@ -166,4 +167,44 @@ impl VerifierContract {
             .get(&DataKey::EmailAttestation(link_hash, recipient, email_hash))
             .unwrap_or(false)
     }
+
+    /// Records `nullifier` as used, on-chain. Only the trusted attester may call this.
+    ///
+    /// This is the durable, restart-safe counterpart to the backend's in-memory
+    /// nullifier cache: the backend checks its local cache first (fast path) and
+    /// falls back to `is_nullifier_used` below when the cache misses — e.g. right
+    /// after a backend restart, when the cache is empty. Persistent storage (not
+    /// temporary) ensures a marked nullifier cannot be purged by TTL expiry and
+    /// silently allow a replay.
+    pub fn mark_nullifier(env: Env, attester: Address, nullifier: BytesN<32>) {
+        attester.require_auth();
+
+        let trusted: Address = env
+            .storage()
+            .instance()
+            .get(&DataKey::Attester)
+            .expect("attester not set");
+        if attester != trusted {
+            panic!("untrusted attester");
+        }
+
+        let key = DataKey::Nullifier(nullifier.clone());
+        env.storage().persistent().set(&key, &true);
+        env.storage()
+            .persistent()
+            .extend_ttl(&key, STORAGE_TTL_THRESHOLD, STORAGE_TTL_EXTEND_TO);
+
+        env.events()
+            .publish((symbol_short!("nullifier"),), nullifier);
+    }
+
+    /// Whether `nullifier` has already been marked used on-chain via `mark_nullifier`.
+    pub fn is_nullifier_used(env: Env, nullifier: BytesN<32>) -> bool {
+        env.storage()
+            .persistent()
+            .get(&DataKey::Nullifier(nullifier))
+            .unwrap_or(false)
+    }
 }
+
+mod test;

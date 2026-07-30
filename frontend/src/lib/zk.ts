@@ -159,11 +159,8 @@ export async function requestAttestation(
   linkHashHex: string,
   proofHex: string,
   recipientAddress: string,
-<<<<<<< HEAD
-=======
   linkHashFieldHex: string,
   nullifierFieldHex: string,
->>>>>>> be39da3417c359e936ceeba0e20d5d4b0f243702
   recipientEmailHash?: string
 ): Promise<string> {
   const backendUrl =
@@ -172,14 +169,9 @@ export async function requestAttestation(
 
   const body: Record<string, string> = {
     recipient: recipientAddress,
-<<<<<<< HEAD
-    secret: secretHex,
-    proof: proofHex,
-=======
     proof: proofHex,
     link_hash: linkHashFieldHex,
     nullifier: nullifierFieldHex,
->>>>>>> be39da3417c359e936ceeba0e20d5d4b0f243702
   };
   if (recipientEmailHash) {
     body.recipient_email_hash = recipientEmailHash;

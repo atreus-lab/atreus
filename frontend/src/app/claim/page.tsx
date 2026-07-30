@@ -190,28 +190,7 @@ const parseLinkInput = () => {
         return;
       }
 
-<<<<<<< HEAD
-      setStatus('generating_proof');
-      const { proof, linkHashHex } = await generateClaimProof(secretBytes, recipient);
-
-      setStatus('attesting');
-      const proofHex = bytesToHex(proof);
-
-      // Compute email hash if this is an email-restricted link
-      let recipientEmailHash: string | undefined;
-      if (intendedEmail) {
-        const emailHashBytes = new Uint8Array(await sha256Hash(intendedEmail));
-        recipientEmailHash = Array.from(emailHashBytes)
-          .map((b) => b.toString(16).padStart(2, '0'))
-          .join('');
-      }
-
-      await requestAttestation(linkHashHex, secretHex, proofHex, recipient, recipientEmailHash);
-
-      // Email verification: if the link was created for a specific email, check it matches
-=======
       // Email-restricted links require DKIM ownership proof before attestation.
->>>>>>> be39da3417c359e936ceeba0e20d5d4b0f243702
       if (intendedEmail) {
         const wallet = loadWallet();
         const authedEmail = wallet?.email;
@@ -250,15 +229,6 @@ const parseLinkInput = () => {
       setStatus('claiming');
       const linkHash = new Uint8Array(await crypto.subtle.digest('SHA-256', secretBytes));
 
-<<<<<<< HEAD
-      // Compute email hash bytes for the contract call if email-restricted
-      let emailHashBytes: Uint8Array | undefined;
-      if (intendedEmail) {
-        emailHashBytes = new Uint8Array(await sha256Hash(intendedEmail));
-      }
-
-      const hash = await claimLinkTx(recipient, linkHash, secretBytes, emailHashBytes);
-=======
       const contractId = process.env.NEXT_PUBLIC_CONTRACT_ID;
       const relayerAddress = process.env.NEXT_PUBLIC_RELAYER_ADDRESS;
       const relayerFee = process.env.NEXT_PUBLIC_RELAYER_FEE_STROOPS;
@@ -305,7 +275,6 @@ const parseLinkInput = () => {
 
       const hash = relayResult.hash;
       await waitForTransaction(hash, { timeoutMs: 30_000 });
->>>>>>> be39da3417c359e936ceeba0e20d5d4b0f243702
       setTxHash(hash);
 
       setStatus('success');

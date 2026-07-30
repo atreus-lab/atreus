@@ -3,10 +3,7 @@
 import Image from "next/image";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-<<<<<<< HEAD
-=======
 import { useState, useEffect } from "react";
->>>>>>> be39da3417c359e936ceeba0e20d5d4b0f243702
 import { ChevronLeft, ChevronUp, LayoutDashboard, Wallet, Link2, ArrowRightLeft, BarChart3, Activity, Shield, Settings, User } from "lucide-react";
 import logo from "../media/ateruslogo.jpeg";
 import { useSidebar } from "./sidebar-context";
