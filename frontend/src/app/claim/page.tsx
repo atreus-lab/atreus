@@ -9,6 +9,7 @@ import { bytesToHex } from '@/lib/proof';
 import { generateClaimProof, requestAttestation } from '@/lib/zk';
 import { startEmailVerification, confirmEmailVerification } from '@/lib/emailVerify';
 import { updateLinkStatus, checkLinkOnChain, saveClaimedLink, readLinkInfo } from '@/lib/links';
+import ProofProgress from '@/components/ProofProgress';
 import { Loader2, CheckCircle2, XCircle, ArrowLeft, Link2, Mail, Shield } from 'lucide-react';
 import { Address, Contract, TransactionBuilder, nativeToScVal, xdr } from '@stellar/stellar-sdk';
 import { Buffer } from 'buffer';
@@ -38,6 +39,8 @@ export default function ClaimPage() {
   const [rawEmailMessage, setRawEmailMessage] = useState('');
   const [emailBusy, setEmailBusy] = useState(false);
   const [emailError, setEmailError] = useState('');
+
+  const isGeneratingProof = status === 'generating_proof';
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
@@ -426,35 +429,31 @@ const parseLinkInput = () => {
               </div>
             )}
 
-            {status === 'generating_proof' && (
-              <div className="bg-indigo-50 border border-indigo-100 text-indigo-700 text-sm font-medium p-3 rounded-xl flex items-center gap-2">
-                <Loader2 className="w-4 h-4 animate-spin" />
-                Generating UltraHonk ZK proof — this may take a moment...
-              </div>
-            )}
+            <div className="status-container">
+              {isGeneratingProof && <ProofProgress />}
 
-            {status === 'attesting' && (
-              <div className="bg-indigo-50 border border-indigo-100 text-indigo-700 text-sm font-medium p-3 rounded-xl flex items-center gap-2">
-                <Loader2 className="w-4 h-4 animate-spin" />
-                Verifying proof and recording attestation on Stellar...
-              </div>
-            )}
+              {status === 'attesting' && (
+                <div className="bg-indigo-50 border border-indigo-100 text-indigo-700 text-sm font-medium p-3 rounded-xl flex items-center gap-2">
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                  Verifying proof and recording attestation on Stellar...
+                </div>
+              )}
 
-            {status === 'connecting' && (
-              <div className="bg-indigo-50 border border-indigo-100 text-indigo-700 text-sm font-medium p-3 rounded-xl flex items-center gap-2">
-                <Loader2 className="w-4 h-4 animate-spin" />
-                Connecting wallet...
-              </div>
-            )}
+              {status === 'connecting' && (
+                <div className="bg-indigo-50 border border-indigo-100 text-indigo-700 text-sm font-medium p-3 rounded-xl flex items-center gap-2">
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                  Connecting wallet...
+                </div>
+              )}
 
-            {status === 'claiming' && (
-              <div className="bg-indigo-50 border border-indigo-100 text-indigo-700 text-sm font-medium p-3 rounded-xl flex items-center gap-2">
-                <Loader2 className="w-4 h-4 animate-spin" />
-                Claiming funds on-chain...
-              </div>
-            )}
+              {status === 'claiming' && (
+                <div className="bg-indigo-50 border border-indigo-100 text-indigo-700 text-sm font-medium p-3 rounded-xl flex items-center gap-2">
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                  Claiming funds on-chain...
+                </div>
+              )}
 
-            {status === 'error' && (() => {
+              {status === 'error' && (() => {
               if (errorKind === 'info') {
                 return (
                   <div className="bg-blue-50 border border-blue-100 text-blue-700 text-sm font-medium p-4 rounded-xl space-y-1">
@@ -503,6 +502,7 @@ const parseLinkInput = () => {
                 </div>
               );
             })()}
+            </div>
 
             <button
               disabled={isDisabled}
