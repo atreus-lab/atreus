@@ -114,12 +114,11 @@ export async function processBatch(
   batch: BatchRecord,
   createLink: (row: BatchInputRow, secret: Uint8Array) => Promise<string>,
   origin: string,
-  options: { maxAttempts?: number; retryDelayMs?: number; onRowSaved?: (batch: BatchRecord) => void } = {},
+  options: { maxAttempts?: number; retryDelayMs?: number } = {},
 ): Promise<void> {
   batch.status = "processing";
   const maxAttempts = options.maxAttempts ?? 3;
   const retryDelayMs = options.retryDelayMs ?? 500;
-  const onRowSaved = options.onRowSaved;
   for (const [rowIndex, result] of batch.rows.entries()) {
     result.status = "processing";
     const secret = randomBytes(32);
@@ -144,12 +143,14 @@ export async function processBatch(
       batch.failureCount++;
     }
 
-    // Fire webhook after each row resolves (success or failure)
+    // Fire webhook after each row resolves (success or failure). Delivery is
+    // best-effort: failures are swallowed and not retried across batch
+    // boundaries — receivers must tolerate missed events by polling.
     if (batch.webhookUrl) {
       const payload: WebhookPayload = {
         batchId: batch.id,
         rowIndex,
-        row: result.row,
+        csvRow: result.row,
         status: result.status === "success" ? "success" : "failed",
         url: result.url,
         txHash: result.txHash,
@@ -161,7 +162,6 @@ export async function processBatch(
         // Webhook delivery failure is non-fatal for the batch
       });
     }
-    onRowSaved?.(batch);
   }
   batch.status = "completed";
   batch.completedAt = new Date().toISOString();

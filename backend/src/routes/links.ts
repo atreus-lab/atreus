@@ -108,7 +108,7 @@ linkRoutes.post("/batch", async (req: Request, res: Response) => {
         const hash = Buffer.from(sha256Hex(secret), "hex");
         logger.info({ correlationId, batchId: batch.id, row: row.row }, "processing batch row");
         return createBatchEscrowTransaction(creator, row, hash);
-      }, origin, { onRowSaved: () => saveBatch(batch) }).then(() => {
+      }, origin).then(() => {
         saveBatch(batch);
         logger.info({ correlationId, batchId: batch.id, successCount: batch.successCount, failureCount: batch.failureCount }, "batch completed");
       }).catch((error) => {
@@ -123,7 +123,6 @@ linkRoutes.post("/batch", async (req: Request, res: Response) => {
     res.status(400).json({ error: message, correlationId });
   }
 });
-
 
 // Polling endpoint for progress and per-row error reporting.
 linkRoutes.get("/batch/:batchId", (req: Request, res: Response) => {

@@ -5,7 +5,7 @@ import { createHmac } from "crypto";
 const SAMPLE_PAYLOAD: WebhookPayload = {
   batchId: "test-batch-id",
   rowIndex: 0,
-  row: 2,
+  csvRow: 2,
   status: "success",
   url: "https://app.atreus.xyz/claim#abc123",
   txHash: "abc123txhash",

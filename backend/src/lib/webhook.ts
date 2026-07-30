@@ -2,8 +2,10 @@ import { createHmac } from "crypto";
 
 export interface WebhookPayload {
   batchId: string;
+  /** 0-based index of the row within the batch's rows array. */
   rowIndex: number;
-  row: number;
+  /** 1-based row number from the original CSV (header is row 1). */
+  csvRow: number;
   status: "success" | "failed";
   url?: string;
   txHash?: string;
