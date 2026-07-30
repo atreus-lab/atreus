@@ -8,6 +8,7 @@ import { batchResultsCsv, createBatchRecord, parseBatchCsv, processBatch, type B
 import { saveBatch, listBatches } from "../lib/batchStore.js";
 import { isEmailHashHex } from "../lib/emailHash.js";
 import { isEmailHashVerified } from "../lib/emailVerificationStore.js";
+import { validateWebhookUrl } from "../lib/ssrf.js";
 import pino from "pino";
 
 let circuit: any = undefined;
@@ -86,13 +87,11 @@ linkRoutes.post("/batch", async (req: Request, res: Response) => {
       return;
     }
 
-    // Validate webhookUrl must be https:// if supplied
+    // Validate webhookUrl must be https:// and not point to an internal/private address
     if (webhookUrl !== undefined) {
-      try {
-        const parsed = new URL(webhookUrl);
-        if (parsed.protocol !== "https:") throw new Error("not https");
-      } catch {
-        res.status(400).json({ error: "webhookUrl must be a valid https:// URL", correlationId });
+      const error = await validateWebhookUrl(webhookUrl);
+      if (error) {
+        res.status(400).json({ error, correlationId });
         return;
       }
     }
