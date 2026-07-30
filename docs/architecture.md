@@ -47,10 +47,10 @@ Atreus is a **TipLink-style wallet on Stellar** with an added **ZK-powered payme
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
-│                    Browser (Next.js)                         │
+│                    Browser (Next.js)                        │
 │                                                             │
 │  ┌──────────────┐    ┌──────────────────────────────────┐   │
-│  │ Google OAuth  │    │  Stellar Wallet (HKDF derived)   │   │
+│  │ Google OAuth │    │  Stellar Wallet (HKDF derived)   │   │
 │  └──────┬───────┘    └──────────┬───────────────────────┘   │
 │         │                       │                           │
 │         │              ┌────────▼────────┐                  │
@@ -59,7 +59,7 @@ Atreus is a **TipLink-style wallet on Stellar** with an added **ZK-powered payme
 │         │              └────────┬────────┘                  │
 │         │                       │                           │
 │  ┌──────▼───────────────────────▼───────────────────────┐   │
-│  │              Noir WASM Prover (Barretenberg)          │   │
+│  │              Noir WASM Prover (Barretenberg)         │   │
 │  │  • Generate UltraHonk proofs in browser              │   │
 │  │  • Poseidon hash (native BN254)                      │   │
 │  └──────────────────────┬───────────────────────────────┘   │
@@ -67,7 +67,7 @@ Atreus is a **TipLink-style wallet on Stellar** with an added **ZK-powered payme
                           │
                           ▼
 ┌─────────────────────────────────────────────────────────────┐
-│                  Stellar (Soroban)                           │
+│                  Stellar (Soroban)                          │
 │                                                             │
 │  ┌─────────────────────┐    ┌───────────────────────────┐   │
 │  │  AtreusContract     │    │  VerifierContract         │   │
@@ -273,21 +273,21 @@ VerifierContract.verify_proof(public_inputs, proof)
 Sender                          Frontend                         Soroban
   │                                │                                │
   │  1. Sign in with Google        │                                │
-  │──────────────────────────────►│                                │
+  │───────────────────────────────►│                                │
   │                                │                                │
   │  2. Enter amount + policy      │                                │
   │     (e.g., "secret" rule)      │                                │
-  │──────────────────────────────►│                                │
+  │───────────────────────────────►│                                │
   │                                │                                │
   │  3. Generate secret (32 bytes) │  4. create_link(               │
   │     Compute link_hash =        │     id, policy_type,           │
   │     PoseidonHash(secret)       │     policy_params, amount,     │
   │                                │     asset, expiry, sender)     │
-  │◄──────────────────────────────│──────────────────────────────►│
+  │◄───────────────────────────────│───────────────────────────────►│
   │                                │                                │
   │  5. Share link                 │                                │
   │     (https://app/claim#secret) │                                │
-  │──────────────────────────────►│                                │
+  │───────────────────────────────►│                                │
 ```
 
 ### Claiming a Payment Link
@@ -296,26 +296,26 @@ Sender                          Frontend                         Soroban
 Recipient                        Frontend                         Soroban
   │                                │                                │
   │  1. Open link (URL#secret)     │                                │
-  │──────────────────────────────►│                                │
+  │───────────────────────────────►│                                │
   │                                │                                │
   │  2. Read secret from fragment  │                                │
   │     Derive recipient address   │                                │
   │                                │                                │
   │  3. Generate ZK proof          │                                │
   │     (bb.js in browser)         │                                │
-  │──────────────────────────────►│                                │
+  │───────────────────────────────►│                                │
   │                                │                                │
   │                                │  4. claim_link(                │
   │                                │     link_hash, recipient,      │
   │                                │     proof_bytes)               │
-  │                                │──────────────────────────────►│
+  │                                │───────────────────────────────►│
   │                                │                                │
   │                                │  5. VerifierContract           │
   │                                │     .verify_proof()            │
   │                                │  6. Check nullifier not used   │
   │                                │  7. Transfer funds             │
-  │                                │◄──────────────────────────────│
-  │◄──────────────────────────────│                                │
+  │                                │◄───────────────────────────────│
+  │◄───────────────────────────────│                                │
   │  8. Done!                      │                                │
 ```
 
