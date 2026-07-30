@@ -1,4 +1,5 @@
 import { createHash, randomBytes, randomUUID } from "crypto";
+import { deliverWebhook, type WebhookPayload } from "./webhook.js";
 
 export const MAX_BATCH_ROWS = 100;
 export const MAX_BATCH_AMOUNT = 1_000_000;
@@ -31,6 +32,7 @@ export interface BatchRecord {
   successCount: number;
   failureCount: number;
   rows: BatchResultRow[];
+  webhookUrl?: string;
 }
 
 function parseCsvLine(line: string): string[] {
@@ -89,7 +91,12 @@ export function parseBatchCsv(csv: string): BatchInputRow[] {
   });
 }
 
-export function createBatchRecord(creator: string, correlationId: string, rows: BatchInputRow[]): BatchRecord {
+export function createBatchRecord(
+  creator: string,
+  correlationId: string,
+  rows: BatchInputRow[],
+  webhookUrl?: string,
+): BatchRecord {
   const totalStroops = rows.reduce((sum, row) => {
     const [whole, fraction = ""] = row.amount.split(".");
     return sum + BigInt(whole) * 10_000_000n + BigInt(fraction.padEnd(7, "0"));
@@ -99,6 +106,7 @@ export function createBatchRecord(creator: string, correlationId: string, rows: 
     id: randomUUID(), correlationId, creator, createdAt: new Date().toISOString(), status: "queued",
     totalAmount, successCount: 0, failureCount: 0,
     rows: rows.map((row) => ({ ...row, status: "pending" })),
+    webhookUrl,
   };
 }
 
@@ -106,13 +114,12 @@ export async function processBatch(
   batch: BatchRecord,
   createLink: (row: BatchInputRow, secret: Uint8Array) => Promise<string>,
   origin: string,
-  options: { maxAttempts?: number; retryDelayMs?: number; onRowSaved?: (batch: BatchRecord) => void } = {},
+  options: { maxAttempts?: number; retryDelayMs?: number } = {},
 ): Promise<void> {
   batch.status = "processing";
   const maxAttempts = options.maxAttempts ?? 3;
   const retryDelayMs = options.retryDelayMs ?? 500;
-  const onRowSaved = options.onRowSaved;
-  for (const result of batch.rows) {
+  for (const [rowIndex, result] of batch.rows.entries()) {
     result.status = "processing";
     const secret = randomBytes(32);
     for (let attempt = 1; attempt <= maxAttempts; attempt++) {
@@ -135,11 +142,29 @@ export async function processBatch(
       result.status = "failed";
       batch.failureCount++;
     }
-    onRowSaved?.(batch);
+
+    // Fire webhook after each row resolves (success or failure). Delivery is
+    // best-effort: failures are swallowed and not retried across batch
+    // boundaries — receivers must tolerate missed events by polling.
+    if (batch.webhookUrl) {
+      const payload: WebhookPayload = {
+        batchId: batch.id,
+        rowIndex,
+        csvRow: result.row,
+        status: result.status === "success" ? "success" : "failed",
+        url: result.url,
+        txHash: result.txHash,
+        error: result.status === "success" ? null : (result.error ?? null),
+        completedAt: new Date().toISOString(),
+      };
+      // Deliver async — do not block row processing on webhook delivery
+      deliverWebhook(batch.webhookUrl, payload).catch(() => {
+        // Webhook delivery failure is non-fatal for the batch
+      });
+    }
   }
   batch.status = "completed";
   batch.completedAt = new Date().toISOString();
-  onRowSaved?.(batch);
 }
 
 function csvCell(value: unknown): string {

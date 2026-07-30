@@ -3,7 +3,7 @@ import { readFileSync, existsSync } from "fs";
 import { resolve, dirname } from "path";
 import { fileURLToPath } from "url";
 import { sha256Hex, verifyClaimProof } from "../lib/zk.js";
-import { createBatchEscrowTransaction, submitAttestation, checkNullifierOnChain, markNullifierOnChain } from "../lib/stellar.js";
+import { createBatchEscrowTransaction, submitAttestation, getLinkInfo } from "../lib/stellar.js";
 import { batchResultsCsv, createBatchRecord, parseBatchCsv, processBatch, type BatchRecord } from "../lib/batch.js";
 import { saveBatch, listBatches } from "../lib/batchStore.js";
 import { isEmailHashHex } from "../lib/emailHash.js";
@@ -81,22 +81,36 @@ linkRoutes.post("/batch", async (req: Request, res: Response) => {
   try {
     const creator = typeof req.body?.creator === "string" ? req.body.creator : "";
     const csv = typeof req.body?.csv === "string" ? req.body.csv : "";
+    const webhookUrl = typeof req.body?.webhookUrl === "string" ? req.body.webhookUrl : undefined;
+
     if (!creator || !csv) {
       res.status(400).json({ error: "Missing required fields: creator, csv", correlationId });
       return;
     }
+
+    // Validate webhookUrl must be https:// if supplied
+    if (webhookUrl !== undefined) {
+      try {
+        const parsed = new URL(webhookUrl);
+        if (parsed.protocol !== "https:") throw new Error("not https");
+      } catch {
+        res.status(400).json({ error: "webhookUrl must be a valid https:// URL", correlationId });
+        return;
+      }
+    }
+
     const rows = parseBatchCsv(csv);
-    const batch = createBatchRecord(creator, correlationId, rows);
+    const batch = createBatchRecord(creator, correlationId, rows, webhookUrl);
     batches.set(batch.id, batch);
     saveBatch(batch);
-    logger.info({ correlationId, batchId: batch.id, creator, rowCount: rows.length, totalAmount: batch.totalAmount }, "batch queued");
+    logger.info({ correlationId, batchId: batch.id, creator, rowCount: rows.length, totalAmount: batch.totalAmount, hasWebhook: !!webhookUrl }, "batch queued");
     const origin = process.env.FRONTEND_URL || `${req.protocol}://${req.get("host")}`;
     setImmediate(() => {
       processBatch(batch, async (row, secret) => {
         const hash = Buffer.from(sha256Hex(secret), "hex");
         logger.info({ correlationId, batchId: batch.id, row: row.row }, "processing batch row");
         return createBatchEscrowTransaction(creator, row, hash);
-      }, origin, { onRowSaved: () => saveBatch(batch) }).then(() => {
+      }, origin).then(() => {
         saveBatch(batch);
         logger.info({ correlationId, batchId: batch.id, successCount: batch.successCount, failureCount: batch.failureCount }, "batch completed");
       }).catch((error) => {
@@ -159,17 +173,35 @@ linkRoutes.post("/", async (req: Request, res: Response) => {
   res.status(201).json(link);
 });
 
-// GET /api/links/:hash - Get link details
+// GET /api/links/:hash - Get link details from the AtreusContract.
 linkRoutes.get("/:hash", async (req: Request, res: Response) => {
-  const { hash } = req.params;
-
-  // TODO: Fetch from contract state
-  res.json({
-    hash,
-    creator: "G...",
-    amount: "1000",
-    claimed: false,
-  });
+  const correlationId = String(req.header("x-correlation-id") || crypto.randomUUID());
+  const hash = String(req.params.hash);
+  if (!HEX_64.test(hash)) {
+    res.status(400).json({ error: "Invalid link hash format", correlationId });
+    return;
+  }
+  try {
+    const info = await getLinkInfo(hash);
+    if (!info) {
+      res.status(404).json({ error: "Link not found", correlationId });
+      return;
+    }
+    res.json({
+      hash,
+      creator: info.creator,
+      amount: info.amount.toString(),
+      asset: info.asset,
+      policyType: info.policyType,
+      policyParams: info.policyParams,
+      expiresAt: info.expiresAt.toString(),
+      claimed: info.claimed,
+      correlationId,
+    });
+  } catch (error: any) {
+    logger.error({ correlationId, hash, error: error?.message }, "link lookup failed");
+    res.status(500).json({ error: "Failed to read link from contract", correlationId });
+  }
 });
 
 const HEX_64 = /^[0-9a-fA-F]{64}$/;
