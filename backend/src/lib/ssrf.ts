@@ -41,18 +41,24 @@ export async function validateWebhookUrl(url: string): Promise<string | null> {
       return "webhookUrl must use the https:// scheme";
     }
 
+    // The WHATWG URL spec stores IPv6 literals with surrounding brackets (e.g. "[::1]").
+    // net.isIPv4/isIPv6 do not accept the bracketed form, so strip them first.
     const hostname = parsed.hostname;
+    const rawHostname =
+      hostname.startsWith("[") && hostname.endsWith("]")
+        ? hostname.slice(1, -1)
+        : hostname;
 
-    if (isIPv4(hostname) || isIPv6(hostname)) {
-      return isPrivateIP(hostname) ? "webhookUrl must not point to a private or internal address" : null;
+    if (isIPv4(rawHostname) || isIPv6(rawHostname)) {
+      return isPrivateIP(rawHostname) ? "webhookUrl must not point to a private or internal address" : null;
     }
 
     const addresses: string[] = [];
     try {
-      addresses.push(...(await resolve4(hostname)));
+      addresses.push(...(await resolve4(rawHostname)));
     } catch {}
     try {
-      addresses.push(...(await resolve6(hostname)));
+      addresses.push(...(await resolve6(rawHostname)));
     } catch {}
 
     for (const addr of addresses) {
