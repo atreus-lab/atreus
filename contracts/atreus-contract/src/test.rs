@@ -2,13 +2,21 @@
 
 use super::*;
 use soroban_sdk::{
-    contract, contractimpl,
+    contract, contractimpl, contracttype,
     testutils::{Address as _, Ledger, MockAuth, MockAuthInvoke},
     token::{Client as TokenClient, StellarAssetClient},
     Address, Bytes, BytesN, Env, IntoVal, Symbol,
 };
 
-// Minimal mock verifier that always returns true for is_attested
+#[contracttype]
+#[derive(Clone)]
+pub enum MockDataKey {
+    EmailAttestation(BytesN<32>, Address, BytesN<32>),
+}
+
+// Minimal mock verifier: returns true for is_attested, but tracks email
+// attestations like the real verifier-contract so email-restricted claims
+// only succeed once the trusted attester has recorded an attestation.
 #[contract]
 pub struct MockVerifier;
 
@@ -24,12 +32,32 @@ impl MockVerifier {
         true
     }
 
-    pub fn is_email_attested(_env: Env, _link_hash: BytesN<32>, _recipient: Address, _email_hash: BytesN<32>) -> bool {
-        true
+    pub fn attest_email(
+        env: Env,
+        link_hash: BytesN<32>,
+        recipient: Address,
+        email_hash: BytesN<32>,
+    ) {
+        env.storage().persistent().set(
+            &MockDataKey::EmailAttestation(link_hash, recipient, email_hash),
+            &true,
+        );
+    }
+
+    pub fn is_email_attested(
+        env: Env,
+        link_hash: BytesN<32>,
+        recipient: Address,
+        email_hash: BytesN<32>,
+    ) -> bool {
+        env.storage()
+            .persistent()
+            .get(&MockDataKey::EmailAttestation(link_hash, recipient, email_hash))
+            .unwrap_or(false)
     }
 }
 
-fn setup_test(env: &Env) -> (AtreusContractClient<'_>, Address, Address) {
+fn setup_test(env: &Env) -> (AtreusContractClient<'_>, Address, Address, Address) {
     let verifier: Address = env.register(MockVerifier, (Bytes::new(env), Address::generate(env)));
     let contract_id = env.register(AtreusContract, (&verifier,));
     let client = AtreusContractClient::new(env, &contract_id);
@@ -40,7 +68,7 @@ fn setup_test(env: &Env) -> (AtreusContractClient<'_>, Address, Address) {
     let token_admin = StellarAssetClient::new(env, &token_addr);
     token_admin.mint(&sender, &10000i128);
 
-    (client, sender, token_addr)
+    (client, verifier, sender, token_addr)
 }
 
 fn make_secret(env: &Env, val: u8) -> (BytesN<32>, BytesN<32>) {
@@ -70,7 +98,7 @@ fn test_email_restricted_claim() {
     let env = Env::default();
     env.mock_all_auths();
 
-    let (client, sender, token) = setup_test(&env);
+    let (client, verifier, sender, token) = setup_test(&env);
     let (secret, link_hash) = make_secret(&env, 1);
     let amount = 1000i128;
     let expiry = env.ledger().timestamp() + 1000;
@@ -93,11 +121,15 @@ fn test_email_restricted_claim() {
 
     let (relayer, fee) = no_relayer(&env);
 
-    // Try claiming with wrong email hash — should fail
+    // No email attestation recorded yet — claiming must fail
     let wrong_hash = email_hash(&env, "bob@example.com");
     assert!(client
         .try_claim_link(&link_hash, &recipient, &secret, &wrong_hash, &relayer, &fee)
         .is_err());
+
+    // Trusted attester records the intended email binding
+    let mock_verifier = MockVerifierClient::new(&env, &verifier);
+    mock_verifier.attest_email(&link_hash, &recipient, &intended_hash);
 
     // Claim with correct email hash — should succeed
     client.claim_link(
@@ -115,7 +147,7 @@ fn test_create_and_claim() {
     let env = Env::default();
     env.mock_all_auths();
 
-    let (client, sender, token) = setup_test(&env);
+    let (client, _verifier, sender, token) = setup_test(&env);
     let (secret, link_hash) = make_secret(&env, 1);
     let amount = 1000i128;
     let expiry = env.ledger().timestamp() + 1000;
@@ -148,7 +180,7 @@ fn test_claim_pays_fee_bound_relayer_and_remainder_to_recipient() {
     let env = Env::default();
     env.mock_all_auths();
 
-    let (client, sender, token) = setup_test(&env);
+    let (client, _verifier, sender, token) = setup_test(&env);
     let (secret, link_hash) = make_secret(&env, 2);
     let amount = 1000i128;
     let relayer_fee = 125i128;
@@ -205,7 +237,7 @@ fn test_claim_rejects_tampered_fee_not_covered_by_user_authorization() {
     let env = Env::default();
     env.mock_all_auths();
 
-    let (client, sender, token) = setup_test(&env);
+    let (client, _verifier, sender, token) = setup_test(&env);
     let (secret, link_hash) = make_secret(&env, 4);
     let amount = 1000i128;
     let signed_fee = 125i128;
@@ -264,7 +296,7 @@ fn test_claim_rejects_fee_greater_than_amount() {
     let env = Env::default();
     env.mock_all_auths();
 
-    let (client, sender, token) = setup_test(&env);
+    let (client, _verifier, sender, token) = setup_test(&env);
     let (secret, link_hash) = make_secret(&env, 3);
     let amount = 1000i128;
     let expiry = env.ledger().timestamp() + 1000;
@@ -298,7 +330,7 @@ fn test_wrong_secret_fails() {
     let env = Env::default();
     env.mock_all_auths();
 
-    let (client, sender, token) = setup_test(&env);
+    let (client, _verifier, sender, token) = setup_test(&env);
     let (_secret, link_hash) = make_secret(&env, 1);
     let (wrong_secret, _) = make_secret(&env, 99);
     let amount = 1000i128;
@@ -334,7 +366,7 @@ fn test_double_claim_fails() {
     let env = Env::default();
     env.mock_all_auths();
 
-    let (client, sender, token) = setup_test(&env);
+    let (client, _verifier, sender, token) = setup_test(&env);
     let (secret, link_hash) = make_secret(&env, 1);
     let amount = 1000i128;
     let expiry = env.ledger().timestamp() + 1000;
@@ -378,7 +410,7 @@ fn test_refund_after_expiry() {
     let env = Env::default();
     env.mock_all_auths();
 
-    let (client, sender, token) = setup_test(&env);
+    let (client, _verifier, sender, token) = setup_test(&env);
     let (_secret, link_hash) = make_secret(&env, 1);
     let amount = 1000i128;
     let expiry = env.ledger().timestamp() + 1;
@@ -403,7 +435,7 @@ fn test_claim_expired_fails() {
     let env = Env::default();
     env.mock_all_auths();
 
-    let (client, sender, token) = setup_test(&env);
+    let (client, _verifier, sender, token) = setup_test(&env);
     let (secret, link_hash) = make_secret(&env, 1);
     let amount = 1000i128;
     let expiry = env.ledger().timestamp() + 1;
@@ -440,7 +472,7 @@ fn test_duplicate_link_fails() {
     let env = Env::default();
     env.mock_all_auths();
 
-    let (client, sender, token) = setup_test(&env);
+    let (client, _verifier, sender, token) = setup_test(&env);
     let (_secret, link_hash) = make_secret(&env, 1);
     let amount = 1000i128;
     let expiry = env.ledger().timestamp() + 1000;

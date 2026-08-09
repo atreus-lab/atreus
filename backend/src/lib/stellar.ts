@@ -1,4 +1,4 @@
-import { Horizon, Networks, Asset, rpc, Contract, TransactionBuilder, Address, Keypair, xdr, nativeToScVal } from "@stellar/stellar-sdk";
+import { Horizon, Networks, Asset, rpc, Contract, TransactionBuilder, Address, Keypair, xdr, nativeToScVal, Account, scValToNative } from "@stellar/stellar-sdk";
 import { Durability } from "@stellar/stellar-sdk/rpc";
 import { emailHash, type BatchInputRow } from "./batch.js";
 

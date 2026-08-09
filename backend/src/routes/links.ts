@@ -3,7 +3,7 @@ import { readFileSync, existsSync } from "fs";
 import { resolve, dirname } from "path";
 import { fileURLToPath } from "url";
 import { sha256Hex, verifyClaimProof } from "../lib/zk.js";
-import { createBatchEscrowTransaction, submitAttestation, getLinkInfo } from "../lib/stellar.js";
+import { createBatchEscrowTransaction, submitAttestation, getLinkInfo, checkNullifierOnChain, markNullifierOnChain } from "../lib/stellar.js";
 import { batchResultsCsv, createBatchRecord, parseBatchCsv, processBatch, type BatchRecord } from "../lib/batch.js";
 import { saveBatch, listBatches } from "../lib/batchStore.js";
 import { isEmailHashHex } from "../lib/emailHash.js";
