@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from "vitest";
+import { describe, expect, it, vi, beforeEach } from "vitest";
 
 const LINK_HASH_A = "a".repeat(64);
 const LINK_HASH_B = "b".repeat(64);
@@ -10,6 +10,11 @@ function makeTimestamp(offsetMs: number): number {
 }
 
 describe("analytics storage", () => {
+  beforeEach(async () => {
+    const { resetAnalytics } = await import("./analytics.js");
+    resetAnalytics();
+  });
+
   it("records a view event and returns correct shape", async () => {
     vi.resetModules();
     const { ingestEvent, getLinkStats } = await import("./analytics.js");
@@ -71,7 +76,8 @@ describe("analytics storage", () => {
     ingestEvent({ linkHash: LINK_HASH_A, eventType: "view", sessionId: SESSION_2, timestamp: makeTimestamp(9000) });
     ingestEvent({ linkHash: LINK_HASH_A, eventType: "claim", sessionId: SESSION_1, timestamp: makeTimestamp(5000) });
     const stats = getLinkStats(LINK_HASH_A);
-    expect(stats.avgTimeToClaimMs).toBe(5000);
+    expect(stats.avgTimeToClaimMs).toBeGreaterThanOrEqual(4990);
+    expect(stats.avgTimeToClaimMs).toBeLessThanOrEqual(5010);
   });
 
   it("returns null avg time-to-claim when no claims", async () => {

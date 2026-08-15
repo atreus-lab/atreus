@@ -6,6 +6,7 @@ import { linkRoutes, hydrateBatches } from "./routes/links.js";
 import { analyticsRoutes } from "./routes/analytics.js";
 import { relayRoutes } from "./routes/relay.js";
 import { emailRoutes } from "./routes/email.js";
+import { monitoringRouter } from "./routes/monitoring.js";
 
 const logger = pino(
   process.env.VERCEL
@@ -34,6 +35,7 @@ app.use("/api/links", linkRoutes);
 app.use("/api/analytics", analyticsRoutes);
 app.use("/api/relay", relayRoutes);
 app.use("/api/email", emailRoutes);
+app.use("/monitoring", monitoringRouter);
 
 app.get("/health", (_req, res) => {
   res.json({ status: "ok", timestamp: new Date().toISOString() });
