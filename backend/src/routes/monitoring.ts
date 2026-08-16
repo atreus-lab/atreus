@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import client from 'prom-client';
 
-const router = Router();
+const router: Router = Router();
 
 // Create a registry to hold our metrics
 const register = new client.Registry();

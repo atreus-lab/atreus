@@ -1,4 +1,3 @@
-import 'dotenv/config';
 import { AtreusIndexer } from './lib/indexer.js';
 import pino from 'pino';
 

@@ -1,5 +1,5 @@
 import Database from 'better-sqlite3';
-import { rpcServer } from './stellar.js';
+import { rpcServer, scValToNative } from './stellar.js';
 import pino from 'pino';
 
 const logger = pino({ name: 'indexer' });
@@ -9,7 +9,7 @@ export interface IndexedEvent {
   txHash: string;
   eventIndex: number;
   linkHash: string;
-  eventType: 'created' | 'claimed' | 'refunded' | 'attested';
+  eventType: 'created' | 'claimed' | 'refunded' | 'attested' | 'eml_att';
   timestamp: number;
   data: any;
 }
@@ -53,102 +53,71 @@ export class AtreusIndexer {
   }
 
   public async index() {
-    const lastLedger = this.getCheckpoint('last_ledger');
-    let currentLedger = lastLedger ? parseInt(lastLedger) : 0;
+    const lastLedgerStr = this.getCheckpoint('last_ledger');
+    let startLedger = lastLedgerStr ? parseInt(lastLedgerStr) : 0;
 
-    // We'll fetch the latest ledger to know where to stop
-    const latestLedgerInfo = await rpcServer.getLedger();
-    const latestLedger = latestLedgerInfo.sequence;
+    try {
+      // Probe the server to find the oldest available ledger and the current latest
+      const probe = await rpcServer.getEvents({ startLedger });
+      const oldestLedger = probe.oldestLedger;
+      const latestLedger = (await rpcServer.getLatestLedger()).sequence;
 
-    logger.info(`Starting indexer from ledger ${currentLedger} to ${latestLedger}`);
+      startLedger = Math.max(startLedger, oldestLedger);
 
-    while (currentLedger < latestLedger) {
-      currentLedger++;
-      try {
-        await this.processLedger(currentLedger);
-        this.setCheckpoint('last_ledger', currentLedger.toString());
-      } catch (err) {
-        logger.error(`Error processing ledger ${currentLedger}: ${err}`);
-        // In a real production app, we might want a retry limit or alerting here
-        throw err;
+      logger.info(`Starting indexer from ledger ${startLedger} to ${latestLedger} (Server oldest: ${oldestLedger})`);
+
+      while (startLedger <= latestLedger) {
+        const endLedger = Math.min(startLedger + 1000, latestLedger);
+        const response = await rpcServer.getEvents({
+          startLedger,
+          endLedger
+        });
+
+        if (response.events.length > 0) {
+          this.processEvents(response.events);
+        }
+
+        startLedger = response.latestLedger + 1;
+        this.setCheckpoint('last_ledger', startLedger.toString());
+
+        if (response.events.length === 0 && startLedger > latestLedger) break;
       }
+    } catch (err) {
+      logger.error(`Fatal indexer error: ${err}`);
+      throw err;
     }
 
     logger.info('Indexing complete');
   }
 
-  private async processLedger(ledgerSequence: number) {
-    try {
-      const ledger = await rpcServer.getLedger(ledgerSequence);
-      const transactions = ledger.transactions;
+  private processEvents(events: any[]) {
+    const EVENT_TOPICS = ['created', 'claimed', 'refunded', 'attested', 'eml_att'];
 
-      for (const tx of transactions) {
-        await this.processTransaction(tx);
-      }
-    } catch (err) {
-      logger.error(`Failed to fetch ledger ${ledgerSequence}: ${err}`);
-      throw err;
+    for (const event of events) {
+      const topic = event.topic;
+      if (!topic || topic.length < 2) continue;
+
+      // topic[0] is the symbol string (e.g. 'created')
+      const symbol = scValToNative(topic[0]);
+      if (!EVENT_TOPICS.includes(symbol)) continue;
+
+      // topic[1] is the link hash (scvBytes)
+      const hashVal = scValToNative(topic[1]);
+      if (!hashVal || !(hashVal instanceof Uint8Array)) continue;
+      const linkHash = Buffer.from(hashVal).toString('hex');
+
+      this.saveEvent({
+        id: `${event.txHash}_${event.operationIndex}`,
+        txHash: event.txHash,
+        eventIndex: event.operationIndex,
+        linkHash: linkHash.toLowerCase(),
+        eventType: symbol === 'eml_att' ? 'attested' : symbol,
+        timestamp: event.timestamp || Date.now(),
+        data: JSON.stringify(event.value),
+      });
     }
   }
 
-  private async processTransaction(tx: any) {
-    const txHash = tx.hash;
-    const ops = tx.operations || [];
-
-    for (let i = 0; i < ops.length; i++) {
-      const op = ops[i];
-      if (op.type !== 'contract_call') continue;
-
-      const contractId = op.contract_id;
-      const method = op.function;
-      const isAtreus = contractId === process.env.NEXT_PUBLIC_CONTRACT_ID;
-      const isVerifier = contractId === process.env.NEXT_PUBLIC_VERIFIER_CONTRACT_ID;
-
-      if (!isAtreus && !isVerifier) continue;
-
-      let eventType: 'created' | 'claimed' | 'refunded' | 'attested' | null = null;
-      let linkHash: string | null = null;
-
-      if (isAtreus) {
-        if (method === 'create_link') {
-          eventType = 'created';
-          linkHash = this.extractLinkHash(op.args);
-        } else if (method === 'claim') {
-          eventType = 'claimed';
-          linkHash = this.extractLinkHash(op.args);
-        } else if (method === 'refund') {
-          eventType = 'refunded';
-          linkHash = this.extractLinkHash(op.args);
-        }
-      } else if (isVerifier) {
-        if (method === 'attest' || method === 'attest_email') {
-          eventType = 'attested';
-          linkHash = this.extractLinkHash(op.args);
-        }
-      }
-
-      if (eventType && linkHash) {
-        this.saveEvent({
-          id: `${txHash}_${i}`,
-          txHash,
-          eventIndex: i,
-          linkHash: linkHash.toLowerCase(),
-          eventType,
-          timestamp: tx.ledger_timestamp || Date.now(),
-          data: JSON.stringify(op.args),
-        });
-      }
-    }
-  }
-
-  private extractLinkHash(args: any[]): string | null {
-    for (const arg of args) {
-      const val = typeof arg === 'string' ? arg : JSON.stringify(arg);
-      const match = val.match(/[0-9a-fA-F]{64}/);
-      if (match) return match[0];
-    }
-    return null;
-  }
 
   private saveEvent(event: IndexedEvent) {
     this.db.prepare(`
