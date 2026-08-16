@@ -518,6 +518,25 @@ sequenceDiagram
   * **On-chain binding guarantee (backend)**: `attest_email` on `VerifierContract` is only invoked by `POST /api/links/:hash/attest` after the recipient email hash is marked verified — which is only reachable by fully validating a fresh, non-replayed, domain-aligned DKIM-signed challenge message. There is no code path that marks a hash verified without passing `verifyEmailOwnership`, and the verification record itself expires (`EMAIL_VERIFIED_TTL_MS`, default 1h).
   * **Privacy**: only `sha256(normalized email)` is stored server-side; raw emails and raw messages are never persisted.
 
+### 10.1 Trust Model Analysis: Attester Oracle vs. Direct On-Chain BN254 Verification (CAP-0074)
+
+#### Current Architecture: Trusted Attester Oracle
+- **Mechanism**: Proof verification is performed off-chain by the backend service using `bb.js`. Once verified, the trusted attester account signs and submits a transaction calling `VerifierContract.attest(attester, link_hash, recipient)`. `AtreusContract.claim_link` checks `VerifierContract.is_attested(link_hash, recipient)` before disbursing escrowed funds.
+- **Trust Assumptions & Risk Profile**:
+  - **Attester Compromise**: If the attester key or backend server is compromised, an attacker can generate arbitrary attestations to drain escrowed payment links without valid ZK proofs.
+  - **Liveness & Centralization**: Escrow claims depend on backend oracle availability. If the backend goes down, legitimate users cannot finalize claims even with valid proofs.
+  - **Mitigations Preserved**: Recipient binding (`recipient` in public inputs and attestation key) and nullifier replay protection (`nullifier_key` in storage) prevent cross-user proof theft and double-claims, but do not prevent malicious attestation by a compromised oracle operator.
+
+#### Target Architecture: Direct On-Chain BN254 Proof Verification (CAP-0074)
+- **Mechanism**: When upgrading to Soroban SDK v26+ (Protocol 26), `VerifierContract.verify_proof` executes native BN254 pairing host functions (`env.crypto().bn254().pairing_check(...)`). `AtreusContract.claim_link` directly invokes `VerifierContract.verify_proof` with `(public_inputs, proof)`, eliminating the `attest` / `is_attested` state storage and host calls entirely.
+- **Trust Model Shift**:
+  - **Trustless Execution**: The system shifts from reliance on a trusted backend oracle operator to pure smart contract cryptographic verification on Stellar consensus.
+  - **Elimination of Attester Key**: No privileged oracle admin key exists; proof relayers or claimers submit proof payloads directly to the blockchain.
+  - **Preserved Security Invariants**:
+    1. *Nullifier Replay Protection*: On-chain nullifier tracking (`sha256(link_hash)` in persistent storage) continues to prevent double-claiming.
+    2. *Email Policy Enforcement*: Email ownership verification (`is_email_attested`) remains isolated as a policy plugin without compromising escrow trust.
+    3. *Recipient Binding*: Circuit public inputs remain cryptographically bound to `recipient` and `link_hash`, preventing proof front-running/sniping on-chain.
+
 ---
 
 ## 11. Unlinkable Claiming — Threat Model (issue #118)
