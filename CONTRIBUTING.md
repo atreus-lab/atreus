@@ -72,6 +72,7 @@ All contract interactions use **Stellar testnet** — no real funds involved.
 - Include tests for new functionality.
 - Follow the existing code style — match imports, naming, and patterns used in neighboring files.
 - Keep PRs focused on a single issue.
+- **PRs will not be reviewed without a Loom video** showing you have tested both creating and claiming a payment link.
 
 ### 5. Review
 
