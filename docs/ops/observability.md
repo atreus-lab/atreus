@@ -14,18 +14,27 @@ The observability stack consists of:
 
 ### Local Development
 Using Docker Compose:
-\`\`\`bash
+```bash
 docker-compose up -d
-\`\`\`
+```
 
 This starts all services. The backend API will be available on port `3001`, and Grafana on port `3000`.
 
 ### Manual Indexer Run
 To run the indexer manually for a catch-up:
-\`\`\`bash
+```bash
 cd backend
-pnpm run dev # and then run the indexer.ts script if decoupled
-\`\`\`
+node dist/indexer.js
+```
+
+## Event Storage
+
+The analytics API and the chain indexer share a single event store. Two backends are available:
+
+- **SQLite** (default): restart-safe persistence in `atreus_indexer.db`, used for the self-hosted Docker stack and the standalone indexer.
+- **In-memory**: used automatically on Vercel serverless functions (ephemeral, read-only filesystem; the native `better-sqlite3` module does not reliably load there). It is also used if SQLite cannot be opened. In-memory data does not survive a restart, matching the previous behavior of the analytics API on serverless.
+
+Selection is automatic. You can force the in-memory backend with the `ATREUS_ANALYTICS_STORE=memory` env var, or change the SQLite path with `ATREUS_INDEXER_DB`.
 
 ## Monitoring & Metrics
 
@@ -35,9 +44,9 @@ The `/monitoring/healthz` endpoint provides a basic health status:
 
 ### Prometheus Metrics
 Metrics are exposed at `/monitoring/metrics`. Key metrics include:
-- `atreus_proof_verify_latency_seconds`: Histogram of ZK proof verification time.
-- `atreus_attestations_total`: Counter of submitted attestations (labeled by status).
-- `atreus_queue_depth`: Current number of pending requests.
+- `atreus_proof_verify_latency_seconds`: Histogram of ZK proof verification time, observed around `verifyClaimProof` in the attest handler.
+- `atreus_attestations_total`: Counter of attestations submitted, labeled by status (`success`, `proof_failed`, `failed`).
+- `atreus_queue_depth`: Current number of batches waiting to be processed (status `queued` or `processing`), computed at scrape time.
 
 ### Grafana Dashboard
 Grafana is pre-configured to connect to Prometheus. You can track link creation volume and claim rates directly from the Admin Analytics page in the frontend.

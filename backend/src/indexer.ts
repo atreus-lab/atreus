@@ -19,7 +19,7 @@ async function main() {
 
     logger.info('Indexing run completed successfully.');
   } catch (err) {
-    logger.error('Fatal error during indexing:', err);
+    logger.error({ err }, 'Fatal error during indexing:');
     process.exit(1);
   }
 }
