@@ -183,7 +183,8 @@ export async function generateClaimProof(
  * POST proof to the backend attest endpoint, along with the circuit's public inputs
  * (link_hash and nullifier). The private secret is never sent — the backend verifies
  * the proof against these public inputs alone.
- * Returns the attestation transaction hash on success.
+ * Returns the attestation transaction hash plus the claim salt (64-char hex, 32 bytes)
+ * that the caller must pass to the contract's claim_link.
  */
 export async function requestAttestation(
   linkHashHex: string,
@@ -192,7 +193,7 @@ export async function requestAttestation(
   linkHashFieldHex: string,
   nullifierFieldHex: string,
   recipientEmailHash?: string
-): Promise<string> {
+): Promise<{ attestationTx: string; claimSalt: string }> {
   const url = `/api/links/${linkHashHex}/attest`;
 
   const body: Record<string, string> = {
@@ -216,5 +217,5 @@ export async function requestAttestation(
     throw new Error(data.error || "Attestation request failed");
   }
 
-  return data.attestationTx;
+  return { attestationTx: data.attestationTx, claimSalt: data.claimSalt };
 }

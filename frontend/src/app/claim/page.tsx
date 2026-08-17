@@ -110,6 +110,8 @@ function getFriendlyErrorMessage(err: any): { title: string; description: string
     return { title: 'Link expired', description: 'This payment link has expired and can no longer be claimed.' };
   if (msg.includes('no valid zk attestation'))
     return { title: 'Proof verification pending', description: 'The ZK proof attestation has not been recorded yet. Please complete the full claim flow.' };
+  if (msg.includes('invalid claim salt'))
+    return { title: 'Attestation service error', description: 'The attester returned an invalid claim salt. Please try again.' };
   if (msg.includes('link not found'))
     return { title: 'Link not found', description: 'This payment link does not exist in the contract. It may have been refunded or never created.' };
   if (msg.includes('nullifier already used'))
@@ -235,18 +237,18 @@ function getFriendlyErrorMessage(err: any): { title: string; description: string
 
       setStatus('attesting');
       const proofHex = bytesToHex(proof);
-      // Compute email hash if this is an email-restricted link
-      let recipientEmailHash: string | undefined;
-      const emailHashBytes = intendedEmail
-        ? new Uint8Array(await sha256Hash(intendedEmail))
-        : new Uint8Array(32);
-      if (intendedEmail) {
-        recipientEmailHash = Array.from(emailHashBytes)
-          .map((b) => b.toString(16).padStart(2, '0'))
-          .join('');
-      }
+      // Email hash goes to the attester only — email-restricted links
+      const recipientEmailHash = intendedEmail
+        ? bytesToHex(await sha256Hash(intendedEmail))
+        : undefined;
 
-      await requestAttestation(linkHashHex, proofHex, recipient, linkHashFieldHex, nullifierFieldHex, recipientEmailHash);
+      const { claimSalt } = await requestAttestation(linkHashHex, proofHex, recipient, linkHashFieldHex, nullifierFieldHex, recipientEmailHash);
+
+      // The attester binds the claim to this salt — the contract rejects any other value
+      const claimSaltBytes = Buffer.from(claimSalt ?? '', 'hex');
+      if (claimSaltBytes.length !== 32) {
+        throw new Error('Invalid claim salt: the attester returned a value that is not 32 bytes.');
+      }
 
       setStatus('claiming');
       const linkHash = new Uint8Array(await crypto.subtle.digest('SHA-256', secretBytes));
@@ -266,8 +268,7 @@ function getFriendlyErrorMessage(err: any): { title: string; description: string
         'claim_link',
         xdr.ScVal.scvBytes(Buffer.from(linkHash)),
         new Address(recipient).toScVal(),
-        xdr.ScVal.scvBytes(Buffer.from(secretBytes)),
-        xdr.ScVal.scvBytes(Buffer.from(emailHashBytes)),
+        xdr.ScVal.scvBytes(claimSaltBytes),
         new Address(relayerAddress).toScVal(),
         nativeToScVal(BigInt(relayerFee), { type: 'i128' }),
       );
@@ -316,7 +317,6 @@ function getFriendlyErrorMessage(err: any): { title: string; description: string
         expiresAt: 0,
         claimed: true,
         txHash: hash,
-        counterpartyAddress: linkInfo.creator || undefined,
       });
     } catch (err: any) {
       console.error(err);
