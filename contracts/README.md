@@ -51,7 +51,7 @@ as `claim_salt`.
 | `attest_email(attester, email_key)` / `is_email_attested(email_key) -> bool` | Same pattern for the email-restricted policy (`policy_type == 1`) |
 | `mark_nullifier(attester, nullifier)` / `is_nullifier_used(nullifier) -> bool` | Durable replay-protection registry |
 | `submit_proof(recipient, proof)` | Validates UltraHonk proof format and emits an event (logging function) |
-| `verify_proof(public_inputs, proof) -> bool` | Placeholder kept for the planned move to native BN254 pairing verification (CAP-0074 host functions are live since Protocol 25); the attestation oracle is today's gate |
+| `verify_proof(public_inputs, proof) -> bool` | On-chain BN254 pairing verification — placeholder until Soroban adds native BN254 host functions (CAP-0074) |
 
 ## Tests
 
