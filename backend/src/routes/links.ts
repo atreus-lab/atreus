@@ -10,6 +10,7 @@ import { isEmailHashHex } from "../lib/emailHash.js";
 import { isEmailHashVerified } from "../lib/emailVerificationStore.js";
 import { isNullifierUsedLocally, markNullifierUsedLocally, normalizeNullifierHex } from "../lib/nullifierStore.js";
 import { validateWebhookUrl } from "../lib/ssrf.js";
+import { proofLatency, attestationCounter } from "./monitoring.js";
 import pino from "pino";
 
 let circuit: any = undefined;
@@ -290,14 +291,18 @@ linkRoutes.post("/:hash/attest", async (req: Request, res: Response) => {
   try {
     const proofBytes = Uint8Array.from(Buffer.from(proof, "hex"));
 
+    const endProofTimer = proofLatency.startTimer();
     const isValid = await verifyClaimProof((await getCircuit()).bytecode, proofBytes, recipient, link_hash, nullifier);
+    endProofTimer();
     if (!isValid) {
+      attestationCounter.inc({ status: "proof_failed" });
       res.status(400).json({ error: "ZK proof verification failed", correlationId });
       return;
     }
 
     const linkHashBytes = Uint8Array.from(Buffer.from(hash, "hex"));
     const txHash = await submitAttestation(linkHashBytes, recipient, emailHashBytes);
+    attestationCounter.inc({ status: "success" });
 
     markNullifierUsedLocally(nullifierHex);
     markNullifierOnChain(nullifierBytes).catch((err: any) => {
@@ -306,6 +311,7 @@ linkRoutes.post("/:hash/attest", async (req: Request, res: Response) => {
 
     res.json({ success: true, hash, recipient, attestationTx: txHash, correlationId });
   } catch (err: any) {
+    attestationCounter.inc({ status: "failed" });
     logger.error({ correlationId, error: err?.message }, "attestation failed");
     res.status(500).json({ error: err?.message || "Attestation failed", correlationId });
   }
