@@ -6,12 +6,16 @@ use soroban_sdk::{
 const STORAGE_TTL_THRESHOLD: u32 = 535_679;
 const STORAGE_TTL_EXTEND_TO: u32 = 535_679;
 
+/// Attestations are keyed by a blinded key the attester derives off-chain
+/// (see `attest`), never by (link_hash, recipient): both the call arguments and
+/// the storage keys are public, so a joinable key would let the link creator
+/// watch who claims which link.
 #[contracttype]
 pub enum DataKey {
     VerificationKey,
     Attester,
-    Attestation(BytesN<32>, Address),
-    EmailAttestation(BytesN<32>, Address, BytesN<32>),
+    Attestation(BytesN<32>),
+    EmailAttestation(BytesN<32>),
     Nullifier(BytesN<32>),
 }
 
@@ -44,22 +48,18 @@ impl VerifierContract {
             panic!("invalid proof length: expected 2144 bytes");
         }
 
-        env.events()
-            .publish((symbol_short!("proof"), recipient.clone()), proof.len());
+        // The event keeps no recipient: it would tie a submission to an identity.
+        env.events().publish((symbol_short!("proof"),), proof.len());
     }
 
-    /// On-chain BN254 pairing verification is not available on Soroban today: CAP-0074
-    /// (BN254 host functions) is still proposed, not implemented, so there is no host
-    /// function to check an UltraHonk/Groth16-over-BN254 proof inside the contract VM.
-    /// (BLS12-381 pairing checks are live per CAP-0059, but this circuit's toolchain
-    /// — Noir + Barretenberg — targets BN254, not BLS12-381.)
+    /// BN254 host functions are now available on Soroban (CAP-0074, Protocol 25), so
+    /// native on-chain UltraHonk verification is possible.
     ///
-    /// Until that lands, this contract uses the attestation-oracle pattern instead:
-    /// the real UltraHonk proof is generated client-side and verified off-chain by a
-    /// trusted attester service (see `attest` / `is_attested` below), which then submits
-    /// a signed, on-chain attestation that `claim_link` in the escrow contract checks
-    /// before releasing funds. That's the actual verification gate today; this function
-    /// is kept only as a placeholder for native verification once CAP-0074 ships.
+    /// This contract still uses the attestation-oracle pattern: the real proof is
+    /// generated client-side and verified off-chain by a trusted attester, which records
+    /// an on-chain attestation (see `attest` / `is_attested` below) that `claim_link`
+    /// checks before releasing funds. That is the verification gate today. Moving this
+    /// function to native verification is planned follow-up work, outside issue #118.
     pub fn verify_proof(env: Env, public_inputs: Bytes, proof: Bytes) -> bool {
         let vk: Bytes = env
             .storage()
@@ -81,11 +81,16 @@ impl VerifierContract {
             .expect("VK not set")
     }
 
-    /// Record that `attester` has independently verified a real UltraHonk proof (off-chain)
-    /// showing knowledge of the secret behind `link_hash`, bound to `recipient`. Only the
-    /// trusted attester configured at deploy time may call this. This is the actual
-    /// ZK-gating check `claim_link` relies on — see the doc comment on `verify_proof`.
-    pub fn attest(env: Env, attester: Address, link_hash: BytesN<32>, recipient: Address) {
+    /// Record that `attester` has verified a real UltraHonk proof (off-chain) for one
+    /// claim. Only the trusted attester configured at deploy time may call this. This is
+    /// the actual ZK-gating check `claim_link` relies on — see the doc comment on
+    /// `verify_proof`.
+    ///
+    /// `claim_key` is sha256("ATREUS_CLAIM_V1" || link_hash || recipient strkey || salt),
+    /// computed by the attester from data it already holds. The salt is secret until the
+    /// recipient claims, so this argument reveals neither the link nor the recipient.
+    /// `claim_link` recomputes the same key from its own arguments.
+    pub fn attest(env: Env, attester: Address, claim_key: BytesN<32>) {
         attester.require_auth();
 
         let trusted: Address = env
@@ -97,7 +102,7 @@ impl VerifierContract {
             panic!("untrusted attester");
         }
 
-        let attestation_key = DataKey::Attestation(link_hash.clone(), recipient.clone());
+        let attestation_key = DataKey::Attestation(claim_key);
         env.storage().persistent().set(&attestation_key, &true);
         env.storage().persistent().extend_ttl(
             &attestation_key,
@@ -105,30 +110,24 @@ impl VerifierContract {
             STORAGE_TTL_EXTEND_TO,
         );
 
-        env.events()
-            .publish((symbol_short!("attested"), recipient), link_hash);
+        env.events().publish((symbol_short!("attested"),), ());
     }
 
-    /// Whether the trusted attester has vouched for a valid ZK proof binding this
-    /// (link_hash, recipient) pair. `claim_link` requires this to be true.
-    pub fn is_attested(env: Env, link_hash: BytesN<32>, recipient: Address) -> bool {
+    /// Whether the trusted attester has vouched for a valid ZK proof under this blinded
+    /// claim key. `claim_link` requires this to be true.
+    pub fn is_attested(env: Env, claim_key: BytesN<32>) -> bool {
         env.storage()
             .persistent()
-            .get(&DataKey::Attestation(link_hash, recipient))
+            .get(&DataKey::Attestation(claim_key))
             .unwrap_or(false)
     }
 
-    /// Record that `attester` has independently verified the email hash binding for
-    /// this (link_hash, recipient) pair. Only the trusted attester may call this.
-    /// Used by `claim_link` when `policy_type == 1` to verify the claimer owns the
-    /// intended email address.
-    pub fn attest_email(
-        env: Env,
-        attester: Address,
-        link_hash: BytesN<32>,
-        recipient: Address,
-        email_hash: BytesN<32>,
-    ) {
+    /// Record that `attester` has verified email ownership for one claim. Only the
+    /// trusted attester may call this. Used by `claim_link` when `policy_type == 1`.
+    ///
+    /// `email_key` is sha256("ATREUS_EMAIL_V1" || link_hash || recipient strkey ||
+    /// email_hash || salt), blinded for the same reason as `claim_key` in `attest`.
+    pub fn attest_email(env: Env, attester: Address, email_key: BytesN<32>) {
         attester.require_auth();
 
         let trusted: Address = env
@@ -140,31 +139,23 @@ impl VerifierContract {
             panic!("untrusted attester");
         }
 
-        env.storage()
-            .persistent()
-            .set(
-                &DataKey::EmailAttestation(link_hash.clone(), recipient.clone(), email_hash.clone()),
-                &true,
-            );
-
-        env.events().publish(
-            (symbol_short!("eml_att"), recipient),
-            (link_hash, email_hash),
+        let attestation_key = DataKey::EmailAttestation(email_key);
+        env.storage().persistent().set(&attestation_key, &true);
+        env.storage().persistent().extend_ttl(
+            &attestation_key,
+            STORAGE_TTL_THRESHOLD,
+            STORAGE_TTL_EXTEND_TO,
         );
+
+        env.events().publish((symbol_short!("eml_att"),), ());
     }
 
-    /// Whether the trusted attester has vouched for a valid email binding for this
-    /// (link_hash, recipient, email_hash) triple. Used by `claim_link` when
-    /// `policy_type == 1` to verify the email-restricted claim.
-    pub fn is_email_attested(
-        env: Env,
-        link_hash: BytesN<32>,
-        recipient: Address,
-        email_hash: BytesN<32>,
-    ) -> bool {
+    /// Whether the trusted attester has vouched for the email binding under this blinded
+    /// email key. Used by `claim_link` when `policy_type == 1`.
+    pub fn is_email_attested(env: Env, email_key: BytesN<32>) -> bool {
         env.storage()
             .persistent()
-            .get(&DataKey::EmailAttestation(link_hash, recipient, email_hash))
+            .get(&DataKey::EmailAttestation(email_key))
             .unwrap_or(false)
     }
 
@@ -188,14 +179,15 @@ impl VerifierContract {
             panic!("untrusted attester");
         }
 
-        let key = DataKey::Nullifier(nullifier.clone());
+        let key = DataKey::Nullifier(nullifier);
         env.storage().persistent().set(&key, &true);
         env.storage()
             .persistent()
             .extend_ttl(&key, STORAGE_TTL_THRESHOLD, STORAGE_TTL_EXTEND_TO);
 
-        env.events()
-            .publish((symbol_short!("nullifier"),), nullifier);
+        // The nullifier stays out of the event: published, it would let anyone
+        // correlate marks with the claims that produced them.
+        env.events().publish((symbol_short!("nullifier"),), ());
     }
 
     /// Whether `nullifier` has already been marked used on-chain via `mark_nullifier`.
