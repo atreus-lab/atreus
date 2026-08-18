@@ -207,6 +207,80 @@ linkRoutes.get("/:hash", async (req: Request, res: Response) => {
 const HEX_64 = /^[0-9a-fA-F]{64}$/;
 const FIELD_HEX = /^(0x)?[0-9a-fA-F]{64}$/;
 
+// POST /api/links/prove - Generate a ZK UltraHonk proof for claim flow
+linkRoutes.post("/prove", async (req: Request, res: Response) => {
+  const correlationId = String(req.header("x-correlation-id") || crypto.randomUUID());
+  try {
+    const { secret, recipient } = req.body;
+    if (!secret || !recipient) {
+      res.status(400).json({ error: "Missing secret or recipient", correlationId });
+      return;
+    }
+    const cleanSecret = secret.startsWith("0x") || secret.startsWith("0X") ? secret.slice(2) : secret;
+    const secretBytes = Uint8Array.from(Buffer.from(cleanSecret, "hex"));
+    const { Barretenberg, BarretenbergSync, UltraHonkBackend } = await import("@aztec/bb.js");
+    const { Noir } = await import("@noir-lang/noir_js");
+    const { addressToField } = await import("../lib/zk.js");
+
+    const FR_ORDER = 21888242871839275222246405745257275088548364400416034343698204186575808495617n;
+    const secretField = BigInt("0x" + cleanSecret) % FR_ORDER;
+    const recipientField = addressToField(recipient);
+
+    const bbSync = await BarretenbergSync.new();
+    const frBuffer = (val: bigint) => {
+      const buf = new Uint8Array(32);
+      let v = val;
+      for (let i = 31; i >= 0; i--) {
+        buf[i] = Number(v & 0xffn);
+        v >>= 8n;
+      }
+      return buf;
+    };
+
+    const linkHashResult = (bbSync as any).pedersenHash({
+      inputs: [frBuffer(secretField)],
+      hashIndex: 0,
+    });
+    const linkHashField = BigInt("0x" + Buffer.from(linkHashResult.hash).toString("hex"));
+
+    const nullifierResult = (bbSync as any).pedersenHash({
+      inputs: [frBuffer(secretField), frBuffer(recipientField)],
+      hashIndex: 0,
+    });
+    const nullifierField = BigInt("0x" + Buffer.from(nullifierResult.hash).toString("hex"));
+
+    const circuit = await getCircuit();
+    const noir = new Noir(circuit);
+    const inputs = {
+      secret: "0x" + secretField.toString(16).padStart(64, "0"),
+      recipient: "0x" + recipientField.toString(16).padStart(64, "0"),
+      link_hash: "0x" + linkHashField.toString(16).padStart(64, "0"),
+      nullifier: "0x" + nullifierField.toString(16).padStart(64, "0"),
+    };
+
+    const { witness } = await noir.execute(inputs);
+    const api = await Barretenberg.new({ threads: 1 });
+    try {
+      const backend = new UltraHonkBackend(circuit.bytecode, api);
+      const result = await backend.generateProof(witness);
+      const hashBuffer = await crypto.subtle.digest("SHA-256", secretBytes);
+      const linkHashHex = Buffer.from(hashBuffer).toString("hex");
+
+      res.json({
+        proof: Buffer.from(result.proof).toString("hex"),
+        linkHashHex,
+        linkHashFieldHex: "0x" + linkHashField.toString(16).padStart(64, "0"),
+        nullifierFieldHex: "0x" + nullifierField.toString(16).padStart(64, "0"),
+      });
+    } finally {
+      await api.destroy();
+    }
+  } catch (err: any) {
+    logger.error({ correlationId, error: err?.message }, "prove failed");
+    res.status(500).json({ error: err?.message || "Failed to generate proof", correlationId });
+  }
+});
+
 // POST /api/links/:hash/attest - ZK attestation-oracle endpoint.
 // Verifies a real UltraHonk proof off-chain against the public inputs the client
 // supplies (recipient, link_hash, nullifier) — never the private secret — and if

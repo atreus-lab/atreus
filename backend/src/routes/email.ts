@@ -6,9 +6,11 @@ import {
   getPending,
   isEmailHashVerified,
   markVerified,
+  registerChallengeAttempt,
 } from "../lib/emailVerificationStore.js";
 import { verifyEmailOwnership } from "../lib/dkim.js";
 import { emailEndpointLimiter } from "../lib/rateLimit.js";
+import { isDisposableEmail } from "../lib/disposableDomains.js";
 
 export const emailRoutes: Router = Router();
 const logger = pino({ level: process.env.LOG_LEVEL || "info" });
@@ -47,6 +49,13 @@ emailRoutes.post("/verify", (req: Request, res: Response) => {
 
   if (!isValidEmail(email)) {
     res.status(400).json({ error: "Invalid email address", correlationId: cid });
+    return;
+  }
+  if (isDisposableEmail(email)) {
+    res.status(400).json({
+      error: "Disposable email providers are not accepted. Use a permanent email address.",
+      correlationId: cid,
+    });
     return;
   }
 
@@ -104,6 +113,13 @@ emailRoutes.post("/confirm", async (req: Request, res: Response) => {
     res.status(400).json({ error: "Invalid email address", correlationId: cid });
     return;
   }
+  if (isDisposableEmail(email)) {
+    res.status(400).json({
+      error: "Disposable email providers are not accepted. Use a permanent email address.",
+      correlationId: cid,
+    });
+    return;
+  }
   if (!rawMessage || rawMessage.length < 32 || rawMessage.length > 256_000) {
     res.status(400).json({
       error: "rawMessage must be a non-empty RFC822 message (max 256KB)",
@@ -117,6 +133,17 @@ emailRoutes.post("/confirm", async (req: Request, res: Response) => {
   if (!pending) {
     res.status(400).json({
       error: "No pending verification for this email. Call POST /api/email/verify first.",
+      correlationId: cid,
+    });
+    return;
+  }
+
+  // Each confirmation consumes one attempt from the challenge's budget; a
+  // burned challenge must be re-requested, capping brute-force retries.
+  if (!registerChallengeAttempt(emailHash)) {
+    logger.warn({ correlationId: cid, emailHash }, "email confirm rejected: challenge exhausted");
+    res.status(429).json({
+      error: "Too many confirmation attempts for this challenge. Request a new one via POST /api/email/verify.",
       correlationId: cid,
     });
     return;

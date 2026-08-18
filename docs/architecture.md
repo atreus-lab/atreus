@@ -503,6 +503,17 @@ sequenceDiagram
 * **Risk**: Loss of Google OAuth access or third-party service downtime.
 * **Mitigation**: Full self-custody via 24-word BIP-39 mnemonic phrase generated at wallet setup. Users retain total control over private keys and funds at all times.
 
+### Threat: Forged Email-Ownership Attestations
+* **Risk**: Email-restricted links (policy_type=1) bind funds to an address. A forged DKIM attestation lets an attacker claim a link bound to someone else's inbox — a direct theft vector.
+* **Mitigation — email-verification trust model** (backend/src/lib/dkim.ts, backend/src/lib/emailVerificationStore.ts):
+  * **Strict pre-crypto validation** of the DKIM-Signature header (RFC 6376 + oracle hardening) before any DNS lookup: `v=1` only, strong algorithms only (`rsa-sha256`, `ed25519-sha256`), `d=`/`s=`/`h=` required with `h=` covering `From`, `b=`/`bh=` must be well-formed base64, canonicalization (`c=`) must be declared-valid, `x=`/`t=` expiry/freshness enforced with clock-skew tolerance, signatures older than the replay window (`EMAIL_DKIM_MAX_AGE_MS`, default 7 days) rejected, and `l=` body-length truncation (the classic append-attack) rejected when it is shorter than the actual body.
+  * **Message identity**: exactly one `Message-ID` header is required — duplicates or absence reject the message.
+  * **Domain alignment**: the passing signature's `d=` must cover the `From:` domain (exact or subdomain). A cryptographically valid signature from an unrelated domain (`evil.com`) signing a spoofed `From: victim@example.com` is rejected at both the verifier and ownership-check layers.
+  * **Challenge-response**: ownership requires a server-issued 128-bit random nonce (challenge) embedded in the DKIM-signed message. Challenges are TTL-bound (`EMAIL_CHALLENGE_TTL_MS`, default 24h), **single-use** (consumed on success), capped at `EMAIL_CHALLENGE_MAX_ATTEMPTS` (default 5) failed confirmations before the challenge is burned, and starting a new challenge invalidates any prior verification for that hash.
+  * **Abuse resistance**: sliding-window rate limits on both email endpoints (per-IP and per-email-hash), plus rejection of disposable email providers (`EMAIL_BLOCKED_DOMAINS` extends the default blocklist) on both `/api/email/verify` and `/api/email/confirm`.
+  * **On-chain binding guarantee (backend)**: `attest_email` on `VerifierContract` is only invoked by `POST /api/links/:hash/attest` after the recipient email hash is marked verified — which is only reachable by fully validating a fresh, non-replayed, domain-aligned DKIM-signed challenge message. There is no code path that marks a hash verified without passing `verifyEmailOwnership`, and the verification record itself expires (`EMAIL_VERIFIED_TTL_MS`, default 1h).
+  * **Privacy**: only `sha256(normalized email)` is stored server-side; raw emails and raw messages are never persisted.
+
 ---
 
 ## 11. References
