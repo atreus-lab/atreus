@@ -230,6 +230,12 @@ export const checkNullifierOnChain = async (nullifier: Uint8Array): Promise<bool
 
   const sim = await rpcServer.simulateTransaction(tx);
   if (rpc.Api.isSimulationError(sim)) {
+    if (
+      sim.error?.includes("trying to invoke non-existent contract function") ||
+      sim.error?.includes("MissingValue")
+    ) {
+      return false;
+    }
     throw new Error(`is_nullifier_used simulation failed: ${sim.error}`);
   }
   if (!rpc.Api.isSimulationSuccess(sim) || !sim.result) {

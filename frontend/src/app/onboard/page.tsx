@@ -447,7 +447,27 @@ export default function WalletPage() {
                 }
               </button>
 
-              <div className="flex items-center gap-2 mt-6 ml-3 mb-6">
+              <button
+                onClick={async () => {
+                  try {
+                    setCreating(true);
+                    setError("");
+                    const w = await generateWallet();
+                    await finishWallet(w);
+                  } catch (err: any) {
+                    setError(err?.message || "Failed to create wallet");
+                  } finally {
+                    setCreating(false);
+                  }
+                }}
+                disabled={creating}
+                className="w-full max-w-[420px] mt-3 bg-slate-900 hover:bg-slate-800 text-white rounded-[1.25rem] p-3.5 flex items-center justify-center gap-2 font-bold text-[15px] shadow-sm hover:-translate-y-0.5 transition-all disabled:opacity-70"
+              >
+                {creating ? <Loader2 className="w-4 h-4 animate-spin" /> : <Key className="w-4 h-4 text-emerald-400" />}
+                <span>Create Instant Local Wallet (No Google)</span>
+              </button>
+
+              <div className="flex items-center gap-2 mt-4 ml-3 mb-6">
                 <Lock className="w-4 h-4 text-slate-400" />
                 <span className="text-[13px] font-bold text-slate-500 tracking-wide">Secure. Private. Self-custodial.</span>
               </div>

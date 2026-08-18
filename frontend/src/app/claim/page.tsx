@@ -155,15 +155,34 @@ function getFriendlyErrorMessage(err: any): { title: string; description: string
   return { title: 'Claim failed', description: err?.message || 'An unexpected error occurred. Please try again.' };
 }
 
-const parseLinkInput = () => {
-    const hash = linkInput.split('#')[1]?.split(/[,;\s]/)[0];
+  const parseLinkInput = () => {
+    let hash = '';
+    const trimmed = linkInput.trim();
+    if (trimmed.includes('#')) {
+      hash = trimmed.split('#')[1]?.split(/[,;\s]/)[0] || '';
+    } else if (trimmed.includes('secret=')) {
+      try {
+        const u = new URL(trimmed, window.location.origin);
+        hash = u.searchParams.get('secret') || '';
+      } catch {
+        hash = trimmed.split('secret=')[1]?.split(/[,;&\s]/)[0] || '';
+      }
+    } else if (/^[0-9a-fA-F]{64}$/.test(trimmed)) {
+      hash = trimmed;
+    }
     if (hash) {
       setSecretHex(hash);
       setLinkInput('');
     }
   };
 
-  const getHashFromUrl = () => window.location.hash.substring(1).split(/[,;\s]/)[0];
+  const getHashFromUrl = () => {
+    if (typeof window === 'undefined') return '';
+    const hash = window.location.hash.substring(1).split(/[,;\s]/)[0];
+    if (hash) return hash;
+    const sp = new URLSearchParams(window.location.search);
+    return sp.get('secret') || '';
+  };
 
   useEffect(() => {
     const hash = getHashFromUrl();
@@ -577,7 +596,7 @@ const parseLinkInput = () => {
             />
             <button
               onClick={parseLinkInput}
-              disabled={!linkInput.includes('#')}
+              disabled={!linkInput.trim()}
               className="w-full py-3.5 rounded-2xl text-sm font-bold text-white bg-indigo-600 hover:bg-indigo-700 disabled:opacity-40 disabled:cursor-not-allowed transition-all shadow-[0_4px_12px_rgba(79,70,229,0.3)]"
             >
               Start Claim
