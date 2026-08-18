@@ -2,21 +2,20 @@
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { loadWallet, getTransactions, type StoredWallet } from "@/lib/wallet";
+import { loadWallet, getTransactions } from "@/lib/wallet";
 import {
-  Users, Plus, Send, Edit2, ShieldCheck, Smartphone, Mail,
-  CheckCircle2, Network, Activity, Palette, Globe, ChevronDown, ChevronRight,
+  Users, Plus, Send, Edit2, Smartphone, Mail,
+  CheckCircle2, Network, Activity, Palette, Globe, ChevronRight,
   Info, FileText
 } from "lucide-react";
 import AppHeader from "@/components/AppHeader";
 import SearchDialog from "@/components/SearchDialog";
+import PageHeader from "@/components/ui/PageHeader";
 import Toggle from "@/components/ui/Toggle";
 import EmptyState from "@/components/ui/EmptyState";
 
 export default function SettingsPage() {
   const router = useRouter();
-  const [storedWallet, setStoredWallet] = useState<StoredWallet | null>(null);
-  const [address, setAddress] = useState("");
   const [loading, setLoading] = useState(true);
   const [searchOpen, setSearchOpen] = useState(false);
 
@@ -40,8 +39,6 @@ export default function SettingsPage() {
   useEffect(() => {
     const wallet = loadWallet();
     if (!wallet) { router.push("/wallet"); return; }
-    setStoredWallet(wallet);
-    setAddress(wallet.publicKey);
     const pk = wallet.publicKey;
     Promise.all([getTransactions(pk, 30)])
       .then(([txs]) => {
@@ -67,7 +64,7 @@ export default function SettingsPage() {
   // Reusable setting row
   function SettingRow({ icon, iconColor, title, desc, control, onClick }: { icon: React.ReactNode; iconColor: string; title: string; desc: string; control?: React.ReactNode; onClick?: () => void }) {
     return (
-      <div className={`flex items-center justify-between p-3 rounded-lg hover:bg-[rgba(255,255,255,0.03)] transition-colors ${onClick ? 'cursor-pointer' : ''} group`} onClick={onClick}>
+      <div className={`flex items-center justify-between p-3 rounded-lg hover:bg-[rgba(0,0,0,0.02)] transition-colors ${onClick ? 'cursor-pointer' : ''} group`} onClick={onClick}>
         <div className="flex items-center gap-3">
           <div className="w-8 h-8 rounded-lg flex items-center justify-center shrink-0" style={{ background: `${iconColor}15`, color: iconColor }}>{icon}</div>
           <div className="flex flex-col">
@@ -94,14 +91,15 @@ export default function SettingsPage() {
 
   return (
     <>
-      <AppHeader title="Settings" subtitle="Configure your wallet experience" backHref="/dashboard" onSearchOpen={() => setSearchOpen(true)} />
+      <AppHeader />
       <div className="app-content">
+        <PageHeader title="Settings" subtitle="Configure your wallet experience" backHref="/dashboard" />
         {loading ? (
           <div className="flex-1 flex items-center justify-center p-8">
             <div className="animate-spin w-6 h-6 border-2 border-[var(--accent-primary)] border-t-transparent rounded-full" />
           </div>
         ) : (
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 max-w-[803px] mx-auto w-full">
           
           {/* Left Column */}
           <div className="flex flex-col gap-6">
@@ -241,7 +239,7 @@ export default function SettingsPage() {
                   iconColor="#f97316"
                   title="Appearance"
                   desc="Light, Dark, or System mode"
-                  control={<span className="text-xs font-bold text-secondary">Dark</span>}
+                  control={<span className="text-xs font-bold text-secondary">Light</span>}
                 />
                 <SettingRow
                   icon={<Globe className="w-4 h-4" />}

@@ -99,7 +99,7 @@ export default function CreatePage() {
   };
 
   return (
-    <div className="app-content max-w-md mx-auto">
+    <div className="app-content max-w-[803px] mx-auto">
       <div className="panel p-8 space-y-5">
         <Link href="/" className="text-sm font-bold text-accent inline-flex items-center gap-1 hover:underline">
           <ArrowLeft className="w-4 h-4" /> Home
@@ -108,8 +108,8 @@ export default function CreatePage() {
         <h2 className="text-xl font-bold text-primary">Create Link</h2>
 
         <div className="grid grid-cols-2 rounded-lg bg-elevated p-1 text-sm font-semibold">
-          <button onClick={() => setMode('single')} className={`rounded-md py-2 ${mode === 'single' ? 'bg-[var(--bg-panel)] text-primary shadow-sm' : 'text-secondary'}`}>Single Link</button>
-          <button onClick={() => setMode('batch')} className={`rounded-md py-2 ${mode === 'batch' ? 'bg-[var(--bg-panel)] text-primary shadow-sm' : 'text-secondary'}`}>Batch Upload</button>
+          <button onClick={() => setMode('single')} className={`rounded-md py-2 ${mode === 'single' ? 'bg-white text-primary shadow-sm' : 'text-secondary'}`}>Single Link</button>
+          <button onClick={() => setMode('batch')} className={`rounded-md py-2 ${mode === 'batch' ? 'bg-white text-primary shadow-sm' : 'text-secondary'}`}>Batch Upload</button>
         </div>
 
         {mode === 'batch' ? <BatchUpload /> : <>
@@ -172,7 +172,7 @@ export default function CreatePage() {
 
         <button
           onClick={handleCreate}
-          className="btn-primary w-full py-3 rounded-lg text-sm font-bold flex items-center justify-center gap-2"
+          className="btn-soft-blue w-full"
           disabled={isCreating || !amount || parseFloat(amount) <= 0}
         >
           {isCreating ? (
@@ -205,7 +205,7 @@ export default function CreatePage() {
 
             <button
               onClick={() => router.push('/dashboard')}
-              className="w-full py-2.5 rounded-lg text-sm font-semibold bg-elevated text-secondary transition-colors hover:text-primary"
+              className="btn-outline w-full"
             >
               Back to Dashboard
             </button>

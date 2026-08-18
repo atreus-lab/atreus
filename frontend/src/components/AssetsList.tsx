@@ -1,36 +1,51 @@
 "use client";
 
-import { memo } from "react";
+import { memo, useEffect, useState } from "react";
 import Image from "next/image";
-import Link from "next/link";
-import { ArrowRight } from "lucide-react";
+import { ArrowRight, Loader2, Plus } from "lucide-react";
 import WalletAssetRow from "./ui/WalletAssetRow";
+import { getXlmUsdPrice } from "@/lib/prices";
+import { addTrustline } from "@/lib/wallet";
+
+const COMMON_ASSETS = [
+  { code: 'USDC', issuer: 'GBBD47IF6LWK7P7MDEVSCWR7DPUWV3NY3DTQEVFL4NAT4AQH3ZLLFLA5', name: 'USD Coin' },
+  { code: 'EURT', issuer: 'GBLETQF7AAB2DPWP3LU6DYXYF3CZX7RVH3PB6IHQWECTOKZL7EENGO2U', name: 'Euro Token' },
+];
 
 interface AssetsListProps {
   balances: any[];
+  onManageAssets?: () => void;
+  onChanged?: () => void;
 }
 
 function AssetLogo({ code, isNative }: { code: string; isNative: boolean }) {
   if (isNative || code === 'XLM') {
-    return <Image src="/media/stellarlogo.webp" alt="XLM" width={24} height={24} className="w-full h-full object-contain rounded-full bg-black p-0.5 border border-[rgba(255,255,255,0.2)]" />;
+    return <Image src="/media/stellarlogo.webp" alt="XLM" width={24} height={24} className="h-full w-full rounded-full object-contain bg-black p-0.5" />;
   }
   if (code === 'USDC') {
-    return <img src="https://cryptologos.cc/logos/usd-coin-usdc-logo.svg?v=029" alt="USDC" className="w-full h-full object-contain p-1 border border-[rgba(255,255,255,0.2)] rounded-full" />;
+    return <img src="https://cryptologos.cc/logos/usd-coin-usdc-logo.svg?v=029" alt="USDC" className="h-full w-full rounded-full object-contain p-1" />;
   }
   if (code === 'EURT') {
-    return <div className="w-full h-full rounded-full flex items-center justify-center font-bold text-[10px] bg-[rgba(255,255,255,0.1)] text-primary border border-[rgba(255,255,255,0.2)]">€</div>;
+    return <div className="flex h-full w-full items-center justify-center rounded-full bg-blue-50 text-[10px] font-bold text-accent">€</div>;
   }
-  return <div className="w-full h-full rounded-full flex items-center justify-center font-bold text-[10px] bg-[rgba(255,255,255,0.05)] text-secondary border border-[rgba(255,255,255,0.2)]">{code?.slice(0, 2)}</div>;
+  return <div className="flex h-full w-full items-center justify-center rounded-full bg-grey-50 text-[10px] font-bold text-grey-600">{code?.slice(0, 2)}</div>;
 }
 
-// Generate random sparkline data
-const generateSparkline = (base: number) => {
-  return Array.from({ length: 15 }, (_, i) => ({
-    value: base + Math.sin(i * 0.5) * (base * 0.2) + Math.random() * (base * 0.1)
-  }));
-};
+function assetUsdRate(code: string, xlmUsd: number): number {
+  if (code === "USDC") return 1;
+  if (code === "EURT") return 1.08;
+  return xlmUsd > 0 ? xlmUsd : 0.182;
+}
 
-const AssetsList = memo(function AssetsList({ balances }: AssetsListProps) {
+const AssetsList = memo(function AssetsList({ balances, onManageAssets, onChanged }: AssetsListProps) {
+  const [xlmUsd, setXlmUsd] = useState(0);
+  const [addingAsset, setAddingAsset] = useState<string | null>(null);
+  const [error, setError] = useState("");
+
+  useEffect(() => {
+    getXlmUsdPrice().then(setXlmUsd);
+  }, []);
+
   const myAssets = balances.filter((b: any) => {
     if (b.asset_type === 'native') return true;
     if (!b.asset_code) return false;
@@ -38,75 +53,80 @@ const AssetsList = memo(function AssetsList({ balances }: AssetsListProps) {
   });
 
   const existingCodes = balances.map((b: any) => b.asset_code).filter(Boolean);
-  const allAvailable = [
-    { code: 'USDC', name: 'USD Coin', sparkBase: 100 },
-    { code: 'EURT', name: 'Euro Token', sparkBase: 110 },
-    { code: 'yUSDC', name: 'Yield USDC', sparkBase: 105 },
-  ];
-  const available = allAvailable.filter(a => !existingCodes.includes(a.code));
+  const available = COMMON_ASSETS.filter(a => !existingCodes.includes(a.code));
+
+  const handleActivate = async (code: string, issuer: string) => {
+    try {
+      setAddingAsset(code);
+      setError("");
+      await addTrustline(code, issuer);
+      onChanged?.();
+    } catch (err: any) {
+      setError(err.message || `Failed to add ${code}`);
+    } finally {
+      setAddingAsset(null);
+    }
+  };
 
   return (
-    <div className="panel flex flex-col h-full">
-      <div className="panel-header border-b border-[rgba(255,255,255,0.05)] pb-3">
-        <h3 className="text-lg font-extrabold text-primary">Assets</h3>
-        <Link href="/assets" className="text-xs font-semibold text-secondary hover:text-primary transition-colors flex items-center gap-1">View all <ArrowRight className="w-3 h-3"/></Link>
+    <div className="flex flex-col">
+      <div className="mb-2 flex items-center justify-between">
+        <h3 className="text-base font-bold text-grey-800">My Assets</h3>
+        {onManageAssets && (
+          <button onClick={onManageAssets} className="flex h-11 items-center gap-2 rounded-lg bg-blue-50 px-4 text-sm font-semibold text-blue-600 transition-colors hover:bg-blue-100 active:bg-blue-200">
+            Manage assets <ArrowRight className="h-4 w-4" />
+          </button>
+        )}
       </div>
 
-      <div className="panel-body flex flex-col gap-2 pt-4">
-        {/* My Assets */}
-        <span className="text-[10px] font-bold text-secondary uppercase tracking-widest mb-1">My Assets</span>
-        <div className="flex flex-col gap-1.5 stagger-children">
-          {myAssets.length === 0 ? (
-            <div className="text-xs italic py-2 text-secondary">No assets activated yet</div>
-          ) : (
-            myAssets.slice(0, 3).map((b: any, i: number) => {
-              const isNative = b.asset_type === "native";
-              const code = isNative ? "XLM" : b.asset_code;
-              return (
-                <WalletAssetRow
-                  key={i}
-                  code={code}
-                  subtitle={isNative ? "Stellar Lumens" : code}
-                  balance={parseFloat(b.balance)}
-                  logo={<AssetLogo code={code} isNative={isNative} />}
-                  sparklineData={generateSparkline(100)}
-                />
-              );
-            })
-          )}
+      {error && <div className="mb-4 rounded-lg border border-[rgba(248,113,113,0.15)] bg-[rgba(248,113,113,0.08)] p-3 text-sm font-semibold text-error">{error}</div>}
+
+      {myAssets.length === 0 ? (
+        <div className="py-4 text-center text-xs text-grey-400">No assets activated yet</div>
+      ) : (
+        <div className="flex flex-col">
+          {myAssets.slice(0, 3).map((b: any, i: number) => {
+            const isNative = b.asset_type === "native";
+            const code = isNative ? "XLM" : b.asset_code;
+            return (
+              <WalletAssetRow
+                key={i}
+                code={code}
+                subtitle={isNative ? "Stellar Lumens" : code}
+                balance={parseFloat(b.balance)}
+                usdRate={assetUsdRate(code, xlmUsd)}
+                logo={<AssetLogo code={code} isNative={isNative} />}
+              />
+            );
+          })}
         </div>
+      )}
 
-        {/* Divider */}
-        {available.length > 0 && <div className="h-px bg-[rgba(255,255,255,0.05)] my-3" />}
-
-        {/* Available Assets */}
-        {available.length > 0 && (
-          <>
-            <span className="text-[10px] font-bold text-secondary uppercase tracking-widest mb-1">Available</span>
-            <div className="flex flex-col gap-1.5">
-              {available.map((asset, i) => (
+      {available.length > 0 && (
+        <>
+          <h3 className="mb-2 mt-5 text-base font-bold text-grey-800">Available</h3>
+          <div className="flex flex-col">
+            {available.map((asset, i) => {
+              const isLoading = addingAsset === asset.code;
+              return (
                 <WalletAssetRow
                   key={i}
                   code={asset.code}
                   subtitle={asset.name}
+                  usdRate={assetUsdRate(asset.code, xlmUsd)}
                   logo={<AssetLogo code={asset.code} isNative={false} />}
-                  sparklineData={generateSparkline(asset.sparkBase)}
-                  balance={asset.code === 'USDC' ? 1250 : asset.code === 'EURT' ? 500 : 250}
                   action={
-                    <Link href="/assets" className="text-[10px] font-semibold px-3 py-1 rounded border border-[rgba(255,255,255,0.1)] text-secondary hover:text-primary transition-colors bg-[rgba(255,255,255,0.03)] hover:bg-[rgba(255,255,255,0.08)]">
-                      Activate
-                    </Link>
+                    <button onClick={() => handleActivate(asset.code, asset.issuer)} disabled={isLoading} className="inline-flex h-8 items-center rounded-lg bg-blue-50 px-3 text-xs font-semibold text-blue-600 transition-colors hover:bg-blue-100 active:bg-blue-200 disabled:opacity-40">
+                      {isLoading ? <Loader2 className="mr-1 h-3 w-3 animate-spin" /> : <Plus className="mr-1 h-3 w-3" />}
+                      {isLoading ? "Adding..." : "Activate"}
+                    </button>
                   }
                 />
-              ))}
-            </div>
-          </>
-        )}
-
-        <Link href="/assets" className="mt-4 self-start text-xs font-semibold text-secondary hover:text-primary transition-colors flex items-center gap-1">
-          Manage assets <ArrowRight className="w-3 h-3" />
-        </Link>
-      </div>
+              );
+            })}
+          </div>
+        </>
+      )}
     </div>
   );
 });

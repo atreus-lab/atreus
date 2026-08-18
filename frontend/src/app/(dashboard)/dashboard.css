@@ -14,6 +14,9 @@
   .text-error {
     color: var(--error);
   }
+  .bg-success {
+    background-color: var(--success);
+  }
   .bg-elevated {
     background: var(--background-elevated);
   }
@@ -550,4 +553,273 @@
       opacity: 1;
       transform: translateY(0);
     }
+  }
+
+  /* ═══ Light Theme (TipLink-style) ═══════════════════════════════════════ */
+  /* Scoped to the dashboard subtree via .dashboard-light on the app shell.
+     Landing (/) keeps the dark theme — these tokens never reach it. */
+
+  .dashboard-light {
+    --background-primary: #ffffff;
+    --background-card: #ffffff;
+    --background-elevated: #f5f7f8;
+    --foreground-primary: #17303e;
+    --foreground-secondary: #526b79;
+    --accent-primary: #007cbf;
+    --accent-hover: #006399;
+    --accent-active: #004a73;
+    --border-default: #e0e7eb;
+    --border-subtle: #ebeff2;
+    --success: #16a34a;
+    --error: #ef4444;
+    color: var(--foreground-primary);
+  }
+
+  .dashboard-light .app-header {
+    background: rgba(255, 255, 255, 0.75);
+  }
+
+  .dashboard-light .asset-row {
+    background: #ffffff;
+  }
+  .dashboard-light .asset-row:hover {
+    background: #f8fafc;
+  }
+
+  .dashboard-light .activity-item:hover {
+    background: rgba(0, 0, 0, 0.02);
+  }
+
+  .dashboard-light .sidebar-item:hover {
+    background: rgba(0, 0, 0, 0.04);
+  }
+  .dashboard-light .sidebar-item-active {
+    background: #ffffff;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
+  }
+
+  .dashboard-light .balance-hero-btn:hover {
+    background: rgba(0, 0, 0, 0.04);
+  }
+
+  .dashboard-light .empty-state-icon {
+    background: rgba(0, 0, 0, 0.04);
+  }
+
+  .dashboard-light .toggle-knob {
+    background: #ffffff;
+  }
+
+  /* ─── Glass panel — the signature wallet surface ─── */
+  .glass-panel {
+    background: rgba(255, 255, 255, 0.4);
+    border: 1px solid #ffffff;
+    border-radius: 0.75rem;
+    box-shadow: 0 4px 40px rgba(0, 0, 0, 0.06), inset 0 0 40px rgba(255, 255, 255, 0.8);
+  }
+
+  /* ─── Solid white card ─── */
+  .card-solid {
+    background: #ffffff;
+    border: 1px solid #e0e7eb;
+    border-radius: 0.75rem;
+    box-shadow: 0 0 40px rgba(0, 0, 0, 0.06);
+  }
+
+  /* ─── Primary action — blue gradient, always the loudest button ─── */
+  .btn-soft-blue {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.5rem;
+    height: 2.75rem;
+    padding: 0 1.5rem;
+    border-radius: 0.5rem;
+    background: linear-gradient(to bottom, #3b82f6, #2563eb);
+    color: #ffffff;
+    font-size: 0.9375rem;
+    font-weight: 700;
+    border: none;
+    cursor: pointer;
+    text-decoration: none;
+    box-shadow: 0 10px 20px rgba(37, 99, 235, 0.25);
+    transition: filter 150ms var(--ease-out), transform 100ms ease-out;
+  }
+  .btn-soft-blue:hover {
+    filter: brightness(1.08);
+  }
+  .btn-soft-blue:active {
+    transform: scale(0.97);
+  }
+  .btn-soft-blue:disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
+    transform: none;
+  }
+
+  /* ─── Secondary action — white with soft grey border ─── */
+  .btn-outline {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.5rem;
+    height: 2.75rem;
+    padding: 0 1.5rem;
+    border-radius: 0.5rem;
+    background: #ffffff;
+    border: 1px solid #e0e7eb;
+    color: #526b79;
+    font-size: 0.9375rem;
+    font-weight: 700;
+    cursor: pointer;
+    text-decoration: none;
+    transition: background 150ms var(--ease-out), border-color 150ms var(--ease-out), color 150ms var(--ease-out);
+  }
+  .btn-outline:hover {
+    background: #eff6ff;
+    border-color: #bfdbfe;
+    color: #2563eb;
+  }
+  .btn-outline:active {
+    transform: scale(0.97);
+  }
+  .btn-outline:disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
+  }
+
+  /* ─── Rectangular hero action — icon + label (Send / Add Funds / Create Link / Swap) ─── */
+  .icon-btn-rect {
+    display: inline-flex;
+    flex: 1;
+    flex-direction: row;
+    align-items: center;
+    justify-content: center;
+    gap: 0.5rem;
+    min-width: 0;
+    height: 2.75rem;
+    border-radius: 0.5rem;
+    background: #e6f2f9;
+    color: #007cbf;
+    font-size: 0.9375rem;
+    font-weight: 600;
+    cursor: pointer;
+    text-decoration: none;
+    transition: background 150ms var(--ease-out), transform 100ms ease-out;
+  }
+  .icon-btn-rect svg {
+    color: #007cbf;
+  }
+  .icon-btn-rect:hover {
+    background: #cce5f2;
+  }
+  .icon-btn-rect:active {
+    background: #99cbe5;
+  }
+  /* Solid variant — the primary rectangular action (Send) */
+  .icon-btn-rect-solid {
+    background: #007cbf;
+    color: #ffffff;
+    box-shadow: 0 10px 20px rgba(0, 124, 191, 0.25);
+  }
+  .icon-btn-rect-solid svg,
+  .icon-btn-rect-solid span {
+    color: #ffffff;
+  }
+  .icon-btn-rect-solid:hover {
+    background: #006399;
+    filter: brightness(1.08);
+  }
+  .icon-btn-rect-solid:active {
+    background: #004a73;
+    filter: none;
+  }
+
+  /* ─── Tabs — underline tabs (Assets / Payment Links / Activity) ─── */
+  .tabs {
+    display: flex;
+    align-items: center;
+    gap: 0.25rem;
+    width: 100%;
+    border-bottom: 1px solid #e0e7eb;
+  }
+  .tab {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.375rem;
+    padding: 0.625rem 0.625rem;
+    margin-bottom: -1px;
+    background: transparent;
+    border: none;
+    border-bottom: 2px solid transparent;
+    font-family: var(--font-manrope), -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    font-size: 1rem;
+    font-weight: 700;
+    color: #2d4c5d;
+    cursor: pointer;
+    transition: color 150ms var(--ease-out), border-color 150ms var(--ease-out);
+    white-space: nowrap;
+  }
+  .tab:hover {
+    color: #101828;
+  }
+  .tab[data-active="true"] {
+    color: #2d4c5d;
+    border-bottom-color: #007cbf;
+  }
+
+  /* ─── Address chip — copyable address pill ─── */
+  .address-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.375rem;
+    padding: 0.375rem 0.75rem;
+    border-radius: 9999px;
+    background: #ffffff;
+    border: 1px solid #e0e7eb;
+    color: #526b79;
+    font-size: 0.75rem;
+    font-weight: 600;
+    font-family: ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, monospace;
+    white-space: nowrap;
+    cursor: pointer;
+    transition: border-color 150ms var(--ease-out), color 150ms var(--ease-out);
+  }
+  .address-chip:hover {
+    border-color: #bfdbfe;
+    color: #2563eb;
+  }
+
+  /* ─── Balance hero number — 40px desktop, larger on mobile ─── */
+  .balance-display {
+    font-family: var(--font-manrope), -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    font-size: 2.5rem;
+    font-weight: 700;
+    letter-spacing: -0.02em;
+    line-height: 1;
+    color: #101828;
+  }
+  .balance-unit {
+    font-size: 1.5rem;
+    font-weight: 600;
+    color: #6b818c;
+  }
+  @media (max-width: 480px) {
+    .balance-display {
+      font-size: 3.75rem;
+    }
+  }
+
+  /* ─── Option row — settings-style rows with hairline dividers ─── */
+  .option-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1rem;
+    padding: 0.875rem 0;
+    border-bottom: 1px solid #e0e7eb;
+  }
+  .option-row:last-child {
+    border-bottom: none;
   }

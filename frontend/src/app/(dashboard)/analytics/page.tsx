@@ -7,6 +7,7 @@ import { fetchSummary, fetchLinkStats } from "@/lib/analytics";
 import type { LinkStats, SummaryStats, TimeSeriesPoint } from "@/lib/analytics/types";
 import AppHeader from "@/components/AppHeader";
 import SearchDialog from "@/components/SearchDialog";
+import PageHeader from "@/components/ui/PageHeader";
 import AnalyticsChart from "@/components/AnalyticsChart";
 import { Eye, MousePointerClick, Clock, Link2, ChevronRight, Activity } from "lucide-react";
 
@@ -100,19 +101,15 @@ export default function AnalyticsPage() {
 
   return (
     <>
-      <AppHeader
-        title="Analytics"
-        subtitle="Payment link performance and conversion metrics"
-        backHref="/dashboard"
-        onSearchOpen={() => setSearchOpen(true)}
-      />
+      <AppHeader />
       <div className="app-content">
+        <PageHeader title="Analytics" subtitle="Payment link performance and conversion metrics" backHref="/dashboard" />
         {loading ? (
           <div className="flex-1 flex items-center justify-center p-8">
             <div className="animate-spin w-6 h-6 border-2 border-[var(--accent-primary)] border-t-transparent rounded-full" />
           </div>
         ) : (
-          <div className="space-y-6">
+          <div className="space-y-6 max-w-[803px] mx-auto w-full">
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
               <StatCard label="Total Views" value={String(totalViews)} icon={<Eye className="w-4 h-4" />} accent="#3b82f6" />
               <StatCard label="Unique Views" value={String(uniqueViews)} icon={<Activity className="w-4 h-4" />} accent="#8b5cf6" />

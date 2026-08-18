@@ -9,20 +9,20 @@ interface Props extends ButtonHTMLAttributes<HTMLButtonElement> {
   loading?: boolean;
 }
 
-const base = "inline-flex items-center justify-center font-semibold transition-all duration-200 rounded-xl disabled:opacity-50 disabled:cursor-not-allowed focus:outline-none focus:ring-2 focus:ring-[var(--accent-primary)] focus:ring-offset-2 focus:ring-offset-[var(--background-primary)]";
+const base = "inline-flex items-center justify-center font-semibold transition-all duration-150 ease-linear rounded-lg disabled:opacity-50 disabled:cursor-not-allowed focus:outline-none";
 
 const variants: Record<Variant, string> = {
-  primary: "bg-[var(--accent-primary)] text-white hover:bg-[var(--accent-hover)] active:scale-[0.98]",
-  secondary: "bg-[var(--background-elevated)] text-[var(--foreground-primary)] hover:brightness-110 active:scale-[0.98]",
-  ghost: "text-[var(--foreground-secondary)] hover:text-[var(--foreground-primary)] hover:bg-[var(--background-elevated)]",
-  danger: "bg-red-600 text-white hover:bg-red-700 active:scale-[0.98]",
-  icon: "text-[var(--foreground-secondary)] hover:text-[var(--foreground-primary)] hover:bg-[var(--background-elevated)] p-2 rounded-lg",
+  primary: "bg-blue-500 text-white hover:bg-blue-600 active:bg-blue-700",
+  secondary: "bg-white text-neutral-primary shadow-card hover:bg-grey-25 active:bg-grey-50",
+  ghost: "text-grey-700 hover:bg-grey-50 active:bg-grey-100",
+  danger: "bg-red-500 text-white hover:bg-red-600 active:bg-red-700",
+  icon: "text-grey-700 hover:bg-grey-50 p-2 rounded-lg",
 };
 
 const sizes: Record<Size, string> = {
-  sm: "px-3 py-1.5 text-xs gap-1.5",
-  md: "px-5 py-2.5 text-sm gap-2",
-  lg: "px-6 py-3 text-base gap-2",
+  sm: "h-9 px-4 text-xs gap-1.5",
+  md: "h-11 px-5 text-sm gap-2",
+  lg: "h-12 px-6 text-base gap-2",
 };
 
 export const Button = forwardRef<HTMLButtonElement, Props>(
