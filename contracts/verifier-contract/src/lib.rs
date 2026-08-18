@@ -140,12 +140,10 @@ impl VerifierContract {
             panic!("untrusted attester");
         }
 
-        env.storage()
-            .persistent()
-            .set(
-                &DataKey::EmailAttestation(link_hash.clone(), recipient.clone(), email_hash.clone()),
-                &true,
-            );
+        env.storage().persistent().set(
+            &DataKey::EmailAttestation(link_hash.clone(), recipient.clone(), email_hash.clone()),
+            &true,
+        );
 
         env.events().publish(
             (symbol_short!("eml_att"), recipient),
@@ -207,4 +205,6 @@ impl VerifierContract {
     }
 }
 
+#[cfg(test)]
+mod proptests;
 mod test;

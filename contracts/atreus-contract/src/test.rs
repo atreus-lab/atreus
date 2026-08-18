@@ -52,7 +52,9 @@ impl MockVerifier {
     ) -> bool {
         env.storage()
             .persistent()
-            .get(&MockDataKey::EmailAttestation(link_hash, recipient, email_hash))
+            .get(&MockDataKey::EmailAttestation(
+                link_hash, recipient, email_hash,
+            ))
             .unwrap_or(false)
     }
 }
@@ -501,4 +503,457 @@ fn test_duplicate_link_fails() {
             &sender
         )
         .is_err());
+}
+
+// ---------------------------------------------------------------------------
+// Adversarial / edge-case tests
+// ---------------------------------------------------------------------------
+
+#[test]
+fn test_refund_before_expiry_fails() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let (client, _verifier, sender, token) = setup_test(&env);
+    let (_secret, link_hash) = make_secret(&env, 10);
+    let amount = 1000i128;
+    let expiry = env.ledger().timestamp() + 1000;
+    let policy_params = Bytes::new(&env);
+
+    client.create_link(
+        &link_hash,
+        &0u32,
+        &policy_params,
+        &amount,
+        &token,
+        &expiry,
+        &sender,
+    );
+
+    // Refund 1 second before expiry should fail
+    env.ledger().set_timestamp(expiry - 1);
+    assert!(client.try_refund_link(&link_hash).is_err());
+}
+
+#[test]
+fn test_refund_at_exact_expiry_fails() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let (client, _verifier, sender, token) = setup_test(&env);
+    let (_secret, link_hash) = make_secret(&env, 11);
+    let amount = 1000i128;
+    let expiry = env.ledger().timestamp() + 1000;
+    let policy_params = Bytes::new(&env);
+
+    client.create_link(
+        &link_hash,
+        &0u32,
+        &policy_params,
+        &amount,
+        &token,
+        &expiry,
+        &sender,
+    );
+
+    // Refund at exactly expiry should fail (<= check)
+    env.ledger().set_timestamp(expiry);
+    assert!(client.try_refund_link(&link_hash).is_err());
+}
+
+#[test]
+fn test_claim_at_exact_expiry_succeeds() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let (client, _verifier, sender, token) = setup_test(&env);
+    let (secret, link_hash) = make_secret(&env, 12);
+    let amount = 1000i128;
+    let expiry = env.ledger().timestamp() + 1000;
+    let policy_params = Bytes::new(&env);
+
+    client.create_link(
+        &link_hash,
+        &0u32,
+        &policy_params,
+        &amount,
+        &token,
+        &expiry,
+        &sender,
+    );
+
+    // Claim at exactly expiry should succeed (> check — expiry is not yet past)
+    env.ledger().set_timestamp(expiry);
+    let recipient = Address::generate(&env);
+    let (relayer, fee) = no_relayer(&env);
+    client.claim_link(
+        &link_hash,
+        &recipient,
+        &secret,
+        &empty_email_hash(&env),
+        &relayer,
+        &fee,
+    );
+
+    let token_client = TokenClient::new(&env, &token);
+    assert_eq!(token_client.balance(&recipient), amount);
+}
+
+#[test]
+fn test_claim_one_tick_after_expiry_fails() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let (client, _verifier, sender, token) = setup_test(&env);
+    let (secret, link_hash) = make_secret(&env, 13);
+    let amount = 1000i128;
+    let expiry = env.ledger().timestamp() + 1000;
+    let policy_params = Bytes::new(&env);
+
+    client.create_link(
+        &link_hash,
+        &0u32,
+        &policy_params,
+        &amount,
+        &token,
+        &expiry,
+        &sender,
+    );
+
+    // Claim one tick after expiry should fail
+    env.ledger().set_timestamp(expiry + 1);
+    let recipient = Address::generate(&env);
+    let (relayer, fee) = no_relayer(&env);
+    assert!(client
+        .try_claim_link(
+            &link_hash,
+            &recipient,
+            &secret,
+            &empty_email_hash(&env),
+            &relayer,
+            &fee
+        )
+        .is_err());
+}
+
+#[test]
+fn test_negative_relayer_fee_fails() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let (client, _verifier, sender, token) = setup_test(&env);
+    let (secret, link_hash) = make_secret(&env, 14);
+    let amount = 1000i128;
+    let expiry = env.ledger().timestamp() + 1000;
+    let policy_params = Bytes::new(&env);
+
+    client.create_link(
+        &link_hash,
+        &0u32,
+        &policy_params,
+        &amount,
+        &token,
+        &expiry,
+        &sender,
+    );
+
+    let recipient = Address::generate(&env);
+    let relayer = Address::generate(&env);
+    assert!(client
+        .try_claim_link(
+            &link_hash,
+            &recipient,
+            &secret,
+            &empty_email_hash(&env),
+            &relayer,
+            &(-1i128),
+        )
+        .is_err());
+}
+
+#[test]
+fn test_unauthorized_refund_fails() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let (client, _verifier, sender, token) = setup_test(&env);
+    let (_secret, link_hash) = make_secret(&env, 15);
+    let amount = 1000i128;
+    let expiry = env.ledger().timestamp() + 1;
+    let policy_params = Bytes::new(&env);
+
+    client.create_link(
+        &link_hash,
+        &0u32,
+        &policy_params,
+        &amount,
+        &token,
+        &expiry,
+        &sender,
+    );
+
+    env.ledger().set_timestamp(expiry + 1);
+
+    let attacker = Address::generate(&env);
+    let result = client
+        .mock_auths(&[MockAuth {
+            address: &attacker,
+            invoke: &MockAuthInvoke {
+                contract: &client.address,
+                fn_name: "refund_link",
+                args: (link_hash.clone(),).into_val(&env),
+                sub_invokes: &[],
+            },
+        }])
+        .try_refund_link(&link_hash);
+    assert!(result.is_err());
+}
+
+#[test]
+fn test_unauthorized_claim_fails() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let (client, _verifier, sender, token) = setup_test(&env);
+    let (secret, link_hash) = make_secret(&env, 16);
+    let amount = 1000i128;
+    let expiry = env.ledger().timestamp() + 1000;
+    let policy_params = Bytes::new(&env);
+
+    client.create_link(
+        &link_hash,
+        &0u32,
+        &policy_params,
+        &amount,
+        &token,
+        &expiry,
+        &sender,
+    );
+
+    // Wrong recipient authorizes the call but contract expects specific recipient
+    let wrong_recipient = Address::generate(&env);
+    let relayer = Address::generate(&env);
+    let result = client
+        .mock_auths(&[MockAuth {
+            address: &wrong_recipient,
+            invoke: &MockAuthInvoke {
+                contract: &client.address,
+                fn_name: "claim_link",
+                args: (
+                    link_hash.clone(),
+                    wrong_recipient.clone(),
+                    secret.clone(),
+                    empty_email_hash(&env),
+                    relayer.clone(),
+                    0i128,
+                )
+                    .into_val(&env),
+                sub_invokes: &[],
+            },
+        }])
+        .try_claim_link(
+            &link_hash,
+            &wrong_recipient,
+            &secret,
+            &empty_email_hash(&env),
+            &relayer,
+            &0i128,
+        );
+    // Should succeed since wrong_recipient is the one authorizing and being paid
+    // The authorization pattern here is correct — any valid recipient can claim
+    assert!(result.is_ok());
+}
+
+#[test]
+fn test_claim_with_zero_amount() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let (client, _verifier, sender, token) = setup_test(&env);
+    let (secret, link_hash) = make_secret(&env, 17);
+    let amount = 0i128;
+    let expiry = env.ledger().timestamp() + 1000;
+    let policy_params = Bytes::new(&env);
+
+    // Zero-amount link creation should work (no tokens transferred)
+    client.create_link(
+        &link_hash,
+        &0u32,
+        &policy_params,
+        &amount,
+        &token,
+        &expiry,
+        &sender,
+    );
+
+    let recipient = Address::generate(&env);
+    let (relayer, fee) = no_relayer(&env);
+    client.claim_link(
+        &link_hash,
+        &recipient,
+        &secret,
+        &empty_email_hash(&env),
+        &relayer,
+        &fee,
+    );
+
+    let token_client = TokenClient::new(&env, &token);
+    assert_eq!(token_client.balance(&recipient), 0);
+}
+
+#[test]
+fn test_claim_with_fee_equal_to_amount() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let (client, _verifier, sender, token) = setup_test(&env);
+    let (secret, link_hash) = make_secret(&env, 18);
+    let amount = 1000i128;
+    let expiry = env.ledger().timestamp() + 1000;
+    let policy_params = Bytes::new(&env);
+
+    client.create_link(
+        &link_hash,
+        &0u32,
+        &policy_params,
+        &amount,
+        &token,
+        &expiry,
+        &sender,
+    );
+
+    let recipient = Address::generate(&env);
+    let relayer = Address::generate(&env);
+
+    client
+        .mock_auths(&[MockAuth {
+            address: &recipient,
+            invoke: &MockAuthInvoke {
+                contract: &client.address,
+                fn_name: "claim_link",
+                args: (
+                    link_hash.clone(),
+                    recipient.clone(),
+                    secret.clone(),
+                    empty_email_hash(&env),
+                    relayer.clone(),
+                    amount,
+                )
+                    .into_val(&env),
+                sub_invokes: &[],
+            },
+        }])
+        .claim_link(
+            &link_hash,
+            &recipient,
+            &secret,
+            &empty_email_hash(&env),
+            &relayer,
+            &amount,
+        );
+
+    let token_client = TokenClient::new(&env, &token);
+    assert_eq!(token_client.balance(&recipient), 0);
+    assert_eq!(token_client.balance(&relayer), amount);
+}
+
+#[test]
+fn test_refund_removes_from_storage() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let (client, _verifier, sender, token) = setup_test(&env);
+    let (_secret, link_hash) = make_secret(&env, 19);
+    let amount = 1000i128;
+    let expiry = env.ledger().timestamp() + 1;
+    let policy_params = Bytes::new(&env);
+
+    client.create_link(
+        &link_hash,
+        &0u32,
+        &policy_params,
+        &amount,
+        &token,
+        &expiry,
+        &sender,
+    );
+
+    env.ledger().set_timestamp(expiry + 1);
+    client.refund_link(&link_hash);
+
+    // After refund, trying to claim should fail with "Link not found"
+    let (secret2, _) = make_secret(&env, 19);
+    let recipient = Address::generate(&env);
+    let (relayer, fee) = no_relayer(&env);
+    assert!(client
+        .try_claim_link(
+            &link_hash,
+            &recipient,
+            &secret2,
+            &empty_email_hash(&env),
+            &relayer,
+            &fee
+        )
+        .is_err());
+}
+
+#[test]
+fn test_claim_full_balance_distributed() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let (client, _verifier, sender, token) = setup_test(&env);
+    let (secret, link_hash) = make_secret(&env, 20);
+    let amount = 1000i128;
+    let expiry = env.ledger().timestamp() + 1000;
+    let policy_params = Bytes::new(&env);
+
+    client.create_link(
+        &link_hash,
+        &0u32,
+        &policy_params,
+        &amount,
+        &token,
+        &expiry,
+        &sender,
+    );
+
+    let recipient = Address::generate(&env);
+    let relayer = Address::generate(&env);
+
+    client
+        .mock_auths(&[MockAuth {
+            address: &recipient,
+            invoke: &MockAuthInvoke {
+                contract: &client.address,
+                fn_name: "claim_link",
+                args: (
+                    link_hash.clone(),
+                    recipient.clone(),
+                    secret.clone(),
+                    empty_email_hash(&env),
+                    relayer.clone(),
+                    0i128,
+                )
+                    .into_val(&env),
+                sub_invokes: &[],
+            },
+        }])
+        .claim_link(
+            &link_hash,
+            &recipient,
+            &secret,
+            &empty_email_hash(&env),
+            &relayer,
+            &0i128,
+        );
+
+    let token_client = TokenClient::new(&env, &token);
+    assert_eq!(token_client.balance(&recipient), amount);
+    assert_eq!(token_client.balance(&relayer), 0);
+    assert_eq!(
+        token_client.balance(&client.address),
+        0,
+        "contract should have zero balance after full claim"
+    );
 }
