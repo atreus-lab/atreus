@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { loadWallet, type StoredWallet } from "@/lib/wallet";
 import { getStoredLinks, refreshLinkStatuses, getClaimedLinks, refundLink, refundStoredLink, type StoredLink } from "@/lib/links";
@@ -10,6 +10,7 @@ import Link from "next/link";
 import AppHeader from "@/components/AppHeader";
 import PaymentLinksClient from "@/components/PaymentLinks";
 import SearchDialog from "@/components/SearchDialog";
+import PageHeader from "@/components/ui/PageHeader";
 import EmptyState from "@/components/ui/EmptyState";
 
 export default function PaymentLinksPage() {
@@ -69,30 +70,26 @@ export default function PaymentLinksPage() {
 
   return (
     <>
-      <AppHeader
-        title="Payment Links"
-        subtitle="Create, track, and manage your payment links"
-        backHref="/dashboard"
-        onSearchOpen={() => setSearchOpen(true)}
-        rightContent={
-          <Link href="/create" className="btn-primary w-fit px-4 py-2 rounded-lg text-sm font-bold inline-flex items-center gap-2">
+      <AppHeader />
+      <div className="app-content flex flex-col gap-6">
+        <div className="flex items-end justify-between gap-4">
+          <PageHeader title="Payment Links" subtitle="Create, track, and manage your payment links" backHref="/dashboard" />
+          <Link href="/create" className="btn-soft-blue w-fit shrink-0">
             <Plus className="w-4 h-4" /> Create Link
           </Link>
-        }
-      />
-      <div className="app-content flex flex-col gap-6">
+        </div>
         {!mounted ? (
           <div className="flex-1 flex items-center justify-center p-8">
             <div className="animate-spin w-6 h-6 border-2 border-[var(--accent-primary)] border-t-transparent rounded-full" />
           </div>
         ) : storedLinks.length === 0 && receivedLinks.length === 0 ? (
-          <div className="panel p-8">
+          <div className="card-solid p-8">
             <EmptyState
               icon={<Plus className="w-6 h-6" />}
               title="No Payment Links Yet"
               description="Create a payment link to receive XLM from anyone, even if they don't have a wallet."
               action={
-                <Link href="/create" className="btn-primary inline-flex items-center gap-2 px-5 py-2.5 rounded-lg text-sm font-bold">
+                <Link href="/create" className="btn-soft-blue w-fit">
                   <Plus className="w-4 h-4" /> Create Your First Link
                 </Link>
               }

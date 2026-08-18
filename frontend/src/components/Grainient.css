@@ -4,3 +4,7 @@
   height: 100%;
   overflow: hidden;
 }
+
+.grainient-fallback {
+  background: linear-gradient(135deg, var(--g1), var(--g2) 50%, var(--g3));
+}

@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import {
   Search, LayoutDashboard, Wallet, Link2, ArrowRightLeft,
   BarChart3, Activity, Shield, Settings, Send, ArrowDownToLine,
-  PlusCircle, RefreshCw, ExternalLink, ArrowUpRight, ArrowDownLeft,
+  PlusCircle, RefreshCw, ArrowUpRight, ArrowDownLeft,
   CheckCircle2,
 } from "lucide-react";
 
@@ -178,7 +178,7 @@ export default function SearchDialog({ open, onClose, links, receivedLinks, tran
                       data-index={globalIndex}
                       onClick={() => navigateTo(result)}
                       onMouseEnter={() => setSelectedIndex(globalIndex)}
-                      className={`w-full flex items-start gap-3 px-4 py-2.5 text-left transition-colors ${isSelected ? "bg-[rgba(255,255,255,0.06)]" : "hover:bg-[rgba(255,255,255,0.03)]"}`}
+                      className={`w-full flex items-start gap-3 px-4 py-2.5 text-left transition-colors ${isSelected ? "bg-[rgba(0,0,0,0.04)]" : "hover:bg-[rgba(0,0,0,0.02)]"}`}
                     >
                       <div className="w-8 h-8 rounded-lg flex items-center justify-center shrink-0 mt-0.5 bg-elevated text-secondary">
                         {result.icon}

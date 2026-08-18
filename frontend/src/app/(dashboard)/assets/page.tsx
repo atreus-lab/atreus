@@ -7,6 +7,7 @@ import { loadWallet, getBalances, addTrustline, type StoredWallet } from "@/lib/
 import { Loader2, Check, Plus } from "lucide-react";
 import AppHeader from "@/components/AppHeader";
 import SearchDialog from "@/components/SearchDialog";
+import PageHeader from "@/components/ui/PageHeader";
 import WalletAssetRow from "@/components/ui/WalletAssetRow";
 import EmptyState from "@/components/ui/EmptyState";
 
@@ -73,8 +74,9 @@ export default function AssetsPage() {
 
   return (
     <>
-      <AppHeader title="Assets" subtitle="Manage your tokens and trustlines" backHref="/dashboard" onSearchOpen={() => setSearchOpen(true)} />
+      <AppHeader />
       <div className="app-content flex flex-col gap-6">
+        <PageHeader title="Assets" subtitle="Manage your tokens and trustlines" backHref="/dashboard" />
         {loading ? (
           <div className="flex-1 flex items-center justify-center p-8">
             <div className="animate-spin w-6 h-6 border-2 border-[var(--accent-primary)] border-t-transparent rounded-full" />
@@ -160,7 +162,7 @@ export default function AssetsPage() {
                       <input value={customIssuer} onChange={e => setCustomIssuer(e.target.value)} placeholder="G..." className="input text-sm font-mono" />
                     </div>
                   </div>
-                  <button onClick={handleAddCustom} disabled={!!addingAsset || !customCode || !customIssuer} className="btn-primary flex items-center justify-center gap-2 w-full sm:w-auto px-5 py-2.5 rounded-lg text-sm font-bold">
+                  <button onClick={handleAddCustom} disabled={!!addingAsset || !customCode || !customIssuer} className="btn-soft-blue w-fit">
                     {addingAsset === "custom" ? <Loader2 className="w-4 h-4 animate-spin" /> : <Plus className="w-4 h-4" />}
                     {addingAsset === "custom" ? "Adding..." : "Activate Custom Asset"}
                   </button>

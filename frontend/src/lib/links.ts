@@ -189,8 +189,8 @@ export async function readLinkInfo(linkHashHex: string): Promise<{ claimed: bool
 
     return result;
   } catch (err: any) {
-    if (err?.status === 404) return result;
-    console.error("Failed to read link info:", err);
+    if (err?.status === 404 || err?.code === 404) return result;
+    console.error("Failed to read link info:", err?.message || err?.data || err);
     return result;
   }
 }
