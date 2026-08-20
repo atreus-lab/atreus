@@ -1,5 +1,7 @@
 #![no_std]
-use soroban_sdk::{contract, contractimpl, contracttype, symbol_short, Address, Bytes, BytesN, Env};
+use soroban_sdk::{
+    contract, contractimpl, contracttype, symbol_short, Address, Bytes, BytesN, Env,
+};
 
 #[contracttype]
 pub enum DataKey {
@@ -15,7 +17,9 @@ pub struct VerifierContract;
 #[contractimpl]
 impl VerifierContract {
     pub fn __constructor(env: Env, verification_key: Bytes, attester: Address) {
-        env.storage().instance().set(&DataKey::VerificationKey, &verification_key);
+        env.storage()
+            .instance()
+            .set(&DataKey::VerificationKey, &verification_key);
         env.storage().instance().set(&DataKey::Attester, &attester);
     }
 
@@ -36,10 +40,8 @@ impl VerifierContract {
             panic!("invalid proof length: expected 2144 bytes");
         }
 
-        env.events().publish(
-            (symbol_short!("proof"), recipient.clone()),
-            proof.len()
-        );
+        env.events()
+            .publish((symbol_short!("proof"), recipient.clone()), proof.len());
     }
 
     /// On-chain BN254 pairing verification is not available on Soroban today: CAP-0074
@@ -55,7 +57,11 @@ impl VerifierContract {
     /// before releasing funds. That's the actual verification gate today; this function
     /// is kept only as a placeholder for native verification once CAP-0074 ships.
     pub fn verify_proof(env: Env, public_inputs: Bytes, proof: Bytes) -> bool {
-        let vk: Bytes = env.storage().instance().get(&DataKey::VerificationKey).expect("VK not set");
+        let vk: Bytes = env
+            .storage()
+            .instance()
+            .get(&DataKey::VerificationKey)
+            .expect("VK not set");
         if proof.is_empty() {
             return false;
         }
@@ -65,7 +71,10 @@ impl VerifierContract {
     }
 
     pub fn verification_key(env: Env) -> Bytes {
-        env.storage().instance().get(&DataKey::VerificationKey).expect("VK not set")
+        env.storage()
+            .instance()
+            .get(&DataKey::VerificationKey)
+            .expect("VK not set")
     }
 
     /// Record that `attester` has independently verified a real UltraHonk proof (off-chain)
@@ -75,19 +84,22 @@ impl VerifierContract {
     pub fn attest(env: Env, attester: Address, link_hash: BytesN<32>, recipient: Address) {
         attester.require_auth();
 
-        let trusted: Address = env.storage().instance().get(&DataKey::Attester).expect("attester not set");
+        let trusted: Address = env
+            .storage()
+            .instance()
+            .get(&DataKey::Attester)
+            .expect("attester not set");
         if attester != trusted {
             panic!("untrusted attester");
         }
 
-        env.storage()
-            .persistent()
-            .set(&DataKey::Attestation(link_hash.clone(), recipient.clone()), &true);
-
-        env.events().publish(
-            (symbol_short!("attested"), recipient),
-            link_hash,
+        env.storage().persistent().set(
+            &DataKey::Attestation(link_hash.clone(), recipient.clone()),
+            &true,
         );
+
+        env.events()
+            .publish((symbol_short!("attested"), recipient), link_hash);
     }
 
     /// Whether the trusted attester has vouched for a valid ZK proof binding this
@@ -121,12 +133,10 @@ impl VerifierContract {
             panic!("untrusted attester");
         }
 
-        env.storage()
-            .persistent()
-            .set(
-                &DataKey::EmailAttestation(link_hash.clone(), recipient.clone(), email_hash.clone()),
-                &true,
-            );
+        env.storage().persistent().set(
+            &DataKey::EmailAttestation(link_hash.clone(), recipient.clone(), email_hash.clone()),
+            &true,
+        );
 
         env.events().publish(
             (symbol_short!("eml_att"), recipient),

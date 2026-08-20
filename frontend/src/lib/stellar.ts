@@ -1,4 +1,4 @@
-import { Horizon, Networks, TransactionBuilder, Asset, Contract, Address, nativeToScVal, xdr, rpc, Keypair, BASE_FEE, Operation } from "@stellar/stellar-sdk";
+import { Horizon, Networks, TransactionBuilder, Asset, Contract, Address, nativeToScVal, xdr, rpc, BASE_FEE, Operation } from "@stellar/stellar-sdk";
 import { getKeypair, loadWallet } from "./wallet";
 
 export const HORIZON_URL = "https://horizon-testnet.stellar.org";
@@ -178,6 +178,65 @@ export const claimLinkTx = async (
   }
 
   // Wait for the transaction to be confirmed on-chain so we can detect runtime failures
+  await waitForTransaction(sendResult.hash, { timeoutMs: 30_000 });
+
+  return sendResult.hash;
+};
+
+export const claimAndSwapLinkTx = async (
+  recipient: string,
+  linkHash: Uint8Array,
+  secret: Uint8Array,
+  routerContractId: string,
+  path: string[],
+  minAmountOutStroops: bigint,
+  deadline?: number,
+  correlationId?: Uint8Array,
+  recipientEmailHash?: Uint8Array,
+) => {
+  const contractId = process.env.NEXT_PUBLIC_CONTRACT_ID;
+  if (!contractId) throw new Error("NEXT_PUBLIC_CONTRACT_ID is not configured");
+
+  let account;
+  try {
+    account = await rpcServer.getAccount(recipient);
+  } catch {
+    throw new Error("Recipient account isn't funded on testnet — fund it first via friendbot.");
+  }
+
+  const contract = new Contract(contractId);
+  const finalCorrelationId = correlationId && correlationId.length === 32
+    ? correlationId
+    : crypto.getRandomValues(new Uint8Array(32));
+  const finalDeadline = deadline ?? Math.floor(Date.now() / 1000) + 3600;
+
+  const op = contract.call(
+    "claim_and_swap_link",
+    xdr.ScVal.scvBytes(Buffer.from(linkHash)),
+    new Address(recipient).toScVal(),
+    xdr.ScVal.scvBytes(Buffer.from(secret)),
+    xdr.ScVal.scvBytes(Buffer.from(recipientEmailHash ?? new Uint8Array(32))),
+    new Address(routerContractId).toScVal(),
+    xdr.ScVal.scvVec(path.map((addr) => new Address(addr).toScVal())),
+    nativeToScVal(minAmountOutStroops, { type: "i128" }),
+    nativeToScVal(finalDeadline, { type: "u64" }),
+    xdr.ScVal.scvBytes(Buffer.from(finalCorrelationId)),
+  );
+
+  let tx = new TransactionBuilder(account, { fee: "200000", networkPassphrase })
+    .addOperation(op).setTimeout(120).build();
+
+  tx = (await rpcServer.prepareTransaction(tx)) as any;
+
+  const kp = getKeypair();
+  tx.sign(kp);
+
+  const sendResult = await rpcServer.sendTransaction(tx as any);
+
+  if (sendResult.status === "ERROR") {
+    throw new Error(`Contract error: Transaction rejected — ${(sendResult as any).errorResultXdr || (sendResult as any).errorResult}`);
+  }
+
   await waitForTransaction(sendResult.hash, { timeoutMs: 30_000 });
 
   return sendResult.hash;

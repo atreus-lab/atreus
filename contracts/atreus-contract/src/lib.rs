@@ -1,5 +1,9 @@
 #![no_std]
-use soroban_sdk::{contract, contractimpl, contracttype, token, vec, Address, Bytes, BytesN, Env, IntoVal, Symbol, Val, symbol_short};
+#![allow(clippy::too_many_arguments)]
+use soroban_sdk::{
+    contract, contractimpl, contracttype, log, symbol_short, token, vec, Address, Bytes, BytesN,
+    Env, IntoVal, Symbol, Val, Vec,
+};
 
 #[contracttype]
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -24,7 +28,9 @@ pub struct AtreusContract;
 #[contractimpl]
 impl AtreusContract {
     pub fn __constructor(env: Env, verifier: Address) {
-        env.storage().instance().set(&DataKey::VerifierAddress, &verifier);
+        env.storage()
+            .instance()
+            .set(&DataKey::VerifierAddress, &verifier);
     }
 
     pub fn create_link(
@@ -58,10 +64,8 @@ impl AtreusContract {
 
         env.storage().persistent().set(&id, &link_info);
 
-        env.events().publish(
-            (symbol_short!("created"), id),
-            (sender, amount, asset),
-        );
+        env.events()
+            .publish((symbol_short!("created"), id), (sender, amount, asset));
     }
 
     pub fn claim_link(
@@ -80,11 +84,19 @@ impl AtreusContract {
             panic!("invalid secret");
         }
 
-        let mut link_info: LinkInfo = env.storage().persistent().get(&link_hash).expect("Link not found");
+        let mut link_info: LinkInfo = env
+            .storage()
+            .persistent()
+            .get(&link_hash)
+            .expect("Link not found");
 
         // Retrieve verifier early — needed by both the ZK attestation check and the
         // email-restricted policy check below.
-        let verifier: Address = env.storage().instance().get(&DataKey::VerifierAddress).expect("verifier not set");
+        let verifier: Address = env
+            .storage()
+            .instance()
+            .get(&DataKey::VerifierAddress)
+            .expect("verifier not set");
 
         // If policy_type == 1 (email-restricted), verify the claimer's email
         // through the attestation system, not a plaintext argument. The trusted
@@ -117,12 +129,10 @@ impl AtreusContract {
         // releasing funds. The attestation is only recorded by VerifierContract::attest()
         // after a trusted attester has verified a real UltraHonk proof off-chain — see the
         // doc comment on VerifierContract::verify_proof for why this indirection exists.
-        let args: soroban_sdk::Vec<Val> = vec![
-            &env,
-            link_hash.into_val(&env),
-            recipient.into_val(&env),
-        ];
-        let attested: bool = env.invoke_contract(&verifier, &Symbol::new(&env, "is_attested"), args);
+        let args: soroban_sdk::Vec<Val> =
+            vec![&env, link_hash.into_val(&env), recipient.into_val(&env)];
+        let attested: bool =
+            env.invoke_contract(&verifier, &Symbol::new(&env, "is_attested"), args);
         if !attested {
             panic!("no valid ZK attestation for this claim");
         }
@@ -137,16 +147,18 @@ impl AtreusContract {
 
         // Double-claim prevention via nullifier
         let link_hash_bytes = Bytes::from_array(&env, &link_hash.to_array());
-        let nullifier_key = BytesN::from_array(
-            &env,
-            &env.crypto().sha256(&link_hash_bytes).to_array(),
-        );
+        let nullifier_key =
+            BytesN::from_array(&env, &env.crypto().sha256(&link_hash_bytes).to_array());
         if env.storage().persistent().has(&nullifier_key) {
             panic!("nullifier already used");
         }
 
         let token_client = token::Client::new(&env, &link_info.asset);
-        token_client.transfer(&env.current_contract_address(), &recipient, &link_info.amount);
+        token_client.transfer(
+            &env.current_contract_address(),
+            &recipient,
+            &link_info.amount,
+        );
 
         link_info.claimed = true;
         env.storage().persistent().set(&link_hash, &link_info);
@@ -158,8 +170,170 @@ impl AtreusContract {
         );
     }
 
+    pub fn claim_and_swap_link(
+        env: Env,
+        link_hash: BytesN<32>,
+        recipient: Address,
+        secret: BytesN<32>,
+        _recipient_email_hash: BytesN<32>,
+        router: Address,
+        path: Vec<Address>,
+        min_amount_out: i128,
+        deadline: u64,
+        correlation_id: BytesN<32>,
+    ) -> Vec<i128> {
+        recipient.require_auth();
+
+        // Verify secret: sha256(secret) must equal the stored link_hash.
+        let secret_bytes = Bytes::from_array(&env, &secret.to_array());
+        let computed = env.crypto().sha256(&secret_bytes);
+        if BytesN::from_array(&env, &computed.to_array()) != link_hash {
+            panic!("invalid secret");
+        }
+
+        let mut link_info: LinkInfo = env
+            .storage()
+            .persistent()
+            .get(&link_hash)
+            .expect("Link not found");
+
+        // Retrieve verifier early — needed by both the ZK attestation check and the
+        // email-restricted policy check below.
+        let verifier: Address = env
+            .storage()
+            .instance()
+            .get(&DataKey::VerifierAddress)
+            .expect("verifier not set");
+
+        // If policy_type == 1 (email-restricted), verify the claimer's email
+        // through the attestation system, not a plaintext argument. The trusted
+        // attester must have independently verified email ownership and recorded
+        // an EmailAttestation for this (link_hash, recipient, email_hash) triple.
+        if link_info.policy_type == 1 {
+            if link_info.policy_params.len() != 32 {
+                panic!("invalid policy params length");
+            }
+            let mut policy_arr = [0u8; 32];
+            link_info.policy_params.copy_into_slice(&mut policy_arr);
+            let expected_email_hash = BytesN::from_array(&env, &policy_arr);
+            let email_args: soroban_sdk::Vec<Val> = vec![
+                &env,
+                link_hash.into_val(&env),
+                recipient.into_val(&env),
+                expected_email_hash.into_val(&env),
+            ];
+            let email_attested: bool = env.invoke_contract(
+                &verifier,
+                &Symbol::new(&env, "is_email_attested"),
+                email_args,
+            );
+            if !email_attested {
+                panic!("email not attested for this recipient");
+            }
+        }
+
+        // Require a real ZK attestation for this exact (link_hash, recipient) pair before
+        // releasing funds. The attestation is only recorded by VerifierContract::attest()
+        // after a trusted attester has verified a real UltraHonk proof off-chain — see the
+        // doc comment on VerifierContract::verify_proof for why this indirection exists.
+        let args: soroban_sdk::Vec<Val> =
+            vec![&env, link_hash.into_val(&env), recipient.into_val(&env)];
+        let attested: bool =
+            env.invoke_contract(&verifier, &Symbol::new(&env, "is_attested"), args);
+        if !attested {
+            panic!("no valid ZK attestation for this claim");
+        }
+
+        if link_info.claimed {
+            panic!("already claimed");
+        }
+
+        if env.ledger().timestamp() > link_info.expires_at {
+            panic!("link expired");
+        }
+
+        // Double-claim prevention via nullifier
+        let link_hash_bytes = Bytes::from_array(&env, &link_hash.to_array());
+        let nullifier_key =
+            BytesN::from_array(&env, &env.crypto().sha256(&link_hash_bytes).to_array());
+        if env.storage().persistent().has(&nullifier_key) {
+            panic!("nullifier already used");
+        }
+
+        // Validate swap path
+        if path.len() < 2 {
+            panic!("invalid swap path: must contain at least 2 tokens");
+        }
+        if path.get(0).unwrap() != link_info.asset {
+            panic!("invalid swap path: first token must match link asset");
+        }
+
+        // Transfer funds from contract to router
+        let token_client = token::Client::new(&env, &link_info.asset);
+        token_client.transfer(&env.current_contract_address(), &router, &link_info.amount);
+
+        // Update state and register nullifier
+        link_info.claimed = true;
+        env.storage().persistent().set(&link_hash, &link_info);
+        env.storage().persistent().set(&nullifier_key, &true);
+
+        // Cross-contract call to Soroswap Router
+        let swap_args: soroban_sdk::Vec<Val> = vec![
+            &env,
+            link_info.amount.into_val(&env),
+            min_amount_out.into_val(&env),
+            path.into_val(&env),
+            recipient.into_val(&env),
+            deadline.into_val(&env),
+        ];
+        let amounts: soroban_sdk::Vec<i128> = env.invoke_contract(
+            &router,
+            &Symbol::new(&env, "swap_exact_tokens_for_tokens"),
+            swap_args,
+        );
+
+        if amounts.is_empty() {
+            panic!("swap returned empty amounts");
+        }
+
+        let actual_amount_out = amounts.last().unwrap();
+        if actual_amount_out < min_amount_out {
+            // Deliberate panic to trigger Soroban's native rollback, reverting state
+            // and preventing nullifier burning.
+            panic!("swap output less than min_amount_out");
+        }
+
+        // Structured logging with correlation ID
+        log!(
+            &env,
+            "claim_and_swap_link: correlation_id={}, link_hash={}, recipient={}, amount_in={}, min_amount_out={}, actual_amount_out={}",
+            correlation_id,
+            link_hash,
+            recipient,
+            link_info.amount,
+            min_amount_out,
+            actual_amount_out,
+        );
+
+        env.events().publish(
+            (symbol_short!("claimed"), link_hash.clone()),
+            (recipient.clone(), link_info.amount),
+        );
+
+        env.events().publish(
+            (symbol_short!("swapped"), link_hash, correlation_id),
+            (recipient, link_info.amount, actual_amount_out),
+        );
+
+        amounts
+    }
+
     pub fn refund_link(env: Env, link_hash: BytesN<32>) {
-        let link_info: LinkInfo = env.storage().persistent().get(&link_hash).expect("Link not found");
+        let link_info: LinkInfo = env
+            .storage()
+            .persistent()
+            .get(&link_hash)
+            .expect("Link not found");
 
         link_info.creator.require_auth();
 
@@ -172,7 +346,11 @@ impl AtreusContract {
         }
 
         let token_client = token::Client::new(&env, &link_info.asset);
-        token_client.transfer(&env.current_contract_address(), &link_info.creator, &link_info.amount);
+        token_client.transfer(
+            &env.current_contract_address(),
+            &link_info.creator,
+            &link_info.amount,
+        );
 
         env.storage().persistent().remove(&link_hash);
 
