@@ -3,20 +3,21 @@
 use super::*;
 use soroban_sdk::{
     contract, contractimpl, contracttype,
-    testutils::{Address as _, Ledger, MockAuth, MockAuthInvoke},
+    testutils::{Address as _, Events, Ledger, MockAuth, MockAuthInvoke},
     token::{Client as TokenClient, StellarAssetClient},
-    Address, Bytes, BytesN, Env, IntoVal, Symbol,
+    Address, Bytes, BytesN, Env, IntoVal, Symbol, TryFromVal,
 };
 
 #[contracttype]
 #[derive(Clone)]
 pub enum MockDataKey {
-    EmailAttestation(BytesN<32>, Address, BytesN<32>),
+    Attestation(BytesN<32>),
+    EmailAttestation(BytesN<32>),
 }
 
-// Minimal mock verifier: returns true for is_attested, but tracks email
-// attestations like the real verifier-contract so email-restricted claims
-// only succeed once the trusted attester has recorded an attestation.
+// Minimal mock verifier: mirrors the real verifier-contract's blinded-key
+// attestation registry so claims only succeed once the trusted attester has
+// recorded an attestation under the exact key `claim_link` recomputes.
 #[contract]
 pub struct MockVerifier;
 
@@ -28,31 +29,29 @@ impl MockVerifier {
             .set(&Symbol::new(&env, "init"), &true);
     }
 
-    pub fn is_attested(_env: Env, _link_hash: BytesN<32>, _recipient: Address) -> bool {
-        true
-    }
-
-    pub fn attest_email(
-        env: Env,
-        link_hash: BytesN<32>,
-        recipient: Address,
-        email_hash: BytesN<32>,
-    ) {
-        env.storage().persistent().set(
-            &MockDataKey::EmailAttestation(link_hash, recipient, email_hash),
-            &true,
-        );
-    }
-
-    pub fn is_email_attested(
-        env: Env,
-        link_hash: BytesN<32>,
-        recipient: Address,
-        email_hash: BytesN<32>,
-    ) -> bool {
+    pub fn attest(env: Env, claim_key: BytesN<32>) {
         env.storage()
             .persistent()
-            .get(&MockDataKey::EmailAttestation(link_hash, recipient, email_hash))
+            .set(&MockDataKey::Attestation(claim_key), &true);
+    }
+
+    pub fn is_attested(env: Env, claim_key: BytesN<32>) -> bool {
+        env.storage()
+            .persistent()
+            .get(&MockDataKey::Attestation(claim_key))
+            .unwrap_or(false)
+    }
+
+    pub fn attest_email(env: Env, email_key: BytesN<32>) {
+        env.storage()
+            .persistent()
+            .set(&MockDataKey::EmailAttestation(email_key), &true);
+    }
+
+    pub fn is_email_attested(env: Env, email_key: BytesN<32>) -> bool {
+        env.storage()
+            .persistent()
+            .get(&MockDataKey::EmailAttestation(email_key))
             .unwrap_or(false)
     }
 }
@@ -71,20 +70,18 @@ fn setup_test(env: &Env) -> (AtreusContractClient<'_>, Address, Address, Address
     (client, verifier, sender, token_addr)
 }
 
-fn make_secret(env: &Env, val: u8) -> (BytesN<32>, BytesN<32>) {
-    let secret = BytesN::from_array(env, &[val; 32]);
-    let secret_bytes = Bytes::from_array(env, &secret.to_array());
-    let hash = env.crypto().sha256(&secret_bytes);
-    let link_hash = BytesN::from_array(env, &hash.to_array());
-    (secret, link_hash)
+// The link hash is still sha256(secret), but the secret never reaches the chain.
+fn make_link_hash(env: &Env, val: u8) -> BytesN<32> {
+    let secret = Bytes::from_array(env, &[val; 32]);
+    BytesN::from_array(env, &env.crypto().sha256(&secret).to_array())
+}
+
+fn make_salt(env: &Env, val: u8) -> BytesN<32> {
+    BytesN::from_array(env, &[val; 32])
 }
 
 fn no_relayer(env: &Env) -> (Address, i128) {
     (Address::generate(env), 0)
-}
-
-fn empty_email_hash(env: &Env) -> BytesN<32> {
-    BytesN::from_array(env, &[0u8; 32])
 }
 
 fn email_hash(env: &Env, email: &str) -> BytesN<32> {
@@ -93,17 +90,114 @@ fn email_hash(env: &Env, email: &str) -> BytesN<32> {
     BytesN::from_array(env, &hash.to_array())
 }
 
+// Spec v1: claim_key = sha256("ATREUS_CLAIM_V1" || link_hash || recipient strkey || salt).
+// Spelled out here so the test checks the contract rather than reusing its code.
+fn expected_claim_key(
+    env: &Env,
+    link_hash: &BytesN<32>,
+    recipient: &Address,
+    salt: &BytesN<32>,
+) -> BytesN<32> {
+    let mut preimage = Bytes::from_slice(env, b"ATREUS_CLAIM_V1");
+    preimage.extend_from_array(&link_hash.to_array());
+    preimage.append(&Bytes::from_slice(env, &strkey_ascii(recipient)));
+    preimage.extend_from_array(&salt.to_array());
+    BytesN::from_array(env, &env.crypto().sha256(&preimage).to_array())
+}
+
+// Spec v1: email_key = sha256("ATREUS_EMAIL_V1" || link_hash || recipient strkey
+// || email_hash || salt).
+fn expected_email_key(
+    env: &Env,
+    link_hash: &BytesN<32>,
+    recipient: &Address,
+    email: &BytesN<32>,
+    salt: &BytesN<32>,
+) -> BytesN<32> {
+    let mut preimage = Bytes::from_slice(env, b"ATREUS_EMAIL_V1");
+    preimage.extend_from_array(&link_hash.to_array());
+    preimage.append(&Bytes::from_slice(env, &strkey_ascii(recipient)));
+    preimage.extend_from_array(&email.to_array());
+    preimage.extend_from_array(&salt.to_array());
+    BytesN::from_array(env, &env.crypto().sha256(&preimage).to_array())
+}
+
+fn strkey_ascii(address: &Address) -> [u8; 56] {
+    let s = address.to_string();
+    assert_eq!(s.len(), 56);
+    let mut out = [0u8; 56];
+    s.copy_into_slice(&mut out);
+    out
+}
+
+fn attest_claim(
+    env: &Env,
+    verifier: &Address,
+    link_hash: &BytesN<32>,
+    recipient: &Address,
+    salt: &BytesN<32>,
+) {
+    MockVerifierClient::new(env, verifier)
+        .attest(&expected_claim_key(env, link_hash, recipient, salt));
+}
+
+// Frozen interface spec v1 vectors, shared with the backend and the frontend. They
+// pin the sha256 concatenation layout, so a change on any side breaks here first.
+#[test]
+fn test_blinded_keys_match_frozen_spec_vectors() {
+    let env = Env::default();
+
+    let link_hash = BytesN::from_array(&env, &[0x11u8; 32]);
+    let salt = BytesN::from_array(&env, &[0x22u8; 32]);
+    let email_hash = [0x33u8; 32];
+    let mut strkey = [b'A'; 56];
+    strkey[0] = b'G';
+
+    let claim_key = blinded_key(&env, CLAIM_DOMAIN, &link_hash, &strkey, None, &salt);
+    assert_eq!(
+        claim_key,
+        BytesN::from_array(
+            &env,
+            &[
+                0xd3, 0xb2, 0x54, 0xd7, 0x68, 0x98, 0xad, 0x1a, 0x48, 0x72, 0x44, 0xdc, 0x41, 0x09,
+                0x6f, 0x6c, 0x2b, 0xa2, 0xfe, 0x62, 0x8b, 0x41, 0xab, 0x77, 0x16, 0x32, 0x07, 0xaf,
+                0x1d, 0x1e, 0xb2, 0xcf,
+            ]
+        )
+    );
+
+    let email_key = blinded_key(
+        &env,
+        EMAIL_DOMAIN,
+        &link_hash,
+        &strkey,
+        Some(&email_hash),
+        &salt,
+    );
+    assert_eq!(
+        email_key,
+        BytesN::from_array(
+            &env,
+            &[
+                0x40, 0x05, 0x37, 0xee, 0xdb, 0x18, 0x3b, 0x6c, 0xbf, 0x1a, 0xe7, 0xc5, 0x08, 0x94,
+                0x18, 0xc7, 0xf8, 0x0a, 0x37, 0xc4, 0x3c, 0x02, 0x0b, 0x2a, 0xf7, 0x46, 0x14, 0xb9,
+                0x34, 0x8c, 0x8b, 0xf9,
+            ]
+        )
+    );
+}
+
 #[test]
 fn test_email_restricted_claim() {
     let env = Env::default();
     env.mock_all_auths();
 
     let (client, verifier, sender, token) = setup_test(&env);
-    let (secret, link_hash) = make_secret(&env, 1);
+    let link_hash = make_link_hash(&env, 1);
+    let salt = make_salt(&env, 0xA1);
     let amount = 1000i128;
     let expiry = env.ledger().timestamp() + 1000;
-    let intended_email = "alice@example.com";
-    let intended_hash = email_hash(&env, intended_email);
+    let intended_hash = email_hash(&env, "alice@example.com");
     let policy_params = Bytes::from_array(&env, &intended_hash.to_array());
 
     // Create link with email restriction (policy_type=1)
@@ -118,28 +212,66 @@ fn test_email_restricted_claim() {
     );
 
     let recipient = Address::generate(&env);
-
     let (relayer, fee) = no_relayer(&env);
+    attest_claim(&env, &verifier, &link_hash, &recipient, &salt);
 
     // No email attestation recorded yet — claiming must fail
-    let wrong_hash = email_hash(&env, "bob@example.com");
     assert!(client
-        .try_claim_link(&link_hash, &recipient, &secret, &wrong_hash, &relayer, &fee)
+        .try_claim_link(&link_hash, &recipient, &salt, &relayer, &fee)
         .is_err());
 
-    // Trusted attester records the intended email binding
+    // Trusted attester records the blinded email key for the intended address
     let mock_verifier = MockVerifierClient::new(&env, &verifier);
-    mock_verifier.attest_email(&link_hash, &recipient, &intended_hash);
-
-    // Claim with correct email hash — should succeed
-    client.claim_link(
+    mock_verifier.attest_email(&expected_email_key(
+        &env,
         &link_hash,
         &recipient,
-        &secret,
         &intended_hash,
-        &relayer,
-        &fee,
+        &salt,
+    ));
+
+    client.claim_link(&link_hash, &recipient, &salt, &relayer, &fee);
+}
+
+#[test]
+#[should_panic(expected = "email not attested for this recipient")]
+fn test_email_restricted_claim_rejects_wrong_email() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let (client, verifier, sender, token) = setup_test(&env);
+    let link_hash = make_link_hash(&env, 1);
+    let salt = make_salt(&env, 0xA1);
+    let amount = 1000i128;
+    let expiry = env.ledger().timestamp() + 1000;
+    let intended_hash = email_hash(&env, "alice@example.com");
+    let policy_params = Bytes::from_array(&env, &intended_hash.to_array());
+
+    client.create_link(
+        &link_hash,
+        &1u32,
+        &policy_params,
+        &amount,
+        &token,
+        &expiry,
+        &sender,
     );
+
+    let recipient = Address::generate(&env);
+    let (relayer, fee) = no_relayer(&env);
+    attest_claim(&env, &verifier, &link_hash, &recipient, &salt);
+
+    // Attester vouched for a different address than the link restricts to
+    let wrong_hash = email_hash(&env, "bob@example.com");
+    MockVerifierClient::new(&env, &verifier).attest_email(&expected_email_key(
+        &env,
+        &link_hash,
+        &recipient,
+        &wrong_hash,
+        &salt,
+    ));
+
+    client.claim_link(&link_hash, &recipient, &salt, &relayer, &fee);
 }
 
 #[test]
@@ -147,8 +279,9 @@ fn test_create_and_claim() {
     let env = Env::default();
     env.mock_all_auths();
 
-    let (client, _verifier, sender, token) = setup_test(&env);
-    let (secret, link_hash) = make_secret(&env, 1);
+    let (client, verifier, sender, token) = setup_test(&env);
+    let link_hash = make_link_hash(&env, 1);
+    let salt = make_salt(&env, 0x11);
     let amount = 1000i128;
     let expiry = env.ledger().timestamp() + 1000;
     let policy_params = Bytes::new(&env);
@@ -165,14 +298,53 @@ fn test_create_and_claim() {
 
     let recipient = Address::generate(&env);
     let (relayer, fee) = no_relayer(&env);
-    client.claim_link(
+    attest_claim(&env, &verifier, &link_hash, &recipient, &salt);
+    client.claim_link(&link_hash, &recipient, &salt, &relayer, &fee);
+
+    let token_client = TokenClient::new(&env, &token);
+    assert_eq!(token_client.balance(&recipient), amount);
+}
+
+#[test]
+fn test_claimed_event_carries_no_link_or_recipient() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let (client, verifier, sender, token) = setup_test(&env);
+    let link_hash = make_link_hash(&env, 1);
+    let salt = make_salt(&env, 0x5A);
+    let amount = 1000i128;
+    let expiry = env.ledger().timestamp() + 1000;
+
+    client.create_link(
         &link_hash,
-        &recipient,
-        &secret,
-        &empty_email_hash(&env),
-        &relayer,
-        &fee,
+        &0u32,
+        &Bytes::new(&env),
+        &amount,
+        &token,
+        &expiry,
+        &sender,
     );
+
+    let recipient = Address::generate(&env);
+    let relayer = Address::generate(&env);
+    attest_claim(&env, &verifier, &link_hash, &recipient, &salt);
+
+    // The test host resets the event buffer per top-level call, so read it here.
+    client.claim_link(&link_hash, &recipient, &salt, &relayer, &50i128);
+
+    let mut seen = 0u32;
+    for (emitter, topics, data) in env.events().all().iter() {
+        if emitter != client.address {
+            continue;
+        }
+        seen += 1;
+        assert_eq!(topics.len(), 1, "claimed event must carry only its name");
+        let name = Symbol::try_from_val(&env, &topics.get(0).unwrap()).unwrap();
+        assert_eq!(name, symbol_short!("claimed"));
+        assert!(data.is_void(), "claimed event must carry no data");
+    }
+    assert_eq!(seen, 1, "exactly one claimed event expected");
 }
 
 #[test]
@@ -180,8 +352,9 @@ fn test_claim_pays_fee_bound_relayer_and_remainder_to_recipient() {
     let env = Env::default();
     env.mock_all_auths();
 
-    let (client, _verifier, sender, token) = setup_test(&env);
-    let (secret, link_hash) = make_secret(&env, 2);
+    let (client, verifier, sender, token) = setup_test(&env);
+    let link_hash = make_link_hash(&env, 2);
+    let salt = make_salt(&env, 0x22);
     let amount = 1000i128;
     let relayer_fee = 125i128;
     let expiry = env.ledger().timestamp() + 1000;
@@ -198,7 +371,7 @@ fn test_claim_pays_fee_bound_relayer_and_remainder_to_recipient() {
 
     let recipient = Address::generate(&env);
     let relayer = Address::generate(&env);
-    let recipient_email_hash = empty_email_hash(&env);
+    attest_claim(&env, &verifier, &link_hash, &recipient, &salt);
 
     client
         .mock_auths(&[MockAuth {
@@ -209,8 +382,7 @@ fn test_claim_pays_fee_bound_relayer_and_remainder_to_recipient() {
                 args: (
                     link_hash.clone(),
                     recipient.clone(),
-                    secret.clone(),
-                    recipient_email_hash.clone(),
+                    salt.clone(),
                     relayer.clone(),
                     relayer_fee,
                 )
@@ -218,14 +390,7 @@ fn test_claim_pays_fee_bound_relayer_and_remainder_to_recipient() {
                 sub_invokes: &[],
             },
         }])
-        .claim_link(
-            &link_hash,
-            &recipient,
-            &secret,
-            &recipient_email_hash,
-            &relayer,
-            &relayer_fee,
-        );
+        .claim_link(&link_hash, &recipient, &salt, &relayer, &relayer_fee);
 
     let token_client = TokenClient::new(&env, &token);
     assert_eq!(token_client.balance(&recipient), amount - relayer_fee);
@@ -237,8 +402,9 @@ fn test_claim_rejects_tampered_fee_not_covered_by_user_authorization() {
     let env = Env::default();
     env.mock_all_auths();
 
-    let (client, _verifier, sender, token) = setup_test(&env);
-    let (secret, link_hash) = make_secret(&env, 4);
+    let (client, verifier, sender, token) = setup_test(&env);
+    let link_hash = make_link_hash(&env, 4);
+    let salt = make_salt(&env, 0x44);
     let amount = 1000i128;
     let signed_fee = 125i128;
     let tampered_fee = 126i128;
@@ -256,7 +422,7 @@ fn test_claim_rejects_tampered_fee_not_covered_by_user_authorization() {
 
     let recipient = Address::generate(&env);
     let relayer = Address::generate(&env);
-    let recipient_email_hash = empty_email_hash(&env);
+    attest_claim(&env, &verifier, &link_hash, &recipient, &salt);
 
     assert!(client
         .mock_auths(&[MockAuth {
@@ -267,8 +433,7 @@ fn test_claim_rejects_tampered_fee_not_covered_by_user_authorization() {
                 args: (
                     link_hash.clone(),
                     recipient.clone(),
-                    secret.clone(),
-                    recipient_email_hash.clone(),
+                    salt.clone(),
                     relayer.clone(),
                     signed_fee,
                 )
@@ -276,14 +441,7 @@ fn test_claim_rejects_tampered_fee_not_covered_by_user_authorization() {
                 sub_invokes: &[],
             },
         }])
-        .try_claim_link(
-            &link_hash,
-            &recipient,
-            &secret,
-            &recipient_email_hash,
-            &relayer,
-            &tampered_fee,
-        )
+        .try_claim_link(&link_hash, &recipient, &salt, &relayer, &tampered_fee)
         .is_err());
 
     let token_client = TokenClient::new(&env, &token);
@@ -296,8 +454,9 @@ fn test_claim_rejects_fee_greater_than_amount() {
     let env = Env::default();
     env.mock_all_auths();
 
-    let (client, _verifier, sender, token) = setup_test(&env);
-    let (secret, link_hash) = make_secret(&env, 3);
+    let (client, verifier, sender, token) = setup_test(&env);
+    let link_hash = make_link_hash(&env, 3);
+    let salt = make_salt(&env, 0x33);
     let amount = 1000i128;
     let expiry = env.ledger().timestamp() + 1000;
     let policy_params = Bytes::new(&env);
@@ -313,26 +472,51 @@ fn test_claim_rejects_fee_greater_than_amount() {
 
     let recipient = Address::generate(&env);
     let relayer = Address::generate(&env);
+    attest_claim(&env, &verifier, &link_hash, &recipient, &salt);
     assert!(client
-        .try_claim_link(
-            &link_hash,
-            &recipient,
-            &secret,
-            &empty_email_hash(&env),
-            &relayer,
-            &(amount + 1),
-        )
+        .try_claim_link(&link_hash, &recipient, &salt, &relayer, &(amount + 1))
         .is_err());
 }
 
 #[test]
-fn test_wrong_secret_fails() {
+#[should_panic(expected = "no valid ZK attestation for this claim")]
+fn test_wrong_salt_fails() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let (client, verifier, sender, token) = setup_test(&env);
+    let link_hash = make_link_hash(&env, 1);
+    let salt = make_salt(&env, 0x11);
+    let wrong_salt = make_salt(&env, 0x99);
+    let amount = 1000i128;
+    let expiry = env.ledger().timestamp() + 1000;
+    let policy_params = Bytes::new(&env);
+
+    client.create_link(
+        &link_hash,
+        &0u32,
+        &policy_params,
+        &amount,
+        &token,
+        &expiry,
+        &sender,
+    );
+
+    let recipient = Address::generate(&env);
+    let (relayer, fee) = no_relayer(&env);
+    attest_claim(&env, &verifier, &link_hash, &recipient, &salt);
+
+    client.claim_link(&link_hash, &recipient, &wrong_salt, &relayer, &fee);
+}
+
+#[test]
+fn test_unattested_claim_fails() {
     let env = Env::default();
     env.mock_all_auths();
 
     let (client, _verifier, sender, token) = setup_test(&env);
-    let (_secret, link_hash) = make_secret(&env, 1);
-    let (wrong_secret, _) = make_secret(&env, 99);
+    let link_hash = make_link_hash(&env, 1);
+    let salt = make_salt(&env, 0x11);
     let amount = 1000i128;
     let expiry = env.ledger().timestamp() + 1000;
     let policy_params = Bytes::new(&env);
@@ -350,24 +534,19 @@ fn test_wrong_secret_fails() {
     let recipient = Address::generate(&env);
     let (relayer, fee) = no_relayer(&env);
     assert!(client
-        .try_claim_link(
-            &link_hash,
-            &recipient,
-            &wrong_secret,
-            &empty_email_hash(&env),
-            &relayer,
-            &fee
-        )
+        .try_claim_link(&link_hash, &recipient, &salt, &relayer, &fee)
         .is_err());
 }
 
 #[test]
+#[should_panic(expected = "already claimed")]
 fn test_double_claim_fails() {
     let env = Env::default();
     env.mock_all_auths();
 
-    let (client, _verifier, sender, token) = setup_test(&env);
-    let (secret, link_hash) = make_secret(&env, 1);
+    let (client, verifier, sender, token) = setup_test(&env);
+    let link_hash = make_link_hash(&env, 1);
+    let salt = make_salt(&env, 0x11);
     let amount = 1000i128;
     let expiry = env.ledger().timestamp() + 1000;
     let policy_params = Bytes::new(&env);
@@ -384,25 +563,10 @@ fn test_double_claim_fails() {
 
     let recipient = Address::generate(&env);
     let (relayer, fee) = no_relayer(&env);
-    client.claim_link(
-        &link_hash,
-        &recipient,
-        &secret,
-        &empty_email_hash(&env),
-        &relayer,
-        &fee,
-    );
+    attest_claim(&env, &verifier, &link_hash, &recipient, &salt);
+    client.claim_link(&link_hash, &recipient, &salt, &relayer, &fee);
 
-    assert!(client
-        .try_claim_link(
-            &link_hash,
-            &recipient,
-            &secret,
-            &empty_email_hash(&env),
-            &relayer,
-            &fee
-        )
-        .is_err());
+    client.claim_link(&link_hash, &recipient, &salt, &relayer, &fee);
 }
 
 #[test]
@@ -411,7 +575,7 @@ fn test_refund_after_expiry() {
     env.mock_all_auths();
 
     let (client, _verifier, sender, token) = setup_test(&env);
-    let (_secret, link_hash) = make_secret(&env, 1);
+    let link_hash = make_link_hash(&env, 1);
     let amount = 1000i128;
     let expiry = env.ledger().timestamp() + 1;
     let policy_params = Bytes::new(&env);
@@ -428,6 +592,9 @@ fn test_refund_after_expiry() {
 
     env.ledger().set_timestamp(expiry + 1);
     client.refund_link(&link_hash);
+
+    let token_client = TokenClient::new(&env, &token);
+    assert_eq!(token_client.balance(&sender), 10000i128);
 }
 
 #[test]
@@ -435,8 +602,9 @@ fn test_claim_expired_fails() {
     let env = Env::default();
     env.mock_all_auths();
 
-    let (client, _verifier, sender, token) = setup_test(&env);
-    let (secret, link_hash) = make_secret(&env, 1);
+    let (client, verifier, sender, token) = setup_test(&env);
+    let link_hash = make_link_hash(&env, 1);
+    let salt = make_salt(&env, 0x11);
     let amount = 1000i128;
     let expiry = env.ledger().timestamp() + 1;
     let policy_params = Bytes::new(&env);
@@ -455,15 +623,9 @@ fn test_claim_expired_fails() {
 
     let recipient = Address::generate(&env);
     let (relayer, fee) = no_relayer(&env);
+    attest_claim(&env, &verifier, &link_hash, &recipient, &salt);
     assert!(client
-        .try_claim_link(
-            &link_hash,
-            &recipient,
-            &secret,
-            &empty_email_hash(&env),
-            &relayer,
-            &fee
-        )
+        .try_claim_link(&link_hash, &recipient, &salt, &relayer, &fee)
         .is_err());
 }
 
@@ -473,7 +635,7 @@ fn test_duplicate_link_fails() {
     env.mock_all_auths();
 
     let (client, _verifier, sender, token) = setup_test(&env);
-    let (_secret, link_hash) = make_secret(&env, 1);
+    let link_hash = make_link_hash(&env, 1);
     let amount = 1000i128;
     let expiry = env.ledger().timestamp() + 1000;
     let policy_params = Bytes::new(&env);

@@ -134,13 +134,13 @@ export const createEscrowTx = async (creator: string, amount: string, hash: Uint
 export const claimLinkTx = async (
   recipient: string,
   linkHash: Uint8Array,
-  secret: Uint8Array,
-  emailHash?: Uint8Array,
+  claimSalt: Uint8Array,
   relayerAddress?: string,
   relayerFee?: string,
 ) => {
   const contractId = process.env.NEXT_PUBLIC_CONTRACT_ID;
   if (!contractId) throw new Error("NEXT_PUBLIC_CONTRACT_ID is not configured");
+  if (claimSalt.length !== 32) throw new Error("Invalid claim salt: expected 32 bytes");
 
   let account;
   try {
@@ -155,8 +155,7 @@ export const claimLinkTx = async (
     "claim_link",
     xdr.ScVal.scvBytes(Buffer.from(linkHash)),
     new Address(recipient).toScVal(),
-    xdr.ScVal.scvBytes(Buffer.from(secret)),
-    xdr.ScVal.scvBytes(Buffer.from(emailHash ?? new Uint8Array(32))),
+    xdr.ScVal.scvBytes(Buffer.from(claimSalt)),
     new Address(relayerAddress ?? recipient).toScVal(),
     nativeToScVal(BigInt(relayerFee ?? '0'), { type: 'i128' }),
   );

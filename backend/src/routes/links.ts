@@ -187,9 +187,10 @@ linkRoutes.get("/:hash", async (req: Request, res: Response) => {
       res.status(404).json({ error: "Link not found", correlationId });
       return;
     }
+    // creator is deliberately not returned: recipients and third parties must not
+    // learn who funded a link from the API (issue #118).
     res.json({
       hash,
-      creator: info.creator,
       amount: info.amount.toString(),
       asset: info.asset,
       policyType: info.policyType,
@@ -375,7 +376,7 @@ linkRoutes.post("/:hash/attest", async (req: Request, res: Response) => {
     }
 
     const linkHashBytes = Uint8Array.from(Buffer.from(hash, "hex"));
-    const txHash = await submitAttestation(linkHashBytes, recipient, emailHashBytes);
+    const { txHash, claimSalt } = await submitAttestation(linkHashBytes, recipient, emailHashBytes);
     attestationCounter.inc({ status: "success" });
 
     markNullifierUsedLocally(nullifierHex);
@@ -383,7 +384,8 @@ linkRoutes.post("/:hash/attest", async (req: Request, res: Response) => {
       logger.error({ correlationId, error: err?.message }, "markNullifierOnChain failed");
     });
 
-    res.json({ success: true, hash, recipient, attestationTx: txHash, correlationId });
+    // claimSalt reopens the blinded attestation key; claim_link needs it.
+    res.json({ success: true, hash, recipient, attestationTx: txHash, claimSalt, correlationId });
   } catch (err: any) {
     attestationCounter.inc({ status: "failed" });
     logger.error({ correlationId, error: err?.message }, "attestation failed");
