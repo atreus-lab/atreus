@@ -24,6 +24,7 @@ Atreus is a **TipLink-style wallet on Stellar** with an integrated **ZK-powered 
 - **Batch Link Generation**: High-throughput CSV batch ingestion for creating up to 100 payment links in a single workflow.
 - **Gasless Relayed Claims**: Recipient signs claim authorization while a relayer submits the transaction, covering network fees in exchange for a configurable relayer fee.
 - **Double-Claim & Front-Running Guards**: Nullifiers prevent replaying claims, while binding recipient addresses into ZK public inputs prevents MEV proof sniping.
+- **Atomic Claim-and-Swap**: One-click DEX swap during claim via Soroswap Router integration (see [Atomic Swaps Documentation](file:///workspaces/atreus/docs/atomic-swaps.md)).
 
 ---
 

@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useCallback } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { loadWallet, getActiveWalletProvider } from '@/lib/wallet';
@@ -9,8 +9,27 @@ import { bytesToHex } from '@/lib/proof';
 import { generateClaimProof, requestAttestation } from '@/lib/zk';
 import { startEmailVerification, confirmEmailVerification } from '@/lib/emailVerify';
 import { updateLinkStatus, checkLinkOnChain, saveClaimedLink, readLinkInfo } from '@/lib/links';
+import {
+  fetchOptimalSwapPath,
+  buildPathScVal,
+  getSoroswapRouterAddress,
+  resolveTokenSymbol,
+  TESTNET_TOKENS,
+  type SwapQuote,
+} from '@/lib/soroswap';
 import ProofProgress from '@/components/ProofProgress';
-import { Loader2, CheckCircle2, XCircle, ArrowLeft, Link2, Mail, Shield } from 'lucide-react';
+import {
+  Loader2,
+  CheckCircle2,
+  XCircle,
+  ArrowLeft,
+  Link2,
+  Mail,
+  Shield,
+  ArrowRightLeft,
+  RefreshCw,
+  Coins,
+} from 'lucide-react';
 import { Address, Contract, TransactionBuilder, nativeToScVal, xdr } from '@stellar/stellar-sdk';
 import { Buffer } from 'buffer';
 
@@ -40,6 +59,13 @@ export default function ClaimPage() {
   const [emailBusy, setEmailBusy] = useState(false);
   const [emailError, setEmailError] = useState('');
 
+  // ── Soroswap Claim & Swap State ──
+  const [escrowInfo, setEscrowInfo] = useState<{ amount: string; asset: string } | null>(null);
+  const [targetAsset, setTargetAsset] = useState<string>('ORIGINAL');
+  const [swapQuote, setSwapQuote] = useState<SwapQuote | null>(null);
+  const [isQuoting, setIsQuoting] = useState(false);
+  const [quoteError, setQuoteError] = useState('');
+
   const isGeneratingProof = status === 'generating_proof';
 
   useEffect(() => {
@@ -55,6 +81,88 @@ export default function ClaimPage() {
       setWalletEmail(wallet.email);
     }
   }, []);
+
+  // Fetch escrow info from chain whenever secretHex changes
+  useEffect(() => {
+    if (!secretHex || secretHex.length !== 64) return;
+    let isCancelled = false;
+
+    async function loadEscrowDetails() {
+      try {
+        const secretBytes = new Uint8Array(
+          secretHex.match(/.{1,2}/g)!.map((b) => parseInt(b, 16))
+        );
+        const linkHashBuf = await crypto.subtle.digest('SHA-256', secretBytes);
+        const linkHashHex = Array.from(new Uint8Array(linkHashBuf))
+          .map((b) => b.toString(16).padStart(2, '0'))
+          .join('');
+
+        const info = await readLinkInfo(linkHashHex);
+        if (!isCancelled && info.amount) {
+          const defaultAsset =
+            process.env.NEXT_PUBLIC_TOKEN_ID ||
+            'CDLZFC3SYJYDZT7K67VZ75HPJVIEUVNIXF47ZG2FB2RMQQVU2HHGCYSC';
+          setEscrowInfo({
+            amount: info.amount,
+            asset: info.asset || defaultAsset,
+          });
+        }
+      } catch (err) {
+        console.warn('Failed to load escrow details for swap:', err);
+      }
+    }
+
+    loadEscrowDetails();
+    return () => {
+      isCancelled = true;
+    };
+  }, [secretHex]);
+
+  // Recalculate Soroswap quote when target asset changes
+  const updateQuote = useCallback(
+    async (target: string, currentEscrow: { amount: string; asset: string } | null) => {
+      if (!currentEscrow || !currentEscrow.amount || target === 'ORIGINAL') {
+        setSwapQuote(null);
+        setQuoteError('');
+        return;
+      }
+
+      const escrowSymbol = resolveTokenSymbol(currentEscrow.asset);
+      if (target.toUpperCase() === escrowSymbol.toUpperCase()) {
+        setSwapQuote(null);
+        setQuoteError('');
+        return;
+      }
+
+      const targetToken = TESTNET_TOKENS[target.toUpperCase()];
+      if (!targetToken) {
+        setSwapQuote(null);
+        return;
+      }
+
+      setIsQuoting(true);
+      setQuoteError('');
+      try {
+        const quote = await fetchOptimalSwapPath(
+          currentEscrow.asset,
+          targetToken.contractId,
+          currentEscrow.amount,
+          1.0 // 1% default slippage
+        );
+        setSwapQuote(quote);
+      } catch (err: any) {
+        setQuoteError(err?.message || 'Failed to fetch swap quote from Soroswap');
+        setSwapQuote(null);
+      } finally {
+        setIsQuoting(false);
+      }
+    },
+    []
+  );
+
+  useEffect(() => {
+    updateQuote(targetAsset, escrowInfo);
+  }, [targetAsset, escrowInfo, updateQuote]);
 
   async function handleStartEmailVerify() {
     if (!intendedEmail) return;
@@ -94,68 +202,119 @@ export default function ClaimPage() {
   }
 
   /** Map contract panic messages and network errors to user-friendly messages */
-function getFriendlyErrorMessage(err: any): { title: string; description: string } {
-  const rawMsg = err?.message || err?.toString() || '';
-  const msg = rawMsg.toLowerCase();
+  function getFriendlyErrorMessage(err: any): { title: string; description: string } {
+    const rawMsg = err?.message || err?.toString() || '';
+    const msg = rawMsg.toLowerCase();
 
-  // ── Ordered checks: specific contract panics FIRST ──
-  // These must come BEFORE the HostError/WasmVm trap block because when Soroban's
-  // prepareTransaction fails it wraps the contract panic in a "HostError" that also
-  // contains the outer function name ("claim_link"), which would trigger the generic
-  // VM trap handler first and mask the real error.
+    // ── Specific contract panics & Soroswap errors ──
+    if (msg.includes('insufficient_output_amount') || msg.includes('insufficient output amount'))
+      return {
+        title: 'Slippage limit exceeded',
+        description: 'The market price changed during the swap. Try claiming again or claim without swapping.',
+      };
+    if (msg.includes('router: expired') || msg.includes('deadline expired'))
+      return {
+        title: 'Swap deadline expired',
+        description: 'The transaction took longer than expected to execute on-chain. Please try again.',
+      };
+    if (msg.includes('invalid path') || msg.includes('path must start'))
+      return {
+        title: 'Invalid swap route',
+        description: 'The requested token swap path is not supported on Soroswap.',
+      };
+    if (msg.includes('invalid secret'))
+      return {
+        title: 'Invalid link',
+        description: 'The secret key for this link is incorrect. Please check the link and try again.',
+      };
+    if (msg.includes('link expired') || msg.includes('expired'))
+      return {
+        title: 'Link expired',
+        description: 'This payment link has expired and can no longer be claimed.',
+      };
+    if (msg.includes('no valid zk attestation'))
+      return {
+        title: 'Proof verification pending',
+        description: 'The ZK proof attestation has not been recorded yet. Please complete the full claim flow.',
+      };
+    if (msg.includes('link not found'))
+      return {
+        title: 'Link not found',
+        description: 'This payment link does not exist in the contract. It may have been refunded or never created.',
+      };
+    if (msg.includes('nullifier already used'))
+      return {
+        title: 'Already claimed',
+        description: 'This payment link has already been claimed with a different wallet.',
+      };
+    if (msg.includes('already claimed'))
+      return {
+        title: 'Funds already claimed',
+        description: 'This payment link has already been claimed. The funds are no longer available.',
+      };
+    if (msg.includes('invalid relayer fee'))
+      return {
+        title: 'Configuration error',
+        description: 'The relayer fee is invalid. Please contact support.',
+      };
+    if (msg.includes('relayer request failed'))
+      return {
+        title: 'Relay service error',
+        description: 'The gasless relay service could not process the claim. Please try again later.',
+      };
 
-  if (msg.includes('invalid secret'))
-    return { title: 'Invalid link', description: 'The secret key for this link is incorrect. Please check the link and try again.' };
-  if (msg.includes('link expired') || msg.includes('expired'))
-    return { title: 'Link expired', description: 'This payment link has expired and can no longer be claimed.' };
-  if (msg.includes('no valid zk attestation'))
-    return { title: 'Proof verification pending', description: 'The ZK proof attestation has not been recorded yet. Please complete the full claim flow.' };
-  if (msg.includes('link not found'))
-    return { title: 'Link not found', description: 'This payment link does not exist in the contract. It may have been refunded or never created.' };
-  if (msg.includes('nullifier already used'))
-    return { title: 'Already claimed', description: 'This payment link has already been claimed with a different wallet.' };
-  if (msg.includes('already claimed'))
-    return { title: 'Funds already claimed', description: 'This payment link has already been claimed. The funds are no longer available.' };
-  if (msg.includes('invalid relayer fee'))
-    return { title: 'Configuration error', description: 'The relayer fee is invalid. Please contact support.' };
-  if (msg.includes('relayer request failed'))
-    return { title: 'Relay service error', description: 'The gasless relay service could not process the claim. Please try again later.' };
-
-  // ── WasmVm / HostError trap fallback ──
-  // When the contract VM crashes instead of cleanly panicking (e.g. UnreachableCodeReached
-  // after a successful attestation check), we catch that here.  But specific panics
-  // are already handled above.
-  if (
-    msg.includes('wasmvm') ||
-    msg.includes('invalidaction') ||
-    msg.includes('unreachablecodereached') ||
-    msg.includes('vm call trapped') ||
-    msg.includes('hosterror') && msg.includes('claim_link')
-  ) {
-    // Check the event log for telltale signs of "already claimed" or "expired"
-    if (msg.includes('fn_return') && msg.includes('is_attested') && msg.includes('true')) {
-      // is_attested returned true, then claim_link trapped → almost certainly "already claimed"
-      return { title: 'Funds already claimed', description: 'This payment link has already been claimed. The funds are no longer available.' };
+    // ── WasmVm / HostError trap fallback ──
+    if (
+      msg.includes('wasmvm') ||
+      msg.includes('invalidaction') ||
+      msg.includes('unreachablecodereached') ||
+      msg.includes('vm call trapped') ||
+      (msg.includes('hosterror') && (msg.includes('claim_link') || msg.includes('claim_and_swap_link')))
+    ) {
+      if (msg.includes('fn_return') && msg.includes('is_attested') && msg.includes('true')) {
+        return {
+          title: 'Funds already claimed',
+          description: 'This payment link has already been claimed. The funds are no longer available.',
+        };
+      }
+      return {
+        title: 'Contract error',
+        description:
+          'The transaction could not be completed. This link may have already been claimed or is invalid. Please check the link and try again.',
+      };
     }
-    return { title: 'Contract error', description: 'The transaction could not be completed. This link may have already been claimed or is invalid. Please check the link and try again.' };
+
+    if (msg.includes('insufficient balance'))
+      return { title: 'Insufficient funds', description: rawMsg };
+    if (msg.includes('recipient account') || msg.includes('funded'))
+      return {
+        title: 'Wallet not funded',
+        description: 'Your account needs testnet XLM. Get free funds via the Stellar friendbot.',
+      };
+    if (msg.includes('failed to simulate'))
+      return {
+        title: 'Contract simulation failed',
+        description: 'The transaction simulation failed. The link may be invalid or the contract is unavailable.',
+      };
+    if (msg.includes('attestation tx failed') || msg.includes('attestation tx rejected'))
+      return {
+        title: 'Attestation transaction failed',
+        description:
+          'The attestation could not be recorded on-chain. The link may already be claimed, or the network is unavailable. Please try again.',
+      };
+    if (msg.includes('attestation request failed') || msg.includes('attestation failed'))
+      return {
+        title: 'Attestation service error',
+        description: 'The backend attestation service encountered an error. Please try again later.',
+      };
+
+    return {
+      title: 'Claim failed',
+      description: err?.message || 'An unexpected error occurred. Please try again.',
+    };
   }
 
-  if (msg.includes('insufficient balance'))
-    return { title: 'Insufficient funds', description: rawMsg };
-  if (msg.includes('recipient account') || msg.includes('funded'))
-    return { title: 'Wallet not funded', description: 'Your account needs testnet XLM. Get free funds via the Stellar friendbot.' };
-  if (msg.includes('failed to simulate'))
-    return { title: 'Contract simulation failed', description: 'The transaction simulation failed. The link may be invalid or the contract is unavailable.' };
-  if (msg.includes('attestation tx failed') || msg.includes('attestation tx rejected'))
-    return { title: 'Attestation transaction failed', description: 'The attestation could not be recorded on-chain. The link may already be claimed, or the network is unavailable. Please try again.' };
-  if (msg.includes('attestation request failed') || msg.includes('attestation failed'))
-    return { title: 'Attestation service error', description: 'The backend attestation service encountered an error. Please try again later.' };
-
-  // Fallback: show the original error but trimmed
-  return { title: 'Claim failed', description: err?.message || 'An unexpected error occurred. Please try again.' };
-}
-
-const parseLinkInput = () => {
+  const parseLinkInput = () => {
     const hash = linkInput.split('#')[1]?.split(/[,;\s]/)[0];
     if (hash) {
       setSecretHex(hash);
@@ -177,46 +336,57 @@ const parseLinkInput = () => {
       setErrorKind('error');
 
       const recipient = await connectWallet();
-
-      const secretBytes = new Uint8Array(secretHex.match(/.{1,2}/g)!.map((b) => parseInt(b, 16)));
+      const secretBytes = new Uint8Array(
+        secretHex.match(/.{1,2}/g)!.map((b) => parseInt(b, 16))
+      );
 
       // Quick on-chain check: if the link is already claimed, short-circuit immediately
-      // instead of wasting time generating a ZK proof and attesting.
       const linkHashForCheck = Array.from(
         new Uint8Array(await crypto.subtle.digest('SHA-256', secretBytes))
-      ).map((b) => b.toString(16).padStart(2, '0')).join('');
+      )
+        .map((b) => b.toString(16).padStart(2, '0'))
+        .join('');
       const alreadyClaimed = await checkLinkOnChain(linkHashForCheck);
       if (alreadyClaimed === true) {
         setErrorKind('info');
-        setErrorMsg('Funds already claimed: This payment link has already been claimed. The funds are no longer available.');
+        setErrorMsg(
+          'Funds already claimed: This payment link has already been claimed. The funds are no longer available.'
+        );
         setStatus('error');
         return;
       }
 
-      // Email-restricted links require DKIM ownership proof before attestation.
+      // Email-restricted links require DKIM ownership proof before attestation
       if (intendedEmail) {
         const wallet = loadWallet();
         const authedEmail = wallet?.email;
-        if (!authedEmail || authedEmail.toLowerCase().trim() !== intendedEmail.toLowerCase().trim()) {
+        if (
+          !authedEmail ||
+          authedEmail.toLowerCase().trim() !== intendedEmail.toLowerCase().trim()
+        ) {
           setErrorKind('error');
-          setErrorMsg(`This link is intended for ${intendedEmail}. Please log in with that email to claim.`);
+          setErrorMsg(
+            `This link is intended for ${intendedEmail}. Please log in with that email to claim.`
+          );
           setStatus('error');
           return;
         }
         if (!emailVerified) {
           setErrorKind('error');
-          setErrorMsg('Prove email ownership (DKIM) before claiming. Use the verification panel above.');
+          setErrorMsg(
+            'Prove email ownership (DKIM) before claiming. Use the verification panel above.'
+          );
           setStatus('error');
           return;
         }
       }
 
       setStatus('generating_proof');
-      const { proof, linkHashHex, linkHashFieldHex, nullifierFieldHex } = await generateClaimProof(secretBytes, recipient);
+      const { proof, linkHashHex, linkHashFieldHex, nullifierFieldHex } =
+        await generateClaimProof(secretBytes, recipient);
 
       setStatus('attesting');
       const proofHex = bytesToHex(proof);
-      // Compute email hash if this is an email-restricted link
       let recipientEmailHash: string | undefined;
       const emailHashBytes = intendedEmail
         ? new Uint8Array(await sha256Hash(intendedEmail))
@@ -227,7 +397,14 @@ const parseLinkInput = () => {
           .join('');
       }
 
-      await requestAttestation(linkHashHex, proofHex, recipient, linkHashFieldHex, nullifierFieldHex, recipientEmailHash);
+      await requestAttestation(
+        linkHashHex,
+        proofHex,
+        recipient,
+        linkHashFieldHex,
+        nullifierFieldHex,
+        recipientEmailHash
+      );
 
       setStatus('claiming');
       const linkHash = new Uint8Array(await crypto.subtle.digest('SHA-256', secretBytes));
@@ -243,15 +420,37 @@ const parseLinkInput = () => {
       }
 
       const contract = new Contract(contractId);
-      const claimOperation = contract.call(
-        'claim_link',
-        xdr.ScVal.scvBytes(Buffer.from(linkHash)),
-        new Address(recipient).toScVal(),
-        xdr.ScVal.scvBytes(Buffer.from(secretBytes)),
-        xdr.ScVal.scvBytes(Buffer.from(emailHashBytes)),
-        new Address(relayerAddress).toScVal(),
-        nativeToScVal(BigInt(relayerFee), { type: 'i128' }),
-      );
+      const isSwapping = Boolean(swapQuote && swapQuote.path.length >= 2);
+
+      let claimOperation: xdr.Operation;
+
+      if (isSwapping && swapQuote) {
+        const routerAddress = getSoroswapRouterAddress();
+        const deadlineSec = BigInt(Math.floor(Date.now() / 1000) + 300); // 5 minutes deadline
+
+        claimOperation = contract.call(
+          'claim_and_swap_link',
+          xdr.ScVal.scvBytes(Buffer.from(linkHash)),
+          xdr.ScVal.scvBytes(Buffer.from(secretBytes)),
+          new Address(recipient).toScVal(),
+          new Address(routerAddress).toScVal(),
+          buildPathScVal(swapQuote.path),
+          nativeToScVal(swapQuote.minAmountOutStroops, { type: 'i128' }),
+          nativeToScVal(deadlineSec, { type: 'u64' }),
+          nativeToScVal(BigInt(relayerFee), { type: 'i128' }),
+          new Address(relayerAddress).toScVal()
+        );
+      } else {
+        claimOperation = contract.call(
+          'claim_link',
+          xdr.ScVal.scvBytes(Buffer.from(linkHash)),
+          new Address(recipient).toScVal(),
+          xdr.ScVal.scvBytes(Buffer.from(secretBytes)),
+          xdr.ScVal.scvBytes(Buffer.from(emailHashBytes)),
+          new Address(relayerAddress).toScVal(),
+          nativeToScVal(BigInt(relayerFee), { type: 'i128' })
+        );
+      }
 
       const account = await rpcServer.getAccount(recipient);
       let transaction = new TransactionBuilder(account, {
@@ -283,10 +482,13 @@ const parseLinkInput = () => {
       setStatus('success');
       localStorage.setItem('atreus_claimed', Date.now().toString());
       updateLinkStatus(secretHex, true, hash);
-      // Read the actual amount from the contract for the recipient's dashboard
+
+      // Read actual amount or use quoted swapped amount for dashboard
       const linkInfo = await readLinkInfo(linkHashHex);
-      const displayAmount = linkInfo.amount || 'Claimed';
-      // Save to recipient's storage so they can see their claimed links on dashboard
+      const displayAmount = isSwapping && swapQuote
+        ? `${swapQuote.expectedAmountOut} ${resolveTokenSymbol(swapQuote.assetOut)}`
+        : `${linkInfo.amount || 'Claimed'} ${resolveTokenSymbol(linkInfo.asset || '')}`;
+
       saveClaimedLink({
         id: `received-${Date.now()}`,
         url: window.location.href,
@@ -303,7 +505,6 @@ const parseLinkInput = () => {
       console.error(err);
       const friendly = getFriendlyErrorMessage(err);
       setErrorMsg(`${friendly.title}: ${friendly.description}`);
-      // Categorize the error kind for different UI styling
       if (friendly.title === 'Funds already claimed' || friendly.title === 'Already claimed') {
         setErrorKind('info');
       } else if (friendly.title === 'Link expired') {
@@ -315,13 +516,16 @@ const parseLinkInput = () => {
     }
   };
 
+  const isSwapping = Boolean(swapQuote && swapQuote.path.length >= 2);
+  const targetSymbol = isSwapping && swapQuote ? resolveTokenSymbol(swapQuote.assetOut) : 'XLM';
+
   const statusText: Record<ClaimStatus, string> = {
-    idle: 'Claim with ZK Proof',
+    idle: isSwapping ? `Claim & Swap to ${targetSymbol}` : 'Claim with ZK Proof',
     connecting: 'Connecting Wallet...',
     generating_proof: 'Generating ZK Proof...',
     attesting: 'Verifying Proof & Attesting...',
-    claiming: 'Claiming Funds...',
-    success: 'Claimed!',
+    claiming: isSwapping ? 'Swapping & Claiming Funds...' : 'Claiming Funds...',
+    success: isSwapping ? `Claimed & Swapped to ${targetSymbol}!` : 'Claimed!',
     error: 'Try Again',
   };
 
@@ -330,6 +534,7 @@ const parseLinkInput = () => {
     status === 'generating_proof' ||
     status === 'attesting' ||
     status === 'claiming' ||
+    isQuoting ||
     (Boolean(intendedEmail) && !emailVerified);
 
   return (
@@ -350,23 +555,114 @@ const parseLinkInput = () => {
               A payment has been found! Verify your identity with a ZK proof to claim it.
             </p>
 
+            {/* ── Atomic Swap Output Asset Selector ── */}
+            <div className="p-4 rounded-2xl bg-slate-50 border border-slate-200/80 space-y-3">
+              <div className="flex items-center justify-between text-xs font-bold text-slate-700">
+                <span className="flex items-center gap-1.5">
+                  <Coins className="w-4 h-4 text-indigo-600" />
+                  Receive Token
+                </span>
+                {escrowInfo?.amount && (
+                  <span className="text-slate-500 font-mono font-medium">
+                    Escrow: {escrowInfo.amount} {resolveTokenSymbol(escrowInfo.asset)}
+                  </span>
+                )}
+              </div>
+
+              <div className="grid grid-cols-3 gap-2">
+                {[
+                  { id: 'ORIGINAL', label: 'Original', desc: 'No swap' },
+                  { id: 'USDC', label: 'USDC', desc: 'USD Coin' },
+                  { id: 'EURT', label: 'EURT', desc: 'Euro Tether' },
+                ].map((token) => {
+                  const isSelected = targetAsset === token.id;
+                  return (
+                    <button
+                      key={token.id}
+                      type="button"
+                      onClick={() => setTargetAsset(token.id)}
+                      className={`py-2 px-3 rounded-xl text-xs font-bold transition-all border text-left flex flex-col justify-between ${
+                        isSelected
+                          ? 'bg-indigo-600 text-white border-indigo-600 shadow-[0_2px_8px_rgba(79,70,229,0.25)]'
+                          : 'bg-white text-slate-700 border-slate-200 hover:border-slate-300 hover:bg-slate-50'
+                      }`}
+                    >
+                      <span>{token.label}</span>
+                      <span
+                        className={`text-[10px] font-normal ${
+                          isSelected ? 'text-indigo-100' : 'text-slate-400'
+                        }`}
+                      >
+                        {token.desc}
+                      </span>
+                    </button>
+                  );
+                })}
+              </div>
+
+              {isQuoting && (
+                <div className="flex items-center gap-2 text-xs text-indigo-600 pt-1">
+                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                  Quoting optimal Soroswap route...
+                </div>
+              )}
+
+              {quoteError && (
+                <p className="text-xs text-red-600 font-medium pt-1">{quoteError}</p>
+              )}
+
+              {swapQuote && !isQuoting && (
+                <div className="pt-2 border-t border-slate-200/60 text-xs space-y-1.5 text-slate-600">
+                  <div className="flex justify-between items-center font-bold text-slate-800">
+                    <span className="flex items-center gap-1">
+                      <ArrowRightLeft className="w-3.5 h-3.5 text-indigo-600" />
+                      Estimated Output:
+                    </span>
+                    <span className="text-indigo-600 font-mono">
+                      ≈ {swapQuote.expectedAmountOut} {resolveTokenSymbol(swapQuote.assetOut)}
+                    </span>
+                  </div>
+                  <div className="flex justify-between items-center text-[11px] text-slate-500">
+                    <span>Min. Received (1% slippage):</span>
+                    <span className="font-mono">
+                      {swapQuote.minAmountOut} {resolveTokenSymbol(swapQuote.assetOut)}
+                    </span>
+                  </div>
+                  <div className="flex justify-between items-center text-[10px] text-slate-400">
+                    <span>Route:</span>
+                    <span>
+                      {swapQuote.path.map((addr) => resolveTokenSymbol(addr)).join(' → ')}
+                    </span>
+                  </div>
+                </div>
+              )}
+            </div>
+
             {intendedEmail && (
               <div className="space-y-3">
-                <div className={`p-4 rounded-xl text-sm font-medium border ${
-                  walletEmail && walletEmail.toLowerCase().trim() === intendedEmail.toLowerCase().trim()
-                    ? 'bg-green-50 border-green-100 text-green-700'
-                    : 'bg-amber-50 border-amber-100 text-amber-700'
-                }`}>
+                <div
+                  className={`p-4 rounded-xl text-sm font-medium border ${
+                    walletEmail &&
+                    walletEmail.toLowerCase().trim() === intendedEmail.toLowerCase().trim()
+                      ? 'bg-green-50 border-green-100 text-green-700'
+                      : 'bg-amber-50 border-amber-100 text-amber-700'
+                  }`}
+                >
                   <p className="flex items-center gap-2">
                     <Mail className="w-4 h-4 shrink-0" />
                     Intended for: <strong>{intendedEmail}</strong>
                   </p>
-                  {walletEmail && walletEmail.toLowerCase().trim() === intendedEmail.toLowerCase().trim() ? (
+                  {walletEmail &&
+                  walletEmail.toLowerCase().trim() === intendedEmail.toLowerCase().trim() ? (
                     <p className="text-xs mt-1 text-green-600">✓ Your email matches!</p>
                   ) : walletEmail ? (
-                    <p className="text-xs mt-1 text-amber-600">You are logged in as {walletEmail}. Only {intendedEmail} can claim this link.</p>
+                    <p className="text-xs mt-1 text-amber-600">
+                      You are logged in as {walletEmail}. Only {intendedEmail} can claim this link.
+                    </p>
                   ) : (
-                    <p className="text-xs mt-1 text-amber-600">Log in with {intendedEmail} to claim this link.</p>
+                    <p className="text-xs mt-1 text-amber-600">
+                      Log in with {intendedEmail} to claim this link.
+                    </p>
                   )}
                 </div>
 
@@ -382,7 +678,8 @@ const parseLinkInput = () => {
                   ) : (
                     <>
                       <p className="text-xs text-slate-600">
-                        Prove you control this address by sending a DKIM-signed message that includes a challenge token, then paste the raw email source below.
+                        Prove you control this address by sending a DKIM-signed message that includes a
+                        challenge token, then paste the raw email source below.
                       </p>
                       {!emailChallenge ? (
                         <button
@@ -397,8 +694,13 @@ const parseLinkInput = () => {
                         <div className="space-y-2">
                           <p className="text-xs text-slate-600">
                             Send mail from <strong>{intendedEmail}</strong>
-                            {emailVerifyTo ? <> to <strong>{emailVerifyTo}</strong></> : null}
-                            {' '}with challenge token:
+                            {emailVerifyTo ? (
+                              <>
+                                {' '}
+                                to <strong>{emailVerifyTo}</strong>
+                              </>
+                            ) : null}{' '}
+                            with challenge token:
                           </p>
                           <code className="block text-[11px] break-all bg-white border border-slate-200 rounded-lg p-2 text-slate-800">
                             {emailChallenge}
@@ -449,59 +751,65 @@ const parseLinkInput = () => {
               {status === 'claiming' && (
                 <div className="bg-indigo-50 border border-indigo-100 text-indigo-700 text-sm font-medium p-3 rounded-xl flex items-center gap-2">
                   <Loader2 className="w-4 h-4 animate-spin" />
-                  Claiming funds on-chain...
+                  {isSwapping ? 'Swapping and claiming on-chain...' : 'Claiming funds on-chain...'}
                 </div>
               )}
 
-              {status === 'error' && (() => {
-              if (errorKind === 'info') {
-                return (
-                  <div className="bg-blue-50 border border-blue-100 text-blue-700 text-sm font-medium p-4 rounded-xl space-y-1">
-                    <div className="flex items-center gap-2">
-                      <CheckCircle2 className="w-5 h-5 text-blue-500 shrink-0" />
-                      <span className="font-bold">Funds already claimed</span>
+              {status === 'error' &&
+                (() => {
+                  if (errorKind === 'info') {
+                    return (
+                      <div className="bg-blue-50 border border-blue-100 text-blue-700 text-sm font-medium p-4 rounded-xl space-y-1">
+                        <div className="flex items-center gap-2">
+                          <CheckCircle2 className="w-5 h-5 text-blue-500 shrink-0" />
+                          <span className="font-bold">Funds already claimed</span>
+                        </div>
+                        <p className="text-blue-600/80 pl-7">
+                          This payment link has already been claimed. The funds were transferred to the
+                          recipient.
+                        </p>
+                        <div className="flex gap-3 pt-2 pl-7">
+                          <button
+                            onClick={() => router.push('/dashboard')}
+                            className="text-sm font-bold text-blue-600 hover:text-blue-700 underline underline-offset-2"
+                          >
+                            Go to Dashboard
+                          </button>
+                          <button
+                            onClick={() => {
+                              setStatus('idle');
+                              setSecretHex('');
+                              setErrorMsg('');
+                              setErrorKind('error');
+                              window.location.hash = '';
+                            }}
+                            className="text-sm font-bold text-blue-600 hover:text-blue-700 underline underline-offset-2"
+                          >
+                            Claim Another
+                          </button>
+                        </div>
+                      </div>
+                    );
+                  }
+                  if (errorKind === 'expired') {
+                    return (
+                      <div className="bg-amber-50 border border-amber-100 text-amber-700 text-sm font-medium p-4 rounded-xl space-y-1">
+                        <div className="flex items-center gap-2">
+                          <XCircle className="w-5 h-5 text-amber-500 shrink-0" />
+                          <span className="font-bold">Link expired</span>
+                        </div>
+                        <p className="text-amber-600/80 pl-7">
+                          This payment link has expired. The funds have been returned to the sender.
+                        </p>
+                      </div>
+                    );
+                  }
+                  return (
+                    <div className="bg-red-50 border border-red-100 text-red-600 text-sm font-medium p-3 rounded-xl">
+                      {errorMsg}
                     </div>
-                    <p className="text-blue-600/80 pl-7">This payment link has already been claimed. The funds were transferred to the recipient.</p>
-                    <div className="flex gap-3 pt-2 pl-7">
-                      <button
-                        onClick={() => router.push('/dashboard')}
-                        className="text-sm font-bold text-blue-600 hover:text-blue-700 underline underline-offset-2"
-                      >
-                        Go to Dashboard
-                      </button>
-                      <button
-                        onClick={() => {
-                          setStatus('idle');
-                          setSecretHex('');
-                          setErrorMsg('');
-                          setErrorKind('error');
-                          window.location.hash = '';
-                        }}
-                        className="text-sm font-bold text-blue-600 hover:text-blue-700 underline underline-offset-2"
-                      >
-                        Claim Another
-                      </button>
-                    </div>
-                  </div>
-                );
-              }
-              if (errorKind === 'expired') {
-                return (
-                  <div className="bg-amber-50 border border-amber-100 text-amber-700 text-sm font-medium p-4 rounded-xl space-y-1">
-                    <div className="flex items-center gap-2">
-                      <XCircle className="w-5 h-5 text-amber-500 shrink-0" />
-                      <span className="font-bold">Link expired</span>
-                    </div>
-                    <p className="text-amber-600/80 pl-7">This payment link has expired. The funds have been returned to the sender.</p>
-                  </div>
-                );
-              }
-              return (
-                <div className="bg-red-50 border border-red-100 text-red-600 text-sm font-medium p-3 rounded-xl">
-                  {errorMsg}
-                </div>
-              );
-            })()}
+                  );
+                })()}
             </div>
 
             <button
@@ -529,7 +837,9 @@ const parseLinkInput = () => {
             {status === 'success' && (
               <div className="text-center space-y-3">
                 <p className="text-sm text-green-600 font-semibold">
-                  Funds transferred to your wallet!
+                  {isSwapping
+                    ? `Swapped and transferred ${targetSymbol} to your wallet!`
+                    : 'Funds transferred to your wallet!'}
                 </p>
                 {txHash && (
                   <p className="text-xs text-slate-400">TX: {txHash.substring(0, 16)}...</p>
@@ -541,6 +851,8 @@ const parseLinkInput = () => {
                       setSecretHex('');
                       setErrorMsg('');
                       setTxHash('');
+                      setSwapQuote(null);
+                      setTargetAsset('ORIGINAL');
                       window.location.hash = '';
                     }}
                     className="text-sm font-bold text-indigo-600 hover:text-indigo-700"
@@ -594,3 +906,4 @@ const parseLinkInput = () => {
     </div>
   );
 }
+
