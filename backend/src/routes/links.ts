@@ -380,20 +380,21 @@ linkRoutes.post("/:hash/attest", async (req: Request, res: Response) => {
     attestationRequestCounter.inc();
 
     let txHash: string;
+    let claimSalt: string;
     if (isBatchingEnabled()) {
       // attest_batch records the attestation, the nullifier, and any email
       // binding in ONE transaction, so markNullifierOnChain must not be called
       // separately here — doing so would add a transaction per claim and undo
       // the batching win. The await resolves when the batch lands on-chain.
-      txHash = await enqueueAttestation({
-        linkHash: linkHashBytes,
+      ({ txHash, claimSalt } = await enqueueAttestation(
+        linkHashBytes,
         recipient,
-        nullifier: nullifierBytes,
-        emailHash: emailHashBytes,
-      });
+        nullifierBytes,
+        emailHashBytes,
+      ));
       markNullifierUsedLocally(nullifierHex);
     } else {
-      txHash = await submitAttestation(linkHashBytes, recipient, emailHashBytes);
+      ({ txHash, claimSalt } = await submitAttestation(linkHashBytes, recipient, emailHashBytes));
       attestationTxCounter.inc({ mode: "per_link", status: "success" });
       attestationFeeStroops.inc({ mode: "per_link" }, ATTESTER_TX_FEE_STROOPS);
 

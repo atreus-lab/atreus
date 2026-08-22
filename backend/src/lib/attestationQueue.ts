@@ -41,22 +41,38 @@ export const DEFAULT_LATENCY_BUDGET_MS = 10_000;
  */
 export const DEFAULT_SIZE_CAP = 100;
 
+/**
+ * One queued attestation, already blinded (issue #118).
+ *
+ * The queue never sees link_hash or recipient. It carries the blinded digests
+ * that go on-chain plus the salt that reopens them, which must be handed back
+ * to this specific caller so their claim_link can recompute the same key.
+ */
 export interface AttestationRequest {
-  linkHash: Uint8Array;
-  recipient: string;
+  claimKey: Uint8Array;
   nullifier: Uint8Array;
-  emailHash?: Uint8Array;
+  emailKey?: Uint8Array;
+  /** 64-char hex, returned to the caller that enqueued this claim. */
+  claimSalt: string;
+}
+
+/** What a queued attestation resolves to once its batch lands. */
+export interface QueuedAttestationResult {
+  txHash: string;
+  claimSalt: string;
 }
 
 export interface QueuedAttestation extends AttestationRequest {
   enqueuedAt: number;
   nullifierHex: string;
-  resolve: (txHash: string) => void;
+  resolve: (result: QueuedAttestationResult) => void;
   reject: (err: Error) => void;
 }
 
 /** Submits one batch on-chain and resolves to the transaction hash. */
-export type BatchSubmitter = (claims: AttestationRequest[]) => Promise<string>;
+export type BatchSubmitter = (
+  claims: Array<{ claimKey: Uint8Array; nullifier: Uint8Array; emailKey?: Uint8Array }>,
+) => Promise<string>;
 
 export interface QueueOptions {
   sizeCap?: number;
@@ -119,13 +135,13 @@ export class AttestationQueue {
    * entire batch — taking down every unrelated claim alongside it. Catching it
    * here keeps one bad request from destroying other recipients' attestations.
    */
-  enqueue(request: AttestationRequest): Promise<string> {
+  enqueue(request: AttestationRequest): Promise<QueuedAttestationResult> {
     const nullifierHex = Buffer.from(request.nullifier).toString("hex");
     if (this.queuedNullifiers.has(nullifierHex)) {
       return Promise.reject(new DuplicateNullifierError());
     }
 
-    return new Promise<string>((resolve, reject) => {
+    return new Promise<QueuedAttestationResult>((resolve, reject) => {
       this.queuedNullifiers.add(nullifierHex);
       this.queue.push({
         ...request,
@@ -190,14 +206,11 @@ export class AttestationQueue {
 
     try {
       const txHash = await this.submit(
-        batch.map(({ linkHash, recipient, nullifier, emailHash }) => ({
-          linkHash,
-          recipient,
-          nullifier,
-          emailHash,
-        })),
+        batch.map(({ claimKey, nullifier, emailKey }) => ({ claimKey, nullifier, emailKey })),
       );
-      for (const entry of batch) entry.resolve(txHash);
+      // Each caller gets its own salt back, not just the shared tx hash — the
+      // salt is what lets that recipient reopen their blinded claim key.
+      for (const entry of batch) entry.resolve({ txHash, claimSalt: entry.claimSalt });
       logger.info({ reason, size: batch.length, txHash }, "attestation batch submitted");
     } catch (err) {
       const error = err instanceof Error ? err : new Error(String(err));

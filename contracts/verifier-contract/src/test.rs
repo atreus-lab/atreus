@@ -248,31 +248,34 @@ fn test_submit_proof_rejects_malformed_proofs() {
 // ---------------------------------------------------------------------------
 // attest_batch
 // ---------------------------------------------------------------------------
+//
+// Claims are supplied as blinded digests (issue #118), so these tests work in
+// terms of claim_key / email_key rather than link_hash + recipient. The keys are
+// opaque to the contract: it stores and looks them up verbatim, and claim_link
+// recomputes the same digest from its own arguments plus the claim salt.
 
-fn batch_claim(env: &Env, link: u8, nullifier: u8, email: Option<BytesN<32>>) -> BatchClaim {
+fn batch_claim(env: &Env, claim_key: u8, nullifier: u8, email_key: Option<BytesN<32>>) -> BatchClaim {
     BatchClaim {
-        link_hash: BytesN::from_array(env, &[link; 32]),
-        recipient: Address::generate(env),
+        claim_key: BytesN::from_array(env, &[claim_key; 32]),
         nullifier: BytesN::from_array(env, &[nullifier; 32]),
-        email_hash: email,
+        email_key,
     }
 }
 
 fn filler_claims(env: &Env, n: u32) -> Vec<BatchClaim> {
     let mut claims: Vec<BatchClaim> = Vec::new(env);
     for i in 0..n {
-        let mut link = [0u8; 32];
+        let mut ck = [0u8; 32];
         let mut null = [0u8; 32];
-        link[0] = (i % 256) as u8;
-        link[1] = (i / 256) as u8;
+        ck[0] = (i % 256) as u8;
+        ck[1] = (i / 256) as u8;
         null[0] = (i % 256) as u8;
         null[1] = (i / 256) as u8;
         null[2] = 1;
         claims.push_back(BatchClaim {
-            link_hash: BytesN::from_array(env, &link),
-            recipient: Address::generate(env),
+            claim_key: BytesN::from_array(env, &ck),
             nullifier: BytesN::from_array(env, &null),
-            email_hash: None,
+            email_key: None,
         });
     }
     claims
@@ -293,28 +296,32 @@ fn test_attest_batch_records_every_claim() {
 
     // Each claim attested and its nullifier burned - the same storage the
     // single-claim path writes, so claim_link sees no difference.
-    assert!(client.is_attested(&c1.link_hash, &c1.recipient));
-    assert!(client.is_attested(&c2.link_hash, &c2.recipient));
-    assert!(client.is_attested(&c3.link_hash, &c3.recipient));
+    assert!(client.is_attested(&c1.claim_key));
+    assert!(client.is_attested(&c2.claim_key));
+    assert!(client.is_attested(&c3.claim_key));
     assert!(client.is_nullifier_used(&c1.nullifier));
     assert!(client.is_nullifier_used(&c2.nullifier));
     assert!(client.is_nullifier_used(&c3.nullifier));
 }
 
 #[test]
-fn test_attest_batch_attestation_is_bound_to_recipient() {
+fn test_attest_batch_matches_single_attest_storage() {
     let env = Env::default();
     env.mock_all_auths();
 
     let (client, attester) = setup(&env);
-    let c = batch_claim(&env, 7, 77, None);
+    let batched = batch_claim(&env, 7, 77, None);
+    let single_key = BytesN::from_array(&env, &[8u8; 32]);
 
-    client.attest_batch(&attester, &Vec::from_array(&env, [c.clone()]));
+    client.attest_batch(&attester, &Vec::from_array(&env, [batched.clone()]));
+    client.attest(&attester, &single_key);
 
-    let other_recipient = Address::generate(&env);
-    assert!(client.is_attested(&c.link_hash, &c.recipient));
-    // Bound to the exact recipient, not the link alone - identical to attest().
-    assert!(!client.is_attested(&c.link_hash, &other_recipient));
+    // A batched attestation is indistinguishable from a single one to any reader.
+    assert!(client.is_attested(&batched.claim_key));
+    assert!(client.is_attested(&single_key));
+
+    let unattested = BytesN::from_array(&env, &[9u8; 32]);
+    assert!(!client.is_attested(&unattested));
 }
 
 #[test]
@@ -323,8 +330,8 @@ fn test_attest_batch_records_email_binding_only_when_supplied() {
     env.mock_all_auths();
 
     let (client, attester) = setup(&env);
-    let email = BytesN::from_array(&env, &[0xEEu8; 32]);
-    let with_email = batch_claim(&env, 4, 44, Some(email.clone()));
+    let email_key = BytesN::from_array(&env, &[0xEEu8; 32]);
+    let with_email = batch_claim(&env, 4, 44, Some(email_key.clone()));
     let without_email = batch_claim(&env, 5, 55, None);
 
     client.attest_batch(
@@ -332,14 +339,11 @@ fn test_attest_batch_records_email_binding_only_when_supplied() {
         &Vec::from_array(&env, [with_email.clone(), without_email.clone()]),
     );
 
-    assert!(client.is_email_attested(&with_email.link_hash, &with_email.recipient, &email));
-    // No email supplied means no binding recorded. Batching must not become a
-    // way to satisfy an email-restricted link without its binding.
-    assert!(!client.is_email_attested(
-        &without_email.link_hash,
-        &without_email.recipient,
-        &email
-    ));
+    assert!(client.is_email_attested(&email_key));
+    // No email key supplied means no binding recorded. Batching must not become
+    // a way to satisfy an email-restricted link without its binding.
+    let other = BytesN::from_array(&env, &[0xDDu8; 32]);
+    assert!(!client.is_email_attested(&other));
 }
 
 #[test]
@@ -348,8 +352,8 @@ fn test_attest_batch_rejects_duplicate_nullifier_within_batch() {
     env.mock_all_auths();
 
     let (client, attester) = setup(&env);
-    // Two different links/recipients sharing one nullifier - a double-spend
-    // attempt smuggled inside a single batch.
+    // Two different claims sharing one nullifier - a double-spend attempt
+    // smuggled inside a single batch.
     let c1 = batch_claim(&env, 1, 99, None);
     let c2 = batch_claim(&env, 2, 99, None);
 
@@ -359,7 +363,7 @@ fn test_attest_batch_rejects_duplicate_nullifier_within_batch() {
 
     // Atomic: the first claim must not survive either.
     assert!(!client.is_nullifier_used(&c1.nullifier));
-    assert!(!client.is_attested(&c1.link_hash, &c1.recipient));
+    assert!(!client.is_attested(&c1.claim_key));
 }
 
 #[test]
@@ -375,7 +379,7 @@ fn test_attest_batch_rejects_already_used_nullifier() {
     assert!(client
         .try_attest_batch(&attester, &Vec::from_array(&env, [c.clone()]))
         .is_err());
-    assert!(!client.is_attested(&c.link_hash, &c.recipient));
+    assert!(!client.is_attested(&c.claim_key));
 }
 
 #[test]
@@ -399,8 +403,8 @@ fn test_attest_batch_is_atomic_on_later_failure() {
         .is_err());
 
     // Nothing survives - not even claims processed before the failure.
-    assert!(!client.is_attested(&good1.link_hash, &good1.recipient));
-    assert!(!client.is_attested(&good2.link_hash, &good2.recipient));
+    assert!(!client.is_attested(&good1.claim_key));
+    assert!(!client.is_attested(&good2.claim_key));
     assert!(!client.is_nullifier_used(&good1.nullifier));
     assert!(!client.is_nullifier_used(&good2.nullifier));
 }
@@ -417,7 +421,7 @@ fn test_attest_batch_rejects_untrusted_attester() {
     assert!(client
         .try_attest_batch(&impostor, &Vec::from_array(&env, [c.clone()]))
         .is_err());
-    assert!(!client.is_attested(&c.link_hash, &c.recipient));
+    assert!(!client.is_attested(&c.claim_key));
     assert!(!client.is_nullifier_used(&c.nullifier));
 }
 

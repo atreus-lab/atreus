@@ -1,10 +1,12 @@
+import { randomBytes } from "crypto";
 import {
   AttestationQueue,
   latencyBudgetFromEnv,
   sizeCapFromEnv,
   type AttestationRequest,
 } from "./attestationQueue.js";
-import { submitBatchAttestation } from "./stellar.js";
+import { submitBatchAttestation, type AttestationResult } from "./stellar.js";
+import { computeClaimKey, computeEmailKey, SALT_BYTES } from "./claimKey.js";
 import {
   attestationBatchSize,
   attestationFeeStroops,
@@ -36,7 +38,9 @@ let queue: AttestationQueue | undefined;
  * against the batch size — this is what makes the per-link vs batched
  * comparison measurable from real runs instead of estimated.
  */
-async function submitInstrumented(claims: AttestationRequest[]): Promise<string> {
+async function submitInstrumented(
+  claims: Array<{ claimKey: Uint8Array; nullifier: Uint8Array; emailKey?: Uint8Array }>,
+): Promise<string> {
   attestationBatchSize.observe(claims.length);
   try {
     const txHash = await submitBatchAttestation(claims);
@@ -63,14 +67,39 @@ export function getAttestationQueue(): AttestationQueue {
 }
 
 /**
- * Queue an attestation and resolve with the batch transaction hash.
+ * Queue an attestation and resolve once its batch lands on-chain.
+ *
+ * Mirrors submitAttestation: it blinds the claim here (issue #118) rather than
+ * making callers do it, generates the salt, and returns that salt alongside the
+ * batch transaction hash. The recipient must pass the salt back to claim_link,
+ * which recomputes the same claim key from its own arguments.
+ *
+ * One salt per claim, never one per batch: a shared salt would let anyone who
+ * claimed one link recompute the claim keys of every other claim batched with
+ * it, which would defeat the blinding for the whole group.
  *
  * Note the caller must NOT also call markNullifierOnChain: attest_batch records
  * the nullifier as part of the same transaction. Issuing a separate
  * mark_nullifier call would add back one transaction per claim and undo the
  * batching win.
  */
-export async function enqueueAttestation(request: AttestationRequest): Promise<string> {
+export async function enqueueAttestation(
+  linkHash: Uint8Array,
+  recipient: string,
+  nullifier: Uint8Array,
+  emailHash?: Uint8Array,
+): Promise<AttestationResult> {
+  const salt = randomBytes(SALT_BYTES);
+  const request: AttestationRequest = {
+    claimKey: computeClaimKey(linkHash, recipient, salt),
+    nullifier,
+    emailKey:
+      emailHash && emailHash.length === 32
+        ? computeEmailKey(linkHash, recipient, emailHash, salt)
+        : undefined,
+    claimSalt: Buffer.from(salt).toString("hex"),
+  };
+
   const q = getAttestationQueue();
   const promise = q.enqueue(request);
   attestationQueueDepth.set(q.depth);

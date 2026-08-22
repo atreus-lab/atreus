@@ -5,7 +5,7 @@ import { resetNullifierStore } from "../lib/nullifierStore.js";
 const checkNullifierOnChain = vi.fn(async () => false);
 const markNullifierOnChain = vi.fn(async () => "tx-nullifier");
 const submitAttestation = vi.fn(async () => "tx-attest");
-type BatchClaimArg = { linkHash: Uint8Array; recipient: string; nullifier: Uint8Array; emailHash?: Uint8Array };
+type BatchClaimArg = { claimKey: Uint8Array; nullifier: Uint8Array; emailKey?: Uint8Array };
 const submitBatchAttestation = vi.fn(async (_claims: BatchClaimArg[]) => "tx-batch");
 const verifyClaimProof = vi.fn(async () => true);
 
@@ -162,5 +162,62 @@ describe("batched attestation", () => {
 
     // Atomic on-chain: no caller may be told their claim landed.
     for (const res of responses) expect(res.status).toBe(500);
+  });
+});
+
+describe("batched attestation preserves unlinkability (issue #118)", () => {
+  it("sends only blinded digests on-chain, never link hash or recipient", async () => {
+    const responses = await Promise.all([
+      attest(hex(0x71), "0x" + hex(0x81)),
+      attest(hex(0x72), "0x" + hex(0x82)),
+      attest(hex(0x73), "0x" + hex(0x83)),
+    ]);
+    for (const res of responses) expect(res.status).toBe(200);
+
+    const sent = submitBatchAttestation.mock.calls[0][0];
+    expect(sent).toHaveLength(3);
+    for (const claim of sent) {
+      // Batching must not reintroduce what #118 blinds. Passing link hash or
+      // recipient here would deanonymise each claim and, worse, group them:
+      // an observer would learn these recipients were paid together.
+      expect(Object.keys(claim).sort()).toEqual(["claimKey", "emailKey", "nullifier"]);
+      expect(claim).not.toHaveProperty("linkHash");
+      expect(claim).not.toHaveProperty("recipient");
+      expect(claim.claimKey).toHaveLength(32);
+    }
+  });
+
+  it("returns a distinct claim salt to each caller", async () => {
+    const responses = await Promise.all([
+      attest(hex(0x91), "0x" + hex(0xa1)),
+      attest(hex(0x92), "0x" + hex(0xa2)),
+      attest(hex(0x93), "0x" + hex(0xa3)),
+    ]);
+
+    const salts = await Promise.all(
+      responses.map(async (r) => ((await r.json()) as { claimSalt?: string }).claimSalt),
+    );
+
+    // claim_link needs the salt to reopen the blinded key, and it must be
+    // per-claim: one shared salt would let any claimant recompute the claim
+    // keys of everything batched with them.
+    for (const salt of salts) {
+      expect(salt).toMatch(/^[0-9a-f]{64}$/);
+    }
+    expect(new Set(salts).size).toBe(3);
+  });
+
+  it("derives a different claim key for the same link claimed by different recipients", async () => {
+    await Promise.all([
+      attest(hex(0xb1), "0x" + hex(0xc1)),
+      attest(hex(0xb1), "0x" + hex(0xc2)),
+      attest(hex(0xb1), "0x" + hex(0xc3)),
+    ]);
+
+    const sent = submitBatchAttestation.mock.calls[0][0];
+    const keys = sent.map((c: any) => Buffer.from(c.claimKey).toString("hex"));
+    // Same link hash, but the salt differs per claim, so nothing on-chain
+    // reveals that these three attestations concern one link.
+    expect(new Set(keys).size).toBe(3);
   });
 });

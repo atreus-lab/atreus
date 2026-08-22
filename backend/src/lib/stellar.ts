@@ -308,41 +308,48 @@ export const markNullifierOnChain = async (nullifier: Uint8Array): Promise<strin
 };
 
 /**
+ * One claim in an attest_batch call, already blinded (issue #118).
+ *
+ * The backend computes claim_key / email_key from data it holds and keeps the
+ * salt, which the recipient must pass back to claim_link to reopen the key.
+ */
+export interface BlindedBatchClaim {
+  claimKey: Uint8Array;
+  nullifier: Uint8Array;
+  emailKey?: Uint8Array;
+}
+
+/**
  * Encode one BatchClaim for VerifierContract::attest_batch.
  *
  * A Soroban #[contracttype] struct is an ScMap keyed by symbol field names in
  * lexicographic order, so the entries below must stay sorted:
- * email_hash, link_hash, nullifier, recipient.
+ * claim_key, email_key, nullifier.
  *
  * `Option<BytesN<32>>` encodes as the bare value for Some and Void for None —
  * there is no wrapper. A link with no email restriction therefore sends Void,
  * and the contract records no email binding for it.
+ *
+ * Only blinded digests cross this boundary. Passing link_hash or recipient here
+ * would deanonymise every claim in the batch and, worse, group them: an observer
+ * would learn that these recipients were paid together by one sender.
  */
-const batchClaimToScVal = (claim: {
-  linkHash: Uint8Array;
-  recipient: string;
-  nullifier: Uint8Array;
-  emailHash?: Uint8Array;
-}): xdr.ScVal =>
+const batchClaimToScVal = (claim: BlindedBatchClaim): xdr.ScVal =>
   xdr.ScVal.scvMap([
     new xdr.ScMapEntry({
-      key: xdr.ScVal.scvSymbol("email_hash"),
-      val:
-        claim.emailHash && claim.emailHash.length === 32
-          ? xdr.ScVal.scvBytes(Buffer.from(claim.emailHash))
-          : xdr.ScVal.scvVoid(),
+      key: xdr.ScVal.scvSymbol("claim_key"),
+      val: xdr.ScVal.scvBytes(Buffer.from(claim.claimKey)),
     }),
     new xdr.ScMapEntry({
-      key: xdr.ScVal.scvSymbol("link_hash"),
-      val: xdr.ScVal.scvBytes(Buffer.from(claim.linkHash)),
+      key: xdr.ScVal.scvSymbol("email_key"),
+      val:
+        claim.emailKey && claim.emailKey.length === 32
+          ? xdr.ScVal.scvBytes(Buffer.from(claim.emailKey))
+          : xdr.ScVal.scvVoid(),
     }),
     new xdr.ScMapEntry({
       key: xdr.ScVal.scvSymbol("nullifier"),
       val: xdr.ScVal.scvBytes(Buffer.from(claim.nullifier)),
-    }),
-    new xdr.ScMapEntry({
-      key: xdr.ScVal.scvSymbol("recipient"),
-      val: new Address(claim.recipient).toScVal(),
     }),
   ]);
 
@@ -360,12 +367,7 @@ const batchClaimToScVal = (claim: {
  * recorded. Callers must treat a rejection as "no claim in this batch landed".
  */
 export const submitBatchAttestation = async (
-  claims: Array<{
-    linkHash: Uint8Array;
-    recipient: string;
-    nullifier: Uint8Array;
-    emailHash?: Uint8Array;
-  }>,
+  claims: BlindedBatchClaim[],
 ): Promise<string> => {
   if (claims.length === 0) throw new Error("Cannot submit an empty attestation batch");
 

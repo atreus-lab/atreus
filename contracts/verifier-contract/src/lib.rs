@@ -37,21 +37,25 @@ pub enum DataKey {
 
 /// One claim inside an `attest_batch` call.
 ///
-/// Carries exactly the same facts the single-claim path attests to, so a
-/// batched claim is settled by `claim_link` through identical checks:
-/// `link_hash` + `recipient` (the ZK attestation), `nullifier` (replay
-/// protection), and `email_hash` when the link is email-restricted
-/// (policy_type == 1). Batching changes how many transactions carry these
-/// facts on-chain, never which facts are required.
+/// Every field is a blinded digest, never the underlying link or recipient.
+/// `claim_key` and `email_key` are the same values `attest` and `attest_email`
+/// take, computed off-chain by the attester (issue #118), so a batch reveals no
+/// more to an on-chain observer than the same claims attested one at a time.
+///
+/// This matters more for a batch than for a single claim: passing `link_hash`
+/// and `recipient` in the clear here would not only deanonymise each claim, it
+/// would also group them, showing an observer that these particular recipients
+/// were paid together by one sender.
+///
+/// `nullifier` stays in the clear because it is already a public output of the
+/// ZK circuit and `mark_nullifier` publishes it the same way.
 #[contracttype]
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct BatchClaim {
-    pub link_hash: BytesN<32>,
-    pub recipient: Address,
+    pub claim_key: BytesN<32>,
     pub nullifier: BytesN<32>,
-    pub email_hash: Option<BytesN<32>>,
+    pub email_key: Option<BytesN<32>>,
 }
-
 #[contract]
 pub struct VerifierContract;
 
@@ -244,6 +248,10 @@ impl VerifierContract {
     ///
     /// Security properties deliberately preserved:
     ///
+    /// - **Unlinkability (issue #118).** Claims are supplied as blinded `claim_key` /
+    ///   `email_key` digests, exactly as `attest` and `attest_email` take them. A batch
+    ///   therefore leaks no link or recipient, and emits no per-claim topic that would
+    ///   let an observer group recipients paid by one sender.
     /// - **Replay protection.** Each nullifier is checked against storage and then
     ///   marked before the next claim is processed. Because a claim's nullifier is
     ///   marked as it is handled, a batch containing the same nullifier twice fails
@@ -255,8 +263,7 @@ impl VerifierContract {
     /// - **Email restriction.** An email binding is recorded only when the caller
     ///   supplies one, exactly as `attest_email` does. Batching does not create a
     ///   path that settles an email-restricted link without its binding, because
-    ///   `claim_link` still independently requires `is_email_attested` for
-    ///   policy_type == 1.
+    ///   `claim_link` still independently requires `is_email_attested`.
     /// - **Attester trust.** Checked once for the batch, identically to the
     ///   single-claim functions.
     ///
@@ -298,8 +305,7 @@ impl VerifierContract {
                 STORAGE_TTL_EXTEND_TO,
             );
 
-            let attestation_key =
-                DataKey::Attestation(claim.link_hash.clone(), claim.recipient.clone());
+            let attestation_key = DataKey::Attestation(claim.claim_key.clone());
             env.storage().persistent().set(&attestation_key, &true);
             env.storage().persistent().extend_ttl(
                 &attestation_key,
@@ -307,35 +313,23 @@ impl VerifierContract {
                 STORAGE_TTL_EXTEND_TO,
             );
 
-            // Per-claim event, matching the single-claim topic exactly: the
-            // off-chain indexer keys on "attested"/"eml_att", so batched claims
-            // must not disappear from analytics.
-            env.events().publish(
-                (symbol_short!("attested"), claim.recipient.clone()),
-                claim.link_hash.clone(),
-            );
-
-            if let Some(email_hash) = claim.email_hash.clone() {
-                let email_key = DataKey::EmailAttestation(
-                    claim.link_hash.clone(),
-                    claim.recipient.clone(),
-                    email_hash.clone(),
-                );
-                env.storage().persistent().set(&email_key, &true);
+            if let Some(email_key) = claim.email_key.clone() {
+                let email_attestation_key = DataKey::EmailAttestation(email_key);
+                env.storage().persistent().set(&email_attestation_key, &true);
                 env.storage().persistent().extend_ttl(
-                    &email_key,
+                    &email_attestation_key,
                     STORAGE_TTL_THRESHOLD,
                     STORAGE_TTL_EXTEND_TO,
-                );
-                env.events().publish(
-                    (symbol_short!("eml_att"), claim.recipient.clone()),
-                    (claim.link_hash.clone(), email_hash),
                 );
             }
         }
 
+        // Topics carry no per-claim data, matching `attest`. Publishing the count
+        // alone still tells an observer a batch happened and how large it was;
+        // that is unavoidable from the transaction itself and reveals nothing
+        // about which links or recipients it covered.
         env.events()
-            .publish((symbol_short!("att_batch"), attester), count);
+            .publish((symbol_short!("att_batch"),), count);
 
         count
     }
