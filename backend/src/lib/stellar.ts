@@ -1,6 +1,8 @@
 import { Horizon, Networks, Asset, rpc, Contract, TransactionBuilder, Address, Keypair, xdr, nativeToScVal, Account, scValToNative } from "@stellar/stellar-sdk";
 import { Durability } from "@stellar/stellar-sdk/rpc";
+import { randomBytes } from "crypto";
 import { emailHash, type BatchInputRow } from "./batch.js";
+import { computeClaimKey, computeEmailKey, SALT_BYTES } from "./claimKey.js";
 
 export const HORIZON_URL = process.env.HORIZON_URL || "https://horizon-testnet.stellar.org";
 export const SOROBAN_RPC_URL = process.env.SOROBAN_RPC_URL || "https://soroban-testnet.stellar.org";
@@ -133,19 +135,30 @@ export const createBatchEscrowTransaction = async (
   throw new Error(`RPC timeout waiting for ${submitted.hash}`);
 };
 
+export interface AttestationResult {
+  txHash: string;
+  /** 64-char hex; the client must pass it back to claim_link to reopen the key. */
+  claimSalt: string;
+}
+
 /**
- * Submits VerifierContract.attest(attester, link_hash, recipient) signed by the
- * backend's dedicated attester keypair. Called only after verifyClaimProof() confirms
- * the real UltraHonk proof is valid for this exact (secret, recipient) pair.
+ * Submits VerifierContract.attest(attester, claim_key) signed by the backend's
+ * dedicated attester keypair. Called only after verifyClaimProof() confirms the real
+ * UltraHonk proof is valid for this exact (secret, recipient) pair.
+ *
+ * The attester submits only blinded keys — a fresh random salt hides the link hash and
+ * the recipient inside a sha256 digest — so the attest transaction cannot be linked to
+ * a link or a recipient on-chain (issue #118). The salt is returned to the caller and
+ * is the only way to reopen the commitment at claim time.
  *
  * If emailHash is provided (when policy_type == 1), also submits
- * VerifierContract.attest_email(attester, link_hash, recipient, email_hash).
+ * VerifierContract.attest_email(attester, email_key) under the SAME salt.
  */
 export const submitAttestation = async (
   linkHash: Uint8Array,
   recipient: string,
   emailHash?: Uint8Array
-): Promise<string> => {
+): Promise<AttestationResult> => {
   const verifierContractId = process.env.NEXT_PUBLIC_VERIFIER_CONTRACT_ID;
   if (!verifierContractId) throw new Error("NEXT_PUBLIC_VERIFIER_CONTRACT_ID is not configured");
 
@@ -155,13 +168,16 @@ export const submitAttestation = async (
   const attesterKp = Keypair.fromSecret(attesterSecret);
   const contract = new Contract(verifierContractId);
 
+  // One salt per attestation, shared by both keys so a single claimSalt reopens them.
+  const salt = randomBytes(SALT_BYTES);
+  const attesterAddr = new Address(attesterKp.publicKey()).toScVal();
+
   // Build operations: always attest the ZK proof binding
   const ops = [
     contract.call(
       "attest",
-      new Address(attesterKp.publicKey()).toScVal(),
-      xdr.ScVal.scvBytes(Buffer.from(linkHash)),
-      new Address(recipient).toScVal(),
+      attesterAddr,
+      xdr.ScVal.scvBytes(computeClaimKey(linkHash, recipient, salt)),
     ),
   ];
 
@@ -170,10 +186,8 @@ export const submitAttestation = async (
     ops.push(
       contract.call(
         "attest_email",
-        new Address(attesterKp.publicKey()).toScVal(),
-        xdr.ScVal.scvBytes(Buffer.from(linkHash)),
-        new Address(recipient).toScVal(),
-        xdr.ScVal.scvBytes(Buffer.from(emailHash)),
+        attesterAddr,
+        xdr.ScVal.scvBytes(computeEmailKey(linkHash, recipient, emailHash, salt)),
       )
     );
   }
@@ -196,7 +210,9 @@ export const submitAttestation = async (
   const start = Date.now();
   while (Date.now() - start < 30_000) {
     const result = await rpcServer.getTransaction(sendResult.hash);
-    if (result.status === rpc.Api.GetTransactionStatus.SUCCESS) return sendResult.hash;
+    if (result.status === rpc.Api.GetTransactionStatus.SUCCESS) {
+      return { txHash: sendResult.hash, claimSalt: salt.toString("hex") };
+    }
     if (result.status === rpc.Api.GetTransactionStatus.FAILED) {
       throw new Error(`Attestation tx failed on-chain (hash: ${sendResult.hash})`);
     }
@@ -230,6 +246,12 @@ export const checkNullifierOnChain = async (nullifier: Uint8Array): Promise<bool
 
   const sim = await rpcServer.simulateTransaction(tx);
   if (rpc.Api.isSimulationError(sim)) {
+    if (
+      sim.error?.includes("trying to invoke non-existent contract function") ||
+      sim.error?.includes("MissingValue")
+    ) {
+      return false;
+    }
     throw new Error(`is_nullifier_used simulation failed: ${sim.error}`);
   }
   if (!rpc.Api.isSimulationSuccess(sim) || !sim.result) {
