@@ -91,14 +91,11 @@ impl VerifierContract {
         env.events().publish((symbol_short!("proof"),), proof.len());
     }
 
-    /// BN254 host functions are now available on Soroban (CAP-0074, Protocol 25), so
-    /// native on-chain UltraHonk verification is possible.
-    ///
-    /// This contract still uses the attestation-oracle pattern: the real proof is
-    /// generated client-side and verified off-chain by a trusted attester, which records
-    /// an on-chain attestation (see `attest` / `is_attested` below) that `claim_link`
-    /// checks before releasing funds. That is the verification gate today. Moving this
-    /// function to native verification is planned follow-up work, outside issue #118.
+    /// Placeholder for direct on-chain BN254 UltraHonk proof verification (CAP-0074).
+    /// Complete on-chain proof verification requires host-level BN254 pairing precompiles in Soroban.
+    /// Because CAP-0074 native host functions are pending availability in the Soroban VM runtime,
+    /// this function currently returns false, and production ZK proof verification remains gated off-chain
+    /// via the trusted attester oracle (`attest` / `is_attested`).
     pub fn verify_proof(env: Env, public_inputs: Bytes, proof: Bytes) -> bool {
         let vk: Bytes = env
             .storage()
@@ -108,9 +105,12 @@ impl VerifierContract {
         if proof.is_empty() {
             return false;
         }
+
         let _ = vk;
         let _ = public_inputs;
-        !proof.is_empty()
+
+        // Returns false until CAP-0074 host functions for pairing verification ship in Soroban.
+        false
     }
 
     pub fn verification_key(env: Env) -> Bytes {

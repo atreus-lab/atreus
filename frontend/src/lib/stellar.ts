@@ -175,6 +175,7 @@ export const claimLinkTx = async (
 
 export const getAccountBalances = async (address: string): Promise<Balance[]> => {
   try {
+<<<<<<< HEAD
     const entry = await rpcServer.getAccountEntry(address);
     const stroops = entry.balance().toString();
     const whole = (BigInt(stroops) / BigInt(10000000)).toString();
@@ -187,6 +188,20 @@ export const getAccountBalances = async (address: string): Promise<Balance[]> =>
     ];
   } catch {
     return [];
+=======
+    const account = await server.loadAccount(address);
+    return account.balances as Balance[];
+  } catch (err: any) {
+    if (
+      err?.response?.status === 404 ||
+      err?.status === 404 ||
+      err?.name === "NotFoundError" ||
+      err?.message === "Not Found"
+    ) {
+      return [];
+    }
+    throw err;
+>>>>>>> 8e73cf3 (fix(contracts): revert insecure mock BN254 verification & document CAP-0074 migration plan (#115))
   }
 };
 
