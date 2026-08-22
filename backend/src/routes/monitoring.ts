@@ -33,11 +33,55 @@ const queueDepthGauge = new client.Gauge({
   registers: [register],
 });
 
+// --- Attestation batching (see lib/attestationQueue.ts) ---------------------
+// These exist to make the per-link vs batched comparison measurable from real
+// runs rather than estimated: attestation_requests counts inbound claims,
+// attestation_txs counts transactions actually submitted, and the ratio between
+// them is the batching win.
+
+const attestationRequestCounter = new client.Counter({
+  name: 'atreus_attestation_requests_total',
+  help: 'Attestation requests accepted for on-chain recording (batched or not)',
+  registers: [register],
+});
+
+const attestationTxCounter = new client.Counter({
+  name: 'atreus_attestation_txs_total',
+  help: 'Attester transactions submitted on-chain',
+  labelNames: ['mode', 'status'],
+  registers: [register],
+});
+
+const attestationBatchSize = new client.Histogram({
+  name: 'atreus_attestation_batch_size',
+  help: 'Claims per attestation batch transaction',
+  buckets: [1, 2, 5, 10, 25, 50, 100],
+  registers: [register],
+});
+
+const attestationFeeStroops = new client.Counter({
+  name: 'atreus_attestation_fee_stroops_total',
+  help: 'Total stroops of transaction fee spent on attestation transactions',
+  labelNames: ['mode'],
+  registers: [register],
+});
+
+const attestationQueueDepth = new client.Gauge({
+  name: 'atreus_attestation_queue_depth',
+  help: 'Attestations currently queued awaiting a batch flush',
+  registers: [register],
+});
+
 export {
   router as monitoringRouter,
   proofLatency,
   attestationCounter,
   queueDepthGauge,
+  attestationRequestCounter,
+  attestationTxCounter,
+  attestationBatchSize,
+  attestationFeeStroops,
+  attestationQueueDepth,
 };
 
 // /healthz endpoint

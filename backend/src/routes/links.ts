@@ -10,7 +10,8 @@ import { isEmailHashHex } from "../lib/emailHash.js";
 import { isEmailHashVerified } from "../lib/emailVerificationStore.js";
 import { isNullifierUsedLocally, markNullifierUsedLocally, normalizeNullifierHex } from "../lib/nullifierStore.js";
 import { validateWebhookUrl } from "../lib/ssrf.js";
-import { proofLatency, attestationCounter } from "./monitoring.js";
+import { proofLatency, attestationCounter, attestationRequestCounter, attestationTxCounter, attestationFeeStroops } from "./monitoring.js";
+import { enqueueAttestation, isBatchingEnabled, ATTESTER_TX_FEE_STROOPS } from "../lib/attestationBatching.js";
 import pino from "pino";
 
 let circuit: any = undefined;
@@ -376,13 +377,39 @@ linkRoutes.post("/:hash/attest", async (req: Request, res: Response) => {
     }
 
     const linkHashBytes = Uint8Array.from(Buffer.from(hash, "hex"));
-    const { txHash, claimSalt } = await submitAttestation(linkHashBytes, recipient, emailHashBytes);
-    attestationCounter.inc({ status: "success" });
+    attestationRequestCounter.inc();
 
-    markNullifierUsedLocally(nullifierHex);
-    markNullifierOnChain(nullifierBytes).catch((err: any) => {
-      logger.error({ correlationId, error: err?.message }, "markNullifierOnChain failed");
-    });
+    let txHash: string;
+    let claimSalt: string;
+    if (isBatchingEnabled()) {
+      // attest_batch records the attestation, the nullifier, and any email
+      // binding in ONE transaction, so markNullifierOnChain must not be called
+      // separately here — doing so would add a transaction per claim and undo
+      // the batching win. The await resolves when the batch lands on-chain.
+      ({ txHash, claimSalt } = await enqueueAttestation(
+        linkHashBytes,
+        recipient,
+        nullifierBytes,
+        emailHashBytes,
+      ));
+      markNullifierUsedLocally(nullifierHex);
+    } else {
+      ({ txHash, claimSalt } = await submitAttestation(linkHashBytes, recipient, emailHashBytes));
+      attestationTxCounter.inc({ mode: "per_link", status: "success" });
+      attestationFeeStroops.inc({ mode: "per_link" }, ATTESTER_TX_FEE_STROOPS);
+
+      markNullifierUsedLocally(nullifierHex);
+      markNullifierOnChain(nullifierBytes)
+        .then(() => {
+          attestationTxCounter.inc({ mode: "per_link", status: "success" });
+          attestationFeeStroops.inc({ mode: "per_link" }, ATTESTER_TX_FEE_STROOPS);
+        })
+        .catch((err: any) => {
+          attestationTxCounter.inc({ mode: "per_link", status: "failed" });
+          logger.error({ correlationId, error: err?.message }, "markNullifierOnChain failed");
+        });
+    }
+    attestationCounter.inc({ status: "success" });
 
     // claimSalt reopens the blinded attestation key; claim_link needs it.
     res.json({ success: true, hash, recipient, attestationTx: txHash, claimSalt, correlationId });
