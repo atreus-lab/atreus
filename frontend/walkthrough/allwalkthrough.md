@@ -125,7 +125,7 @@ NEXT_PUBLIC_GOOGLE_CLIENT_ID=your-client-id.apps.googleusercontent.com
 3. Parses hex → `Uint8Array` (32 bytes)
 4. Computes `linkHash = SHA-256(secretBytes)`
 5. **Step 1:** `submitProofTx(recipient, mockProof)` → VerifierContract (2144-byte proof receipt)
-6. **Step 2:** `claimLinkTx(recipient, linkHash, secret)` → AtreusContract (SHA-256 fallback)
+6. **Step 2:** `claim_link(link_hash, recipient, …)` → AtreusContract, gated on attestation (secret is never a tx argument)
 7. Shows success message
 
 **States:** `idle` → `connecting` → `submitting_proof` → `claiming` → `success` / `error`
@@ -204,7 +204,7 @@ Shows wallet address + "Copy Address" button + Stellar Expert explorer link.
 | `xlmToStroops(amount)` | string → bigint | Decimal string → stroops (no float errors) |
 | `waitForTransaction(hash)` | string → result | Polls Soroban RPC until SUCCESS/FAILED |
 | `createEscrowTx(creator, amount, hash)` | string, string, Uint8Array → hash | Builds + signs + submits `create_link` via Soroban |
-| `claimLinkTx(recipient, linkHash, secret)` | string, Uint8Array, Uint8Array → hash | Submits `claim_link` via Soroban |
+| `claimLinkTx(recipient, linkHash)` | string, Uint8Array → hash | Submits `claim_link` via Soroban (no secret arg) |
 | `submitProofTx(recipient, proof)` | string, Uint8Array → hash | Submits mock proof to VerifierContract |
 | `sendXLM(sender, destination, amount)` | string, string, string → hash | Native XLM transfer via Horizon |
 | `swapXLM(sender, destAsset, destAmount)` | string, Asset, string → hash | DEX path payment with simulation |

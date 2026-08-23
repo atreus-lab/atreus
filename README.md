@@ -50,7 +50,7 @@ flowchart LR
 
 ### Payment Links
 1. **Sender** generates a 32-byte secret → SHA-256 hash → `create_link()` on the escrow contract
-2. **Recipient** opens the URL containing the secret → generates a ZK proof client-side → backend attester verifies the proof and submits an on-chain attestation → `claim_link()` checks both the secret hash and attestation → funds released
+2. **Recipient** opens the URL containing the secret → generates a ZK proof client-side → backend attester verifies the proof and submits an on-chain attestation → `claim_link()` checks the attestation only (the secret never appears as a transaction argument) → funds released
 
 ## Quick Start
 
@@ -93,8 +93,8 @@ atreus/
 
 **Frontend (`.env.local`):**
 ```
-NEXT_PUBLIC_CONTRACT_ID=CCZSFPZ6XPZBUPBGQ5FRP5BMW5HKZIZNCWPLJAHNOWP4ZI7BZSMJDTCD
-NEXT_PUBLIC_VERIFIER_CONTRACT_ID=CB3GJLFAGH2WQTQHSMAB7GABK4NC5Q74XDV2U7MWAYEKQV7YMBV2O7KD
+NEXT_PUBLIC_CONTRACT_ID=CCTDH7A7F5SCJ2WA6I5ZC6MDJDR6D7R52PDYRRTHBMNWOSZREVV2HY2N
+NEXT_PUBLIC_VERIFIER_CONTRACT_ID=CD5UQT5ESDK5C3VNWDW7LZJAJJQIF2HGOVZJMHGFX4O32PATGSVZCRAL
 NEXT_PUBLIC_TOKEN_ID=CDLZFC3SYJYDZT7K67VZ75HPJVIEUVNIXF47ZG2FB2RMQQVU2HHGCYSC
 NEXT_PUBLIC_GOOGLE_CLIENT_ID=your-client-id.apps.googleusercontent.com
 NEXT_PUBLIC_BACKEND_URL=http://localhost:3001
@@ -105,10 +105,9 @@ NEXT_PUBLIC_BACKEND_URL=http://localhost:3001
 PORT=3001
 ATTESTER_PUBLIC_KEY=<your attester public key>
 ATTESTER_SECRET_KEY=<your attester secret key>
-NEXT_PUBLIC_CONTRACT_ID=CCZSFPZ6XPZBUPBGQ5FRP5BMW5HKZIZNCWPLJAHNOWP4ZI7BZSMJDTCD
-NEXT_PUBLIC_VERIFIER_CONTRACT_ID=CB3GJLFAGH2WQTQHSMAB7GABK4NC5Q74XDV2U7MWAYEKQV7YMBV2O7KD
+NEXT_PUBLIC_CONTRACT_ID=CCTDH7A7F5SCJ2WA6I5ZC6MDJDR6D7R52PDYRRTHBMNWOSZREVV2HY2N
+NEXT_PUBLIC_VERIFIER_CONTRACT_ID=CD5UQT5ESDK5C3VNWDW7LZJAJJQIF2HGOVZJMHGFX4O32PATGSVZCRAL
 SOROBAN_RPC_URL=https://soroban-testnet.stellar.org
-HORIZON_URL=https://horizon-testnet.stellar.org
 FRONTEND_URL=http://localhost:3000
 ```
 
@@ -116,8 +115,8 @@ FRONTEND_URL=http://localhost:3000
 
 | Contract | ID |
 |----------|-----|
-| VerifierContract | `CB3GJLFAGH2WQTQHSMAB7GABK4NC5Q74XDV2U7MWAYEKQV7YMBV2O7KD` |
-| AtreusContract | `CCZSFPZ6XPZBUPBGQ5FRP5BMW5HKZIZNCWPLJAHNOWP4ZI7BZSMJDTCD` |
+| VerifierContract | `CD5UQT5ESDK5C3VNWDW7LZJAJJQIF2HGOVZJMHGFX4O32PATGSVZCRAL` |
+| AtreusContract | `CCTDH7A7F5SCJ2WA6I5ZC6MDJDR6D7R52PDYRRTHBMNWOSZREVV2HY2N` |
 
 ## Pages
 

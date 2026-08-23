@@ -110,6 +110,8 @@ function getFriendlyErrorMessage(err: any): { title: string; description: string
     return { title: 'Link expired', description: 'This payment link has expired and can no longer be claimed.' };
   if (msg.includes('no valid zk attestation'))
     return { title: 'Proof verification pending', description: 'The ZK proof attestation has not been recorded yet. Please complete the full claim flow.' };
+  if (msg.includes('invalid claim salt'))
+    return { title: 'Attestation service error', description: 'The attester returned an invalid claim salt. Please try again.' };
   if (msg.includes('link not found'))
     return { title: 'Link not found', description: 'This payment link does not exist in the contract. It may have been refunded or never created.' };
   if (msg.includes('nullifier already used'))
@@ -155,15 +157,34 @@ function getFriendlyErrorMessage(err: any): { title: string; description: string
   return { title: 'Claim failed', description: err?.message || 'An unexpected error occurred. Please try again.' };
 }
 
-const parseLinkInput = () => {
-    const hash = linkInput.split('#')[1]?.split(/[,;\s]/)[0];
+  const parseLinkInput = () => {
+    let hash = '';
+    const trimmed = linkInput.trim();
+    if (trimmed.includes('#')) {
+      hash = trimmed.split('#')[1]?.split(/[,;\s]/)[0] || '';
+    } else if (trimmed.includes('secret=')) {
+      try {
+        const u = new URL(trimmed, window.location.origin);
+        hash = u.searchParams.get('secret') || '';
+      } catch {
+        hash = trimmed.split('secret=')[1]?.split(/[,;&\s]/)[0] || '';
+      }
+    } else if (/^[0-9a-fA-F]{64}$/.test(trimmed)) {
+      hash = trimmed;
+    }
     if (hash) {
       setSecretHex(hash);
       setLinkInput('');
     }
   };
 
-  const getHashFromUrl = () => window.location.hash.substring(1).split(/[,;\s]/)[0];
+  const getHashFromUrl = () => {
+    if (typeof window === 'undefined') return '';
+    const hash = window.location.hash.substring(1).split(/[,;\s]/)[0];
+    if (hash) return hash;
+    const sp = new URLSearchParams(window.location.search);
+    return sp.get('secret') || '';
+  };
 
   useEffect(() => {
     const hash = getHashFromUrl();
@@ -216,25 +237,25 @@ const parseLinkInput = () => {
 
       setStatus('attesting');
       const proofHex = bytesToHex(proof);
-      // Compute email hash if this is an email-restricted link
-      let recipientEmailHash: string | undefined;
-      const emailHashBytes = intendedEmail
-        ? new Uint8Array(await sha256Hash(intendedEmail))
-        : new Uint8Array(32);
-      if (intendedEmail) {
-        recipientEmailHash = Array.from(emailHashBytes)
-          .map((b) => b.toString(16).padStart(2, '0'))
-          .join('');
-      }
+      // Email hash goes to the attester only — email-restricted links
+      const recipientEmailHash = intendedEmail
+        ? bytesToHex(await sha256Hash(intendedEmail))
+        : undefined;
 
-      await requestAttestation(linkHashHex, proofHex, recipient, linkHashFieldHex, nullifierFieldHex, recipientEmailHash);
+      const { claimSalt } = await requestAttestation(linkHashHex, proofHex, recipient, linkHashFieldHex, nullifierFieldHex, recipientEmailHash);
+
+      // The attester binds the claim to this salt — the contract rejects any other value
+      const claimSaltBytes = Buffer.from(claimSalt ?? '', 'hex');
+      if (claimSaltBytes.length !== 32) {
+        throw new Error('Invalid claim salt: the attester returned a value that is not 32 bytes.');
+      }
 
       setStatus('claiming');
       const linkHash = new Uint8Array(await crypto.subtle.digest('SHA-256', secretBytes));
 
-      const contractId = process.env.NEXT_PUBLIC_CONTRACT_ID;
-      const relayerAddress = process.env.NEXT_PUBLIC_RELAYER_ADDRESS;
-      const relayerFee = process.env.NEXT_PUBLIC_RELAYER_FEE_STROOPS;
+      const contractId = process.env.NEXT_PUBLIC_CONTRACT_ID || "CCTDH7A7F5SCJ2WA6I5ZC6MDJDR6D7R52PDYRRTHBMNWOSZREVV2HY2N";
+      const relayerAddress = process.env.NEXT_PUBLIC_RELAYER_ADDRESS || "GD3VH7TE4GEVL3KOYNISOAQ5K5IUHIYC422QLPPWVYKTWNKOWDLLPXPX";
+      const relayerFee = process.env.NEXT_PUBLIC_RELAYER_FEE_STROOPS || "0";
       if (!contractId || !relayerAddress || !relayerFee) {
         throw new Error('Gasless claim configuration is incomplete.');
       }
@@ -247,8 +268,7 @@ const parseLinkInput = () => {
         'claim_link',
         xdr.ScVal.scvBytes(Buffer.from(linkHash)),
         new Address(recipient).toScVal(),
-        xdr.ScVal.scvBytes(Buffer.from(secretBytes)),
-        xdr.ScVal.scvBytes(Buffer.from(emailHashBytes)),
+        xdr.ScVal.scvBytes(claimSaltBytes),
         new Address(relayerAddress).toScVal(),
         nativeToScVal(BigInt(relayerFee), { type: 'i128' }),
       );
@@ -265,8 +285,7 @@ const parseLinkInput = () => {
 
       const provider = getActiveWalletProvider();
       const signedXdr = await provider.signTransaction(transaction.toXDR());
-      const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:3001';
-      const relayResponse = await fetch(`${backendUrl}/api/relay`, {
+      const relayResponse = await fetch('/api/relay', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ transactionXdr: signedXdr }),
@@ -297,7 +316,6 @@ const parseLinkInput = () => {
         expiresAt: 0,
         claimed: true,
         txHash: hash,
-        counterpartyAddress: linkInfo.creator || undefined,
       });
     } catch (err: any) {
       console.error(err);
@@ -577,7 +595,7 @@ const parseLinkInput = () => {
             />
             <button
               onClick={parseLinkInput}
-              disabled={!linkInput.includes('#')}
+              disabled={!linkInput.trim()}
               className="w-full py-3.5 rounded-2xl text-sm font-bold text-white bg-indigo-600 hover:bg-indigo-700 disabled:opacity-40 disabled:cursor-not-allowed transition-all shadow-[0_4px_12px_rgba(79,70,229,0.3)]"
             >
               Start Claim

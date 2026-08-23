@@ -3,7 +3,8 @@
  *
  * Generates a real UltraHonk proof (Noir circuit + Barretenberg) binding a link secret
  * to a specific Stellar recipient. The proof is verified off-chain by the backend attester,
- * which then submits an on-chain attestation. See contracts/README.md for architecture.
+ * which then submits an on-chain attestation. The private secret is used only to build the
+ * proof here — it must never be passed to `claim_link` (Soroban args are public).
  *
  * Field encoding matches backend/src/lib/zk.ts — do not change one without the other.
  */
@@ -73,79 +74,109 @@ export async function generateClaimProof(
   secretBytes: Uint8Array,
   recipientAddress: string
 ): Promise<{ proof: Uint8Array; linkHashHex: string; linkHashFieldHex: string; nullifierFieldHex: string }> {
-  // Dynamic imports — these are large WASM modules, only load when needed
-  const bbModule = await import("@aztec/bb.js");
-  const noirModule = await import("@noir-lang/noir_js");
-  const { Barretenberg, BarretenbergSync, UltraHonkBackend } = bbModule;
-  const { Noir } = noirModule;
+  const secretHex = Array.from(secretBytes)
+    .map((b) => b.toString(16).padStart(2, "0"))
+    .join("");
 
-  // 1. Compute field-domain values
-  const secretField = secretToField(secretBytes);
-  const recipientField = addressToField(recipientAddress);
-
-  // 2. Compute Pedersen hashes — use cached sync instance (no destroy needed)
-  if (!bbSyncCache) {
-    bbSyncCache = await BarretenbergSync.new();
-  }
-  const bbSync = bbSyncCache;
-
-  const linkHashResult = (bbSync as any).pedersenHash({
-    inputs: [frBuffer(secretField)],
-    hashIndex: PEDERSEN_HASH_INDEX,
-  });
-  const linkHashField = BigInt(
-    "0x" +
-      Array.from(new Uint8Array(linkHashResult.hash))
-        .map((b: number) => b.toString(16).padStart(2, "0"))
-        .join("")
-  );
-
-  const nullifierResult = (bbSync as any).pedersenHash({
-    inputs: [frBuffer(secretField), frBuffer(recipientField)],
-    hashIndex: PEDERSEN_HASH_INDEX,
-  });
-  const nullifierField = BigInt(
-    "0x" +
-      Array.from(new Uint8Array(nullifierResult.hash))
-        .map((b: number) => b.toString(16).padStart(2, "0"))
-        .join("")
-  );
-
-  // 3. Load circuit and execute for witness
-  const circuit = await loadCircuit();
-  const noir = new Noir(circuit);
-
-  const inputs = {
-    secret: fieldToHex(secretField),
-    recipient: fieldToHex(recipientField),
-    link_hash: fieldToHex(linkHashField),
-    nullifier: fieldToHex(nullifierField),
-  };
-
-  const { witness } = await noir.execute(inputs);
-
-  // 4. Generate UltraHonk proof — use a fresh async instance (not the singleton)
-  //    so that api.destroy() properly cleans up and subsequent calls don't
-  //    receive a destroyed singleton.
-  const api = await Barretenberg.new({ threads: 1 });
   try {
-    const backend = new UltraHonkBackend(circuit.bytecode, api);
-    const result = await backend.generateProof(witness);
+    // Dynamic imports — these are large WASM modules, only load when needed
+    const bbModule = await import("@aztec/bb.js");
+    const noirModule = await import("@noir-lang/noir_js");
+    const { Barretenberg, BarretenbergSync, UltraHonkBackend } = bbModule;
+    const { Noir } = noirModule;
 
-    // Compute SHA-256 link hash for the API path
-    const hashBuffer = await crypto.subtle.digest("SHA-256", new Uint8Array(secretBytes) as unknown as ArrayBuffer);
-    const linkHashHex = Array.from(new Uint8Array(hashBuffer))
-      .map((b) => b.toString(16).padStart(2, "0"))
-      .join("");
+    // 1. Compute field-domain values
+    const secretField = secretToField(secretBytes);
+    const recipientField = addressToField(recipientAddress);
 
-    return {
-      proof: result.proof,
-      linkHashHex,
-      linkHashFieldHex: fieldToHex(linkHashField),
-      nullifierFieldHex: fieldToHex(nullifierField),
+    // 2. Compute Pedersen hashes — use cached sync instance (no destroy needed)
+    if (!bbSyncCache) {
+      bbSyncCache = await BarretenbergSync.new();
+    }
+    const bbSync = bbSyncCache;
+
+    const linkHashResult = (bbSync as any).pedersenHash({
+      inputs: [frBuffer(secretField)],
+      hashIndex: PEDERSEN_HASH_INDEX,
+    });
+    const linkHashField = BigInt(
+      "0x" +
+        Array.from(new Uint8Array(linkHashResult.hash))
+          .map((b: number) => b.toString(16).padStart(2, "0"))
+          .join("")
+    );
+
+    const nullifierResult = (bbSync as any).pedersenHash({
+      inputs: [frBuffer(secretField), frBuffer(recipientField)],
+      hashIndex: PEDERSEN_HASH_INDEX,
+    });
+    const nullifierField = BigInt(
+      "0x" +
+        Array.from(new Uint8Array(nullifierResult.hash))
+          .map((b: number) => b.toString(16).padStart(2, "0"))
+          .join("")
+    );
+
+    // 3. Load circuit and execute for witness
+    const circuit = await loadCircuit();
+    const noir = new Noir(circuit);
+
+    const inputs = {
+      secret: fieldToHex(secretField),
+      recipient: fieldToHex(recipientField),
+      link_hash: fieldToHex(linkHashField),
+      nullifier: fieldToHex(nullifierField),
     };
-  } finally {
-    await api.destroy();
+
+    const { witness } = await noir.execute(inputs);
+
+    // 4. Generate UltraHonk proof
+    const api = await Barretenberg.new({ threads: 1 });
+    try {
+      const backend = new UltraHonkBackend(circuit.bytecode, api);
+      const result = await backend.generateProof(witness);
+
+      const hashBuffer = await crypto.subtle.digest("SHA-256", new Uint8Array(secretBytes) as unknown as ArrayBuffer);
+      const linkHashHex = Array.from(new Uint8Array(hashBuffer))
+        .map((b) => b.toString(16).padStart(2, "0"))
+        .join("");
+
+      return {
+        proof: result.proof,
+        linkHashHex,
+        linkHashFieldHex: fieldToHex(linkHashField),
+        nullifierFieldHex: fieldToHex(nullifierField),
+      };
+    } finally {
+      await api.destroy();
+    }
+  } catch (clientErr: any) {
+    console.warn("Client ZK proof generation failed, falling back to local backend prover:", clientErr);
+    const fallbackUrls = [
+      "/api/links/prove",
+      "http://localhost:3001/api/links/prove",
+    ];
+    for (const url of fallbackUrls) {
+      try {
+        const resp = await fetch(url, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ secret: secretHex, recipient: recipientAddress }),
+        });
+        if (resp.ok) {
+          const data = await resp.json();
+          return {
+            proof: Uint8Array.from(Buffer.from(data.proof, "hex")),
+            linkHashHex: data.linkHashHex,
+            linkHashFieldHex: data.linkHashFieldHex,
+            nullifierFieldHex: data.nullifierFieldHex,
+          };
+        }
+      } catch {
+        // try next url
+      }
+    }
+    throw clientErr;
   }
 }
 
@@ -153,7 +184,8 @@ export async function generateClaimProof(
  * POST proof to the backend attest endpoint, along with the circuit's public inputs
  * (link_hash and nullifier). The private secret is never sent — the backend verifies
  * the proof against these public inputs alone.
- * Returns the attestation transaction hash on success.
+ * Returns the attestation transaction hash plus the claim salt (64-char hex, 32 bytes)
+ * that the caller must pass to the contract's claim_link.
  */
 export async function requestAttestation(
   linkHashHex: string,
@@ -162,10 +194,14 @@ export async function requestAttestation(
   linkHashFieldHex: string,
   nullifierFieldHex: string,
   recipientEmailHash?: string
-): Promise<string> {
-  const backendUrl =
-    process.env.NEXT_PUBLIC_BACKEND_URL || "http://localhost:3001";
-  const url = `${backendUrl}/api/links/${linkHashHex}/attest`;
+): Promise<{ attestationTx: string; claimSalt: string }> {
+  // Call backend directly — ZK verify + on-chain attestation can take minutes and
+  // Next.js dev rewrites time out (ECONNRESET). Backend enables CORS for localhost.
+  const backendOrigin = (process.env.NEXT_PUBLIC_BACKEND_URL || "http://localhost:3001").replace(
+    /\/$/,
+    ""
+  );
+  const url = `${backendOrigin}/api/links/${linkHashHex}/attest`;
 
   const body: Record<string, string> = {
     recipient: recipientAddress,
@@ -183,10 +219,23 @@ export async function requestAttestation(
     body: JSON.stringify(body),
   });
 
-  const data = await resp.json();
+  const text = await resp.text();
+  let data: any = null;
+  try {
+    data = text ? JSON.parse(text) : null;
+  } catch {
+    if (!resp.ok) {
+      throw new Error(
+        text
+          ? `Attestation request failed (${resp.status}): ${text.slice(0, 160)}`
+          : `Backend service unavailable (${resp.status}). Please ensure the backend server is running on port 3001 (run 'pnpm dev' or 'pnpm dev:backend').`
+      );
+    }
+    throw new Error("Invalid response from attestation service");
+  }
   if (!resp.ok) {
-    throw new Error(data.error || "Attestation request failed");
+    throw new Error(data?.error || `Attestation request failed (${resp.status})`);
   }
 
-  return data.attestationTx;
+  return { attestationTx: data.attestationTx, claimSalt: data.claimSalt };
 }

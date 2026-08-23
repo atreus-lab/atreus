@@ -154,6 +154,120 @@ describe("email verification routes", () => {
     });
     expect(blocked.status).toBe(429);
   });
+
+  it("rejects disposable email domains on verify", async () => {
+    const res = await fetch(`${baseUrl}/api/email/verify`, {
+      method: "POST",
+      headers: { "content-type": "application/json", "x-forwarded-for": "10.9.9.1" },
+      body: JSON.stringify({ email: "burner@mailinator.com" }),
+    });
+    expect(res.status).toBe(400);
+    expect(((await res.json()) as { error: string }).error).toMatch(/Disposable/i);
+  });
+
+  it("rejects disposable email domains on confirm", async () => {
+    const res = await fetch(`${baseUrl}/api/email/confirm`, {
+      method: "POST",
+      headers: { "content-type": "application/json", "x-forwarded-for": "10.9.9.2" },
+      body: JSON.stringify({
+        email: "burner@mailinator.com",
+        rawMessage: "From: burner@mailinator.com\r\n\r\nchallenge deadbeefcafebabe",
+      }),
+    });
+    expect(res.status).toBe(400);
+    expect(((await res.json()) as { error: string }).error).toMatch(/Disposable/i);
+  });
+
+  it("a confirmed challenge is single-use: replaying the same message fails", async () => {
+    const verifyRes = await fetch(`${baseUrl}/api/email/verify`, {
+      method: "POST",
+      headers: { "content-type": "application/json", "x-forwarded-for": "10.9.9.3" },
+      body: JSON.stringify({ email: "alice@example.com" }),
+    });
+    const { challenge, emailHash } = (await verifyRes.json()) as {
+      challenge: string;
+      emailHash: string;
+    };
+    const rawMessage = `From: alice@example.com\r\nSubject: ${challenge}\r\n\r\n${challenge}`;
+
+    const first = await fetch(`${baseUrl}/api/email/confirm`, {
+      method: "POST",
+      headers: { "content-type": "application/json", "x-forwarded-for": "10.9.9.4" },
+      body: JSON.stringify({ email: "alice@example.com", rawMessage }),
+    });
+    expect(first.status).toBe(200);
+    expect(isEmailHashVerified(emailHash)).toBe(true);
+
+    // Replay: the same raw message cannot be used again (challenge consumed).
+    const replay = await fetch(`${baseUrl}/api/email/confirm`, {
+      method: "POST",
+      headers: { "content-type": "application/json", "x-forwarded-for": "10.9.9.5" },
+      body: JSON.stringify({ email: "alice@example.com", rawMessage }),
+    });
+    expect(replay.status).toBe(400);
+    expect(((await replay.json()) as { error: string }).error).toMatch(/No pending verification/i);
+  });
+
+  it("burns a challenge after too many failed confirmations", async () => {
+    const verifyRes = await fetch(`${baseUrl}/api/email/verify`, {
+      method: "POST",
+      headers: { "content-type": "application/json", "x-forwarded-for": "10.9.9.6" },
+      body: JSON.stringify({ email: "alice@example.com" }),
+    });
+    const { challenge } = (await verifyRes.json()) as { challenge: string };
+
+    setDkimVerifier(async () => ({ ok: false, error: "signature invalid" }));
+    // Five failed attempts (each from a distinct IP so the IP limiter stays out of the way).
+    for (let i = 0; i < 5; i++) {
+      const res = await fetch(`${baseUrl}/api/email/confirm`, {
+        method: "POST",
+        headers: { "content-type": "application/json", "x-forwarded-for": `10.10.0.${i}` },
+        body: JSON.stringify({
+          email: "alice@example.com",
+          rawMessage: `From: alice@example.com\r\n\r\n${challenge}`,
+        }),
+      });
+      expect(res.status).toBe(400);
+    }
+
+    // Sixth attempt: even with valid DKIM the challenge is exhausted.
+    setDkimVerifier(async () => ({ ok: true, fromAddress: "alice@example.com" }));
+    const sixth = await fetch(`${baseUrl}/api/email/confirm`, {
+      method: "POST",
+      headers: { "content-type": "application/json", "x-forwarded-for": "10.10.0.9" },
+      body: JSON.stringify({
+        email: "alice@example.com",
+        rawMessage: `From: alice@example.com\r\n\r\n${challenge}`,
+      }),
+    });
+    expect(sixth.status).toBe(429);
+    expect(((await sixth.json()) as { error: string }).error).toMatch(/Too many confirmation attempts for this challenge/i);
+  });
+
+  it("rejects cross-domain spoof: valid DKIM from a domain not covering From", async () => {
+    const verifyRes = await fetch(`${baseUrl}/api/email/verify`, {
+      method: "POST",
+      headers: { "content-type": "application/json", "x-forwarded-for": "10.9.9.7" },
+      body: JSON.stringify({ email: "alice@example.com" }),
+    });
+    const { challenge } = (await verifyRes.json()) as { challenge: string };
+
+    setDkimVerifier(async () => ({
+      ok: true,
+      fromAddress: "alice@example.com",
+      signingDomain: "evil.com",
+    }));
+    const res = await fetch(`${baseUrl}/api/email/confirm`, {
+      method: "POST",
+      headers: { "content-type": "application/json", "x-forwarded-for": "10.9.9.8" },
+      body: JSON.stringify({
+        email: "alice@example.com",
+        rawMessage: `From: alice@example.com\r\n\r\n${challenge}`,
+      }),
+    });
+    expect(res.status).toBe(400);
+    expect(((await res.json()) as { error: string }).error).toMatch(/align/i);
+  });
 });
 
 describe("attest email gate", () => {
@@ -193,5 +307,5 @@ describe("attest email gate", () => {
     });
     // Gate passed: either zk fails (400) or circuit missing (500) — not 403.
     expect(res.status).not.toBe(403);
-  });
+  }, 20_000);
 });

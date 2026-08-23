@@ -3,12 +3,12 @@
 import { useEffect, useState, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { loadWallet } from "@/lib/wallet";
-import { fetchSummary, fetchLinkStats } from "@/lib/analytics";
-import type { LinkStats, SummaryStats, TimeSeriesPoint } from "@/lib/analytics/types";
+import { fetchSummary } from "@/lib/analytics";
+import type { SummaryStats, TimeSeriesPoint } from "@/lib/analytics/types";
 import AppHeader from "@/components/AppHeader";
 import SearchDialog from "@/components/SearchDialog";
 import AnalyticsChart from "@/components/AnalyticsChart";
-import { Eye, MousePointerClick, Clock, Link2, ChevronRight, Activity } from "lucide-react";
+import { Eye, MousePointerClick, Clock, Activity } from "lucide-react";
 
 type TimeRange = "7d" | "30d" | "90d";
 
@@ -18,27 +18,13 @@ export default function AnalyticsPage() {
   const [searchOpen, setSearchOpen] = useState(false);
   const [stats, setStats] = useState<SummaryStats | null>(null);
   const [timeSeries, setTimeSeries] = useState<Record<TimeRange, TimeSeriesPoint[]>>({ "7d": [], "30d": [], "90d": [] });
-  const [linkStats, setLinkStats] = useState<Record<string, LinkStats>>({});
-  const [links, setLinks] = useState<string[]>([]);
-  const [selectedLink, setSelectedLink] = useState<string | null>(null);
   const [activeRange, setActiveRange] = useState<TimeRange>("7d");
 
   const loadData = useCallback(async () => {
     try {
       const data = await fetchSummary();
       setStats(data.stats);
-      setTimeSeries(data.timeSeries);
-      setLinks(data.links);
-      const linkStatsMap: Record<string, LinkStats> = {};
-      for (const hash of data.links) {
-        try {
-          const linkData = await fetchLinkStats(hash);
-          linkStatsMap[hash] = linkData.stats;
-        } catch {
-          // skip individual link errors
-        }
-      }
-      setLinkStats(linkStatsMap);
+      setTimeSeries(data.timeSeries ?? { "7d": [], "30d": [], "90d": [] });
     } catch (err) {
       console.error("Failed to load analytics:", err);
     } finally {
@@ -79,24 +65,14 @@ export default function AnalyticsPage() {
   const series = timeSeries[activeRange] || [];
   const maxY = series.reduce((max, p) => Math.max(max, p.views, p.initiations, p.claims), 0);
 
-  let totalViews = 0, uniqueViews = 0, initiations = 0, claims = 0, claimRate = 0;
-  let avgTimeToClaimMs: number | null = null;
-  if (selectedLink && linkStats[selectedLink]) {
-    const ls = linkStats[selectedLink];
-    totalViews = ls.views;
-    uniqueViews = ls.uniqueViews;
-    initiations = ls.initiations;
-    claims = ls.claims;
-    claimRate = ls.claimRate;
-    avgTimeToClaimMs = ls.avgTimeToClaimMs;
-  } else if (stats) {
-    totalViews = stats.totalViews;
-    uniqueViews = stats.uniqueViews;
-    initiations = stats.initiations;
-    claims = stats.claims;
-    claimRate = stats.claimRate;
-    avgTimeToClaimMs = stats.avgTimeToClaimMs;
-  }
+  const { totalViews, uniqueViews, initiations, claims, claimRate, avgTimeToClaimMs } = stats ?? {
+    totalViews: 0,
+    uniqueViews: 0,
+    initiations: 0,
+    claims: 0,
+    claimRate: 0,
+    avgTimeToClaimMs: null,
+  };
 
   return (
     <>
@@ -122,9 +98,7 @@ export default function AnalyticsPage() {
 
             <div className="panel p-5">
               <div className="flex items-center justify-between mb-4">
-                <h3 className="text-sm font-bold text-primary">
-                  {selectedLink ? "Link Performance" : "Global Performance"}
-                </h3>
+                <h3 className="text-sm font-bold text-primary">Global Performance</h3>
                 <div className="flex items-center gap-2">
                   {(["7d", "30d", "90d"] as TimeRange[]).map(range => (
                     <button
@@ -146,66 +120,13 @@ export default function AnalyticsPage() {
               </div>
             </div>
 
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-              <div className="panel p-5">
-                <h3 className="text-sm font-bold text-primary mb-4">Conversion Funnel</h3>
-                <FunnelChart
-                  views={totalViews}
-                  initiations={initiations}
-                  claims={claims}
-                />
-              </div>
-
-              <div className="panel p-5">
-                <h3 className="text-sm font-bold text-primary mb-4">Per-Link Performance</h3>
-                <div className="space-y-2 max-h-[320px] overflow-y-auto">
-                  {links.length === 0 ? (
-                    <p className="text-xs text-secondary">No link data yet. Share a link to see analytics.</p>
-                  ) : (
-                    links.map(hash => {
-                      const ls = linkStats[hash];
-                      const isSelected = selectedLink === hash;
-                      return (
-                        <button
-                          key={hash}
-                          onClick={() => setSelectedLink(isSelected ? null : hash)}
-                          className={`w-full text-left p-3 rounded-xl border transition-colors ${
-                            isSelected ? "border-[var(--accent-primary)] bg-[var(--background-elevated)]" : "border-[var(--border-default)] hover:border-[var(--foreground-secondary)]"
-                          }`}
-                        >
-                          <div className="flex items-center justify-between">
-                            <div className="flex items-center gap-2 min-w-0">
-                              <Link2 className="w-3.5 h-3.5 shrink-0 text-secondary" />
-                              <span className="text-xs font-mono text-secondary truncate">{hash.slice(0, 16)}...</span>
-                            </div>
-                            <ChevronRight className={`w-4 h-4 shrink-0 text-secondary transition-transform ${isSelected ? "rotate-90" : ""}`} />
-                          </div>
-                          {isSelected && ls && (
-                            <div className="grid grid-cols-4 gap-3 mt-3 pt-3 border-t border-[var(--border-default)]">
-                              <div>
-                                <p className="text-[10px] text-secondary uppercase tracking-wider">Views</p>
-                                <p className="text-sm font-bold text-primary">{ls.views}</p>
-                              </div>
-                              <div>
-                                <p className="text-[10px] text-secondary uppercase tracking-wider">Unique</p>
-                                <p className="text-sm font-bold text-primary">{ls.uniqueViews}</p>
-                              </div>
-                              <div>
-                                <p className="text-[10px] text-secondary uppercase tracking-wider">Claims</p>
-                                <p className="text-sm font-bold text-primary">{ls.claims}</p>
-                              </div>
-                              <div>
-                                <p className="text-[10px] text-secondary uppercase tracking-wider">Rate</p>
-                                <p className="text-sm font-bold text-primary">{fmtPct(ls.claimRate)}</p>
-                              </div>
-                            </div>
-                          )}
-                        </button>
-                      );
-                    })
-                  )}
-                </div>
-              </div>
+            <div className="panel p-5">
+              <h3 className="text-sm font-bold text-primary mb-4">Conversion Funnel</h3>
+              <FunnelChart
+                views={totalViews}
+                initiations={initiations}
+                claims={claims}
+              />
             </div>
           </div>
         )}

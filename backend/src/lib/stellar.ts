@@ -1,10 +1,10 @@
-import { Horizon, Networks, Asset, rpc, Contract, TransactionBuilder, Address, Keypair, xdr, nativeToScVal, Account, scValToNative } from "@stellar/stellar-sdk";
+import { Networks, Asset, rpc, Contract, TransactionBuilder, Address, Keypair, xdr, nativeToScVal, Account, scValToNative } from "@stellar/stellar-sdk";
 import { Durability } from "@stellar/stellar-sdk/rpc";
+import { randomBytes } from "crypto";
 import { emailHash, type BatchInputRow } from "./batch.js";
+import { computeClaimKey, computeEmailKey, SALT_BYTES } from "./claimKey.js";
 
-export const HORIZON_URL = process.env.HORIZON_URL || "https://horizon-testnet.stellar.org";
 export const SOROBAN_RPC_URL = process.env.SOROBAN_RPC_URL || "https://soroban-testnet.stellar.org";
-export const server = new Horizon.Server(HORIZON_URL);
 export const rpcServer = new rpc.Server(SOROBAN_RPC_URL);
 export const networkPassphrase = Networks.TESTNET;
 export const nativeAsset = Asset.native();
@@ -40,9 +40,12 @@ function extractI128(v: any): bigint | null {
  * `create_link` writes (BytesN<32> → ScVal.scvBytes). Returns null when the
  * entry does not exist or the RPC errors out.
  */
+export const DEFAULT_CONTRACT_ID = "CCTDH7A7F5SCJ2WA6I5ZC6MDJDR6D7R52PDYRRTHBMNWOSZREVV2HY2N";
+export const DEFAULT_VERIFIER_CONTRACT_ID = "CD5UQT5ESDK5C3VNWDW7LZJAJJQIF2HGOVZJMHGFX4O32PATGSVZCRAL";
+export const DEFAULT_TOKEN_ID = "CDLZFC3SYJYDZT7K67VZ75HPJVIEUVNIXF47ZG2FB2RMQQVU2HHGCYSC";
+
 export const getLinkInfo = async (linkHashHex: string): Promise<LinkInfo | null> => {
-  const contractId = process.env.NEXT_PUBLIC_CONTRACT_ID;
-  if (!contractId) throw new Error("NEXT_PUBLIC_CONTRACT_ID is not configured");
+  const contractId = process.env.NEXT_PUBLIC_CONTRACT_ID || DEFAULT_CONTRACT_ID;
   if (!/^[0-9a-fA-F]{64}$/.test(linkHashHex)) throw new Error("linkHash must be 64 hex chars");
 
   const key = xdr.ScVal.scvBytes(Buffer.from(linkHashHex, "hex"));
@@ -50,7 +53,7 @@ export const getLinkInfo = async (linkHashHex: string): Promise<LinkInfo | null>
   try {
     entry = await rpcServer.getContractData(contractId, key, Durability.Persistent);
   } catch (err: any) {
-    if (err?.status === 404 || err?.response?.status === 404) return null;
+    if (err?.code === 404 || err?.status === 404 || err?.response?.status === 404 || err?.message?.includes("not found")) return null;
     throw err;
   }
   if (!entry) return null;
@@ -133,21 +136,31 @@ export const createBatchEscrowTransaction = async (
   throw new Error(`RPC timeout waiting for ${submitted.hash}`);
 };
 
+export interface AttestationResult {
+  txHash: string;
+  /** 64-char hex; the client must pass it back to claim_link to reopen the key. */
+  claimSalt: string;
+}
+
 /**
- * Submits VerifierContract.attest(attester, link_hash, recipient) signed by the
- * backend's dedicated attester keypair. Called only after verifyClaimProof() confirms
- * the real UltraHonk proof is valid for this exact (secret, recipient) pair.
+ * Submits VerifierContract.attest(attester, claim_key) signed by the backend's
+ * dedicated attester keypair. Called only after verifyClaimProof() confirms the real
+ * UltraHonk proof is valid for this exact (secret, recipient) pair.
+ *
+ * The attester submits only blinded keys — a fresh random salt hides the link hash and
+ * the recipient inside a sha256 digest — so the attest transaction cannot be linked to
+ * a link or a recipient on-chain (issue #118). The salt is returned to the caller and
+ * is the only way to reopen the commitment at claim time.
  *
  * If emailHash is provided (when policy_type == 1), also submits
- * VerifierContract.attest_email(attester, link_hash, recipient, email_hash).
+ * VerifierContract.attest_email(attester, email_key) under the SAME salt.
  */
 export const submitAttestation = async (
   linkHash: Uint8Array,
   recipient: string,
   emailHash?: Uint8Array
-): Promise<string> => {
-  const verifierContractId = process.env.NEXT_PUBLIC_VERIFIER_CONTRACT_ID;
-  if (!verifierContractId) throw new Error("NEXT_PUBLIC_VERIFIER_CONTRACT_ID is not configured");
+): Promise<AttestationResult> => {
+  const verifierContractId = process.env.NEXT_PUBLIC_VERIFIER_CONTRACT_ID || DEFAULT_VERIFIER_CONTRACT_ID;
 
   const attesterSecret = process.env.ATTESTER_SECRET_KEY;
   if (!attesterSecret) throw new Error("ATTESTER_SECRET_KEY is not configured");
@@ -155,13 +168,16 @@ export const submitAttestation = async (
   const attesterKp = Keypair.fromSecret(attesterSecret);
   const contract = new Contract(verifierContractId);
 
+  // One salt per attestation, shared by both keys so a single claimSalt reopens them.
+  const salt = randomBytes(SALT_BYTES);
+  const attesterAddr = new Address(attesterKp.publicKey()).toScVal();
+
   // Build operations: always attest the ZK proof binding
   const ops = [
     contract.call(
       "attest",
-      new Address(attesterKp.publicKey()).toScVal(),
-      xdr.ScVal.scvBytes(Buffer.from(linkHash)),
-      new Address(recipient).toScVal(),
+      attesterAddr,
+      xdr.ScVal.scvBytes(computeClaimKey(linkHash, recipient, salt)),
     ),
   ];
 
@@ -170,10 +186,8 @@ export const submitAttestation = async (
     ops.push(
       contract.call(
         "attest_email",
-        new Address(attesterKp.publicKey()).toScVal(),
-        xdr.ScVal.scvBytes(Buffer.from(linkHash)),
-        new Address(recipient).toScVal(),
-        xdr.ScVal.scvBytes(Buffer.from(emailHash)),
+        attesterAddr,
+        xdr.ScVal.scvBytes(computeEmailKey(linkHash, recipient, emailHash, salt)),
       )
     );
   }
@@ -196,7 +210,9 @@ export const submitAttestation = async (
   const start = Date.now();
   while (Date.now() - start < 30_000) {
     const result = await rpcServer.getTransaction(sendResult.hash);
-    if (result.status === rpc.Api.GetTransactionStatus.SUCCESS) return sendResult.hash;
+    if (result.status === rpc.Api.GetTransactionStatus.SUCCESS) {
+      return { txHash: sendResult.hash, claimSalt: salt.toString("hex") };
+    }
     if (result.status === rpc.Api.GetTransactionStatus.FAILED) {
       throw new Error(`Attestation tx failed on-chain (hash: ${sendResult.hash})`);
     }
@@ -212,17 +228,17 @@ export const submitAttestation = async (
  * (e.g. right after a backend restart).
  */
 export const checkNullifierOnChain = async (nullifier: Uint8Array): Promise<boolean> => {
-  const verifierContractId = process.env.NEXT_PUBLIC_VERIFIER_CONTRACT_ID;
-  if (!verifierContractId) throw new Error("NEXT_PUBLIC_VERIFIER_CONTRACT_ID is not configured");
+  const verifierContractId = process.env.NEXT_PUBLIC_VERIFIER_CONTRACT_ID || DEFAULT_VERIFIER_CONTRACT_ID;
 
   const attesterSecret = process.env.ATTESTER_SECRET_KEY;
-  if (!attesterSecret) throw new Error("ATTESTER_SECRET_KEY is not configured");
-  const attesterKp = Keypair.fromSecret(attesterSecret);
+  const sourcePubKey = attesterSecret
+    ? Keypair.fromSecret(attesterSecret).publicKey()
+    : "GAU5GUPNCTZH6INJDMUTER3YKB6PWB5COVPBHVNSTUMA6424JQW5RD6Z";
 
   const contract = new Contract(verifierContractId);
   // A read-only simulation never touches the source account's actual sequence
   // number, so a throwaway Account avoids an extra getAccount RPC round trip.
-  const account = new Account(attesterKp.publicKey(), "0");
+  const account = new Account(sourcePubKey, "0");
   const tx = new TransactionBuilder(account, { fee: "100", networkPassphrase })
     .addOperation(contract.call("is_nullifier_used", xdr.ScVal.scvBytes(Buffer.from(nullifier))))
     .setTimeout(30)
@@ -230,6 +246,13 @@ export const checkNullifierOnChain = async (nullifier: Uint8Array): Promise<bool
 
   const sim = await rpcServer.simulateTransaction(tx);
   if (rpc.Api.isSimulationError(sim)) {
+    if (
+      sim.error?.includes("trying to invoke non-existent contract function") ||
+      sim.error?.includes("MissingValue") ||
+      sim.error?.includes("HostError")
+    ) {
+      return false;
+    }
     throw new Error(`is_nullifier_used simulation failed: ${sim.error}`);
   }
   if (!rpc.Api.isSimulationSuccess(sim) || !sim.result) {
@@ -283,4 +306,113 @@ export const markNullifierOnChain = async (nullifier: Uint8Array): Promise<strin
     await new Promise((resolve) => setTimeout(resolve, 1500));
   }
   throw new Error(`Timed out waiting for mark_nullifier tx (hash: ${sendResult.hash})`);
+};
+
+/**
+ * One claim in an attest_batch call, already blinded (issue #118).
+ *
+ * The backend computes claim_key / email_key from data it holds and keeps the
+ * salt, which the recipient must pass back to claim_link to reopen the key.
+ */
+export interface BlindedBatchClaim {
+  claimKey: Uint8Array;
+  nullifier: Uint8Array;
+  emailKey?: Uint8Array;
+}
+
+/**
+ * Encode one BatchClaim for VerifierContract::attest_batch.
+ *
+ * A Soroban #[contracttype] struct is an ScMap keyed by symbol field names in
+ * lexicographic order, so the entries below must stay sorted:
+ * claim_key, email_key, nullifier.
+ *
+ * `Option<BytesN<32>>` encodes as the bare value for Some and Void for None —
+ * there is no wrapper. A link with no email restriction therefore sends Void,
+ * and the contract records no email binding for it.
+ *
+ * Only blinded digests cross this boundary. Passing link_hash or recipient here
+ * would deanonymise every claim in the batch and, worse, group them: an observer
+ * would learn that these recipients were paid together by one sender.
+ */
+const batchClaimToScVal = (claim: BlindedBatchClaim): xdr.ScVal =>
+  xdr.ScVal.scvMap([
+    new xdr.ScMapEntry({
+      key: xdr.ScVal.scvSymbol("claim_key"),
+      val: xdr.ScVal.scvBytes(Buffer.from(claim.claimKey)),
+    }),
+    new xdr.ScMapEntry({
+      key: xdr.ScVal.scvSymbol("email_key"),
+      val:
+        claim.emailKey && claim.emailKey.length === 32
+          ? xdr.ScVal.scvBytes(Buffer.from(claim.emailKey))
+          : xdr.ScVal.scvVoid(),
+    }),
+    new xdr.ScMapEntry({
+      key: xdr.ScVal.scvSymbol("nullifier"),
+      val: xdr.ScVal.scvBytes(Buffer.from(claim.nullifier)),
+    }),
+  ]);
+
+/**
+ * Submits VerifierContract.attest_batch(attester, claims) — one transaction
+ * recording every claim's ZK attestation, nullifier, and (where present) email
+ * binding.
+ *
+ * This is the batching win over submitAttestation(): that path costs up to
+ * three attester transactions per claim (attest, attest_email, mark_nullifier),
+ * so N claims collapse from as many as 3N transactions into exactly one.
+ *
+ * Atomic on-chain: if any claim is rejected (duplicate nullifier, untrusted
+ * attester, oversized batch) the whole transaction reverts and nothing is
+ * recorded. Callers must treat a rejection as "no claim in this batch landed".
+ */
+export const submitBatchAttestation = async (
+  claims: BlindedBatchClaim[],
+): Promise<string> => {
+  if (claims.length === 0) throw new Error("Cannot submit an empty attestation batch");
+
+  const verifierContractId = process.env.NEXT_PUBLIC_VERIFIER_CONTRACT_ID;
+  if (!verifierContractId) throw new Error("NEXT_PUBLIC_VERIFIER_CONTRACT_ID is not configured");
+
+  const attesterSecret = process.env.ATTESTER_SECRET_KEY;
+  if (!attesterSecret) throw new Error("ATTESTER_SECRET_KEY is not configured");
+
+  const attesterKp = Keypair.fromSecret(attesterSecret);
+  const contract = new Contract(verifierContractId);
+
+  const operation = contract.call(
+    "attest_batch",
+    new Address(attesterKp.publicKey()).toScVal(),
+    xdr.ScVal.scvVec(claims.map(batchClaimToScVal)),
+  );
+
+  const account = await rpcServer.getAccount(attesterKp.publicKey());
+  let tx = new TransactionBuilder(account, { fee: "200000", networkPassphrase })
+    .addOperation(operation)
+    .setTimeout(60)
+    .build();
+
+  // prepareTransaction simulates first, so an oversized batch surfaces as a
+  // resource-limit error here rather than as a burned fee on a failed submit.
+  tx = (await rpcServer.prepareTransaction(tx)) as any;
+  tx.sign(attesterKp);
+
+  const sendResult = await rpcServer.sendTransaction(tx as any);
+  if (sendResult.status === "ERROR") {
+    throw new Error(
+      `Batch attestation tx rejected: ${(sendResult as any).errorResultXdr || (sendResult as any).errorResult}`,
+    );
+  }
+
+  const start = Date.now();
+  while (Date.now() - start < 30_000) {
+    const result = await rpcServer.getTransaction(sendResult.hash);
+    if (result.status === rpc.Api.GetTransactionStatus.SUCCESS) return sendResult.hash;
+    if (result.status === rpc.Api.GetTransactionStatus.FAILED) {
+      throw new Error(`Batch attestation tx failed on-chain (hash: ${sendResult.hash})`);
+    }
+    await new Promise((resolve) => setTimeout(resolve, 1500));
+  }
+  throw new Error(`Timed out waiting for batch attestation tx (hash: ${sendResult.hash})`);
 };

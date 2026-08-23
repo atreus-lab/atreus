@@ -8,6 +8,44 @@ use soroban_sdk::{
 const STORAGE_TTL_THRESHOLD: u32 = 535_679;
 const STORAGE_TTL_EXTEND_TO: u32 = 535_679;
 
+const CLAIM_DOMAIN: &[u8; 15] = b"ATREUS_CLAIM_V1";
+const EMAIL_DOMAIN: &[u8; 15] = b"ATREUS_EMAIL_V1";
+
+/// A Stellar strkey is always 56 ASCII characters.
+const STRKEY_LEN: usize = 56;
+
+fn recipient_strkey(recipient: &Address) -> [u8; STRKEY_LEN] {
+    let s = recipient.to_string();
+    if s.len() as usize != STRKEY_LEN {
+        panic!("invalid recipient");
+    }
+    let mut out = [0u8; STRKEY_LEN];
+    s.copy_into_slice(&mut out);
+    out
+}
+
+/// sha256(domain || link_hash || recipient_strkey || tail || salt). The attester
+/// computes the same value off-chain, so no argument or event ever joins
+/// `link_hash` to `recipient` on-chain.
+fn blinded_key(
+    env: &Env,
+    domain: &[u8; 15],
+    link_hash: &BytesN<32>,
+    strkey: &[u8; STRKEY_LEN],
+    tail: Option<&[u8; 32]>,
+    salt: &BytesN<32>,
+) -> BytesN<32> {
+    let mut preimage = Bytes::new(env);
+    preimage.extend_from_array(domain);
+    preimage.extend_from_array(&link_hash.to_array());
+    preimage.extend_from_array(strkey);
+    if let Some(tail) = tail {
+        preimage.extend_from_array(tail);
+    }
+    preimage.extend_from_array(&salt.to_array());
+    BytesN::from_array(env, &env.crypto().sha256(&preimage).to_array())
+}
+
 #[contracttype]
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct LinkInfo {
@@ -81,8 +119,7 @@ impl AtreusContract {
         env: Env,
         link_hash: BytesN<32>,
         recipient: Address,
-        secret: BytesN<32>,
-        _recipient_email_hash: BytesN<32>,
+        claim_salt: BytesN<32>,
         relayer_address: Address,
         relayer_fee: i128,
     ) {
@@ -91,12 +128,11 @@ impl AtreusContract {
         // approval of the exact compensation paid for this gasless claim.
         recipient.require_auth();
 
-        // Verify secret: sha256(secret) must equal the stored link_hash.
-        let secret_bytes = Bytes::from_array(&env, &secret.to_array());
-        let computed = env.crypto().sha256(&secret_bytes);
-        if BytesN::from_array(&env, &computed.to_array()) != link_hash {
-            panic!("invalid secret");
-        }
+        // No plaintext secret here: transaction arguments are public, so passing
+        // the secret would publish it on-chain. The ZK attestation below already
+        // proves the claimer knows it.
+        let strkey = recipient_strkey(&recipient);
+        let claim_key = blinded_key(&env, CLAIM_DOMAIN, &link_hash, &strkey, None, &claim_salt);
 
         let mut link_info: LinkInfo = env
             .storage()
@@ -113,22 +149,24 @@ impl AtreusContract {
             .expect("verifier not set");
 
         // If policy_type == 1 (email-restricted), verify the claimer's email
-        // through the attestation system, not a plaintext argument. The trusted
-        // attester must have independently verified email ownership and recorded
-        // an EmailAttestation for this (link_hash, recipient, email_hash) triple.
+        // through the attestation system, not a plaintext argument. policy_params
+        // holds the 32-byte email hash; the trusted attester must have recorded an
+        // attestation under the matching blinded email key.
         if link_info.policy_type == 1 {
             if link_info.policy_params.len() != 32 {
                 panic!("invalid policy params length");
             }
             let mut policy_arr = [0u8; 32];
             link_info.policy_params.copy_into_slice(&mut policy_arr);
-            let expected_email_hash = BytesN::from_array(&env, &policy_arr);
-            let email_args: soroban_sdk::Vec<Val> = vec![
+            let email_key = blinded_key(
                 &env,
-                link_hash.into_val(&env),
-                recipient.into_val(&env),
-                expected_email_hash.into_val(&env),
-            ];
+                EMAIL_DOMAIN,
+                &link_hash,
+                &strkey,
+                Some(&policy_arr),
+                &claim_salt,
+            );
+            let email_args: soroban_sdk::Vec<Val> = vec![&env, email_key.into_val(&env)];
             let email_attested: bool = env.invoke_contract(
                 &verifier,
                 &Symbol::new(&env, "is_email_attested"),
@@ -139,12 +177,11 @@ impl AtreusContract {
             }
         }
 
-        // Require a real ZK attestation for this exact (link_hash, recipient) pair before
-        // releasing funds. The attestation is only recorded by VerifierContract::attest()
-        // after a trusted attester has verified a real UltraHonk proof off-chain — see the
-        // doc comment on VerifierContract::verify_proof for why this indirection exists.
-        let args: soroban_sdk::Vec<Val> =
-            vec![&env, link_hash.into_val(&env), recipient.into_val(&env)];
+        // Require a real ZK attestation for this claim before releasing funds. The
+        // attestation is only recorded by VerifierContract::attest() after a trusted
+        // attester has verified a real UltraHonk proof off-chain — see the doc comment
+        // on VerifierContract::verify_proof for why this indirection exists.
+        let args: soroban_sdk::Vec<Val> = vec![&env, claim_key.into_val(&env)];
         let attested: bool =
             env.invoke_contract(&verifier, &Symbol::new(&env, "is_attested"), args);
         if !attested {
@@ -159,13 +196,9 @@ impl AtreusContract {
             panic!("link expired");
         }
 
-        // Double-claim prevention via nullifier
-        let link_hash_bytes = Bytes::from_array(&env, &link_hash.to_array());
-        let nullifier_key =
-            BytesN::from_array(&env, &env.crypto().sha256(&link_hash_bytes).to_array());
-        if env.storage().persistent().has(&nullifier_key) {
-            panic!("nullifier already used");
-        }
+        // The `claimed` flag above is the double-claim guard; the old sha256(link_hash)
+        // nullifier key was derivable by anyone and leaked which links were claimed.
+        // Replay protection across proofs lives in VerifierContract's nullifier registry.
 
         // Token transfers accept signed amounts, so reject both negative fees and
         // fees that would leave the recipient with a negative payout.
@@ -190,12 +223,10 @@ impl AtreusContract {
 
         link_info.claimed = true;
         env.storage().persistent().set(&link_hash, &link_info);
-        env.storage().persistent().set(&nullifier_key, &true);
 
-        env.events().publish(
-            (symbol_short!("claimed"), link_hash),
-            (recipient, recipient_amount, relayer_address, relayer_fee),
-        );
+        // Topic and data carry nothing: any field here would let the link creator
+        // watch the chain and learn who claimed which link, and for how much.
+        env.events().publish((symbol_short!("claimed"),), ());
     }
 
     pub fn refund_link(env: Env, link_hash: BytesN<32>) {
