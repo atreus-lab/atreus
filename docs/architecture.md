@@ -182,6 +182,97 @@ pub fn refund_link(
 
 ---
 
+### 5.1 Split Links — Multi-Recipient & Partial-Claim Escrow (#120)
+
+Payment links before #120 were single-shot: one creator, one recipient, one all-or-nothing claim. Payroll and business flows need a sender to fund once and disburse in pieces, to a fixed list of payees, and to claw back whatever nobody claimed. This section is the design written before implementation, per the #120 acceptance criteria.
+
+**Design choice — additive extension, not a modified ABI.** `LinkInfo`, `create_link`, `claim_link`, and `refund_link` are untouched (`claim_link`'s body was refactored to call a shared private helper, `check_email_policy`, that `claim_split` also calls, but its arguments, storage key, panic messages, and events are byte-for-byte the same, and all 14 pre-existing tests pass unmodified). The new modes live entirely in a second, parallel set of contract functions and a second storage type:
+
+**Design choice — no ZK secret-attestation on `claim_split`.** `claim_link` requires a ZK attestation because a single-shot link is a *bearer* secret: the creator shares it out of band (a URL fragment) without knowing who will redeem it, and the attestation proves the claimer knows that secret without revealing it. A split link is the opposite: the creator names every recipient's Stellar `Address` directly in `create_split_link`. There is no secret to prove knowledge of, so `claim_split` gates on `recipient.require_auth()` alone — the named address's own signature — and, when `policy_type == 1`, the same email-restriction check `claim_link` uses. This is why `claim_split` needs no interaction with `VerifierContract` at all for the default (secret/open) policy, and why creating and claiming a split link needs no attester round-trip.
+
+```rust
+pub struct SplitRecipient {
+    pub address: Address,
+    pub allocated: i128,   // this recipient's total share
+    pub claimed: i128,     // running total already paid out to them
+}
+
+pub struct SplitLinkInfo {
+    pub creator: Address,
+    pub amount: i128,           // = sum(recipients[i].allocated), computed on-chain
+    pub asset: Address,
+    pub policy_type: u32,       // same policy machinery as LinkInfo (0 = secret, 1 = email)
+    pub policy_params: Bytes,
+    pub expires_at: u64,
+    pub min_claim_bps: u32,     // floor on non-final partial claims, bps of the recipient's allocation
+    pub recipients: Vec<SplitRecipient>,
+    pub closed: bool,           // terminal: set by cancel_split_link or refund_split_link
+}
+```
+
+Split links are stored under `SplitDataKey::SplitLink(id)`, an enum-wrapped key, so they occupy a disjoint storage key space from the raw `BytesN<32>` keys `create_link` writes directly — the two link kinds cannot collide even if the same 32 bytes were reused as both an `id`.
+
+**Why one mechanism covers two modes.** A `SplitLinkInfo` with exactly one recipient *is* the "partial claims" mode from #120: that recipient draws their allocation down over several `claim_split` calls. A `SplitLinkInfo` with more than one recipient is the "split recipients" mode: a fixed payee list, each with a defined share, each independently able to claim in one or several partial claims. Modeling both as "N recipients, each with an allocation and a running claimed total" means one state machine, one set of tests, and one code path to audit — not two.
+
+**State machine.**
+
+```
+                    ┌────────────────────────┐
+   create_split_link│                        │
+   ────────────────▶│         Active         │◀────────────────┐
+                     │  closed = false        │                 │
+                     └────────────┬───────────┘                 │
+                                   │                             │
+             claim_split(recipient, amount)                     │ claim_split
+             (recipient.require_auth(), recipient               │ (another
+              in list, amount within remaining                  │  recipient,
+              allocation, clears min_claim_bps                  │  or another
+              unless it closes out the remainder,                │  partial
+              email policy satisfied if any)                    │  claim)
+                                   │                             │
+                                   ▼                             │
+                     ┌────────────────────────┐                 │
+                     │   Active, partially    │─────────────────┘
+                     │   claimed (per-        │
+                     │   recipient tally)     │
+                     └───────┬────────┬───────┘
+                              │        │
+      now <= expires_at,      │        │  now > expires_at,
+      creator-authorized      │        │  creator-authorized
+      cancel_split_link       │        │  refund_split_link
+      (any time before        │        │  (permissionless window,
+      expiry — the             │        │   but still creator-gated
+      "cancel window")         │        │   like refund_link)
+                              ▼        ▼
+                     ┌────────────────────────┐
+                     │         Closed          │  (terminal — claim_split,
+                     │  closed = true          │   cancel_split_link, and
+                     │  unclaimed remainder    │   refund_split_link on a
+                     │  swept to creator       │   closed link all panic)
+                     └────────────────────────┘
+```
+
+**Precedence rules.** Soroban has no concurrent execution — every invocation runs to completion against a consistent storage snapshot before the next one starts, so "racing a claim vs. a cancel" reduces to ledger-close ordering, not true concurrency:
+
+1. If a claim lands before a cancel/refund, it pays out normally and shrinks the unclaimed remainder the later cancel/refund can sweep.
+2. If a cancel/refund lands first, it sets `closed = true` and sweeps everything still unclaimed at that instant. Every later `claim_split` on that link reads `closed = true` as the first check after loading `SplitLinkInfo` and panics with `"link closed"` before touching any recipient's allocation or moving funds.
+3. Already-claimed amounts are never touched by a cancel or refund — clawback only reaches the unclaimed remainder, so a partial claim a recipient already received is final the moment its transaction lands.
+4. `cancel_split_link` and `refund_split_link` are both creator-gated (`creator.require_auth()`, matching `refund_link`'s existing semantics) and mutually exclusive by time window: cancellation is a sender-initiated action available any time up to `expires_at` (the "cancel window" from #120), and refund is the same sweep made available after `expires_at`, mirroring `refund_link`. This directly covers the third #120 mode ("time-locked / cancel modes") using the same `expires_at` field `LinkInfo` already has, rather than introducing a second, separate deadline.
+5. Both close paths are idempotent-safe: a second `cancel_split_link` or `refund_split_link` call reads `closed = true` and panics with `"link already closed"` rather than double-paying the creator.
+
+**Partial-claim and fee accounting.** A claim for less than a recipient's full remaining allocation must be at least `allocated * min_claim_bps / 10_000` — this stops a link from being drained one dust-sized claim at a time, which would otherwise let a claimer force many small transactions and disproportionately eat the relayer-fee overhead on each. A claim for *exactly* the remaining allocation always succeeds regardless of that floor, so the last partial claim can still close out a small remainder in one transaction. Relayer fees are bounded per-claim exactly as in `claim_link` (`0 <= relayer_fee <= claim_amount`), deducted from that specific claim, and the recipient's own `recipient.require_auth()` signature covers the exact `relayer_address`/`relayer_fee` pair for that claim — the same explicit-approval property `claim_link` already has.
+
+**Security surface, addressed:**
+- *Fee theft*: bounds identical to `claim_link` (`relayer_fee` cannot be negative or exceed the amount being paid out), and `recipient.require_auth()` authorizes the complete invocation including the fee, so a relayer cannot inflate its own cut without the recipient's signature.
+- *Cross-mode confusion*: `SplitDataKey::SplitLink(id)` is an enum-wrapped storage key, disjoint from the raw `BytesN<32>` key `create_link` writes directly, so a split link and a single-shot link can never alias each other's storage even if the same 32 bytes were reused as both an `id` and a `link_hash`. `claim_split` and `claim_link` are otherwise independent entry points with no shared mutable state beyond the `VerifierContract` address, so there is no cross-mode replay to reason about in the first place.
+- *Double-claims within a mode*: each recipient's `claimed` total is checked and updated atomically within `claim_split` before any token transfer, so no sequence of same-transaction or cross-transaction calls can push `claimed` past `allocated`.
+- *Reentrancy*: `claim_split`, `cancel_split_link`, and `refund_split_link` all write the updated `SplitLinkInfo` to persistent storage *before* invoking `token::Client::transfer`, matching the existing checks-effects-interactions ordering in `claim_link`/`refund_link`.
+- *Balance conservation*: `contracts/atreus-contract/src/test.rs::test_split_balance_conservation_across_claim_and_cancel_combinations` asserts, across a range of full-claim / partial-claim / cancel combinations, that every stroop that leaves the escrow is accounted for as exactly one of a recipient payout, a relayer fee, or a creator refund, and that the contract's token balance always reaches zero once a link is closed.
+
+**Bounds.** `MAX_SPLIT_RECIPIENTS = 50` caps the per-link recipient list so the O(n) recipient-lookup scan in `claim_split` and the cancel/refund sweep stay small and gas-predictable; `create_split_link` rejects an empty list, a `recipients`/`shares` length mismatch, a non-positive share, and a duplicate recipient address.
+
+---
+
 ### VerifierContract (`contracts/verifier-contract/src/lib.rs`)
 
 Stores verification parameters and attestation states issued by the trusted attester service.

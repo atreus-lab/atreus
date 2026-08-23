@@ -3,7 +3,7 @@ import { readFileSync, existsSync } from "fs";
 import { resolve, dirname } from "path";
 import { fileURLToPath } from "url";
 import { sha256Hex, verifyClaimProof } from "../lib/zk.js";
-import { createBatchEscrowTransaction, submitAttestation, getLinkInfo, checkNullifierOnChain, markNullifierOnChain } from "../lib/stellar.js";
+import { createBatchEscrowTransaction, submitAttestation, submitEmailOnlyAttestation, getLinkInfo, getSplitLinkInfo, checkNullifierOnChain, markNullifierOnChain } from "../lib/stellar.js";
 import { batchResultsCsv, createBatchRecord, parseBatchCsv, processBatch, type BatchRecord } from "../lib/batch.js";
 import { saveBatch, listBatches } from "../lib/batchStore.js";
 import { isEmailHashHex } from "../lib/emailHash.js";
@@ -208,6 +208,48 @@ linkRoutes.get("/:hash", async (req: Request, res: Response) => {
 
 const HEX_64 = /^[0-9a-fA-F]{64}$/;
 const FIELD_HEX = /^(0x)?[0-9a-fA-F]{64}$/;
+
+// GET /api/links/split/:id - Get split-link details from the AtreusContract (#120).
+// Multi-recipient / partial-claim escrow created via create_split_link. See
+// docs/architecture.md §5.1 for the state machine.
+linkRoutes.get("/split/:id", async (req: Request, res: Response) => {
+  const correlationId = String(req.header("x-correlation-id") || crypto.randomUUID());
+  const id = String(req.params.id);
+  if (!HEX_64.test(id)) {
+    res.status(400).json({ error: "Invalid link id format", correlationId });
+    return;
+  }
+  try {
+    const info = await getSplitLinkInfo(id);
+    if (!info) {
+      res.status(404).json({ error: "Split link not found", correlationId });
+      return;
+    }
+    // creator is deliberately not returned, consistent with GET /api/links/:hash
+    // (issue #118) — recipients and third parties must not learn who funded a
+    // link from the API. Recipient addresses ARE returned: the sender named
+    // them directly in create_split_link, so they carry no additional leak.
+    res.json({
+      id,
+      amount: info.amount.toString(),
+      asset: info.asset,
+      policyType: info.policyType,
+      policyParams: info.policyParams,
+      expiresAt: info.expiresAt.toString(),
+      minClaimBps: info.minClaimBps,
+      closed: info.closed,
+      recipients: info.recipients.map((r) => ({
+        address: r.address,
+        allocated: r.allocated.toString(),
+        claimed: r.claimed.toString(),
+      })),
+      correlationId,
+    });
+  } catch (error: any) {
+    logger.error({ correlationId, id, error: error?.message }, "split link lookup failed");
+    res.status(500).json({ error: "Failed to read split link from contract", correlationId });
+  }
+});
 
 // POST /api/links/prove - Generate a ZK UltraHonk proof for claim flow
 linkRoutes.post("/prove", async (req: Request, res: Response) => {
@@ -417,5 +459,55 @@ linkRoutes.post("/:hash/attest", async (req: Request, res: Response) => {
     attestationCounter.inc({ status: "failed" });
     logger.error({ correlationId, error: err?.message }, "attestation failed");
     res.status(500).json({ error: err?.message || "Attestation failed", correlationId });
+  }
+});
+
+// POST /api/links/split/:id/attest-email - Email-restriction attestation for a
+// split link (#120). Unlike POST /:hash/attest, this takes no ZK proof and does
+// not call VerifierContract.attest(): claim_split gates on recipient.require_auth()
+// alone for the base case, since split-link recipients are named Addresses at
+// creation rather than bearer-secret holders (see docs/architecture.md §5.1). This
+// route exists only for the policy_type == 1 case, to record the same DKIM-backed
+// email attestation claim_split's check_email_policy requires before a claim.
+linkRoutes.post("/split/:id/attest-email", async (req: Request, res: Response) => {
+  const correlationId = String(req.header("x-correlation-id") || crypto.randomUUID());
+  const id = String(req.params.id);
+  const { recipient, recipient_email_hash } = req.body;
+
+  if (!HEX_64.test(id)) {
+    res.status(400).json({ error: "Invalid link id format", correlationId });
+    return;
+  }
+  if (!recipient || typeof recipient !== "string") {
+    res.status(400).json({ error: "Missing recipient", correlationId });
+    return;
+  }
+  if (typeof recipient_email_hash !== "string" || !isEmailHashHex(recipient_email_hash.toLowerCase())) {
+    res.status(400).json({
+      error: "Invalid recipient_email_hash format (expected 64 hex chars)",
+      correlationId,
+    });
+    return;
+  }
+
+  const emailHash = recipient_email_hash.toLowerCase();
+  if (!isEmailHashVerified(emailHash)) {
+    logger.warn({ correlationId, emailHash, id }, "split attest-email rejected: email not DKIM-verified");
+    res.status(403).json({
+      error:
+        "Email ownership not verified. Complete POST /api/email/verify and /api/email/confirm with a DKIM-signed message before attesting an email-restricted split link.",
+      correlationId,
+    });
+    return;
+  }
+
+  try {
+    const linkHashBytes = Uint8Array.from(Buffer.from(id, "hex"));
+    const emailHashBytes = Uint8Array.from(Buffer.from(emailHash, "hex"));
+    const { txHash, claimSalt } = await submitEmailOnlyAttestation(linkHashBytes, recipient, emailHashBytes);
+    res.json({ success: true, id, recipient, attestationTx: txHash, claimSalt, correlationId });
+  } catch (err: any) {
+    logger.error({ correlationId, error: err?.message }, "split email attestation failed");
+    res.status(500).json({ error: err?.message || "Email attestation failed", correlationId });
   }
 });

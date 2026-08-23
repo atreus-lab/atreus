@@ -664,3 +664,481 @@ fn test_duplicate_link_fails() {
         )
         .is_err());
 }
+
+// ---------------------------------------------------------------------
+// Split links: partial claims (#120) and multiple recipients (#120).
+//
+// A single-recipient split link is the "partial claims" mode (one payee
+// drawing the escrowed amount down over several `claim_split` calls); a
+// multi-recipient split link is the "split recipients" mode (a fixed payee
+// list, each with a defined share). Both share the state machine tested
+// below. See docs/architecture.md §5.1 for the full design.
+// ---------------------------------------------------------------------
+
+#[test]
+fn test_split_multiple_recipients_each_claim_full_share() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let (client, _verifier, sender, token) = setup_test(&env);
+    let id = make_link_hash(&env, 1);
+    let expiry = env.ledger().timestamp() + 1000;
+
+    let r1 = Address::generate(&env);
+    let r2 = Address::generate(&env);
+    let r3 = Address::generate(&env);
+    let recipients = vec![&env, r1.clone(), r2.clone(), r3.clone()];
+    let shares = vec![&env, 500i128, 300i128, 200i128];
+
+    client.create_split_link(
+        &id,
+        &0u32,
+        &Bytes::new(&env),
+        &token,
+        &expiry,
+        &sender,
+        &recipients,
+        &shares,
+        &0u32,
+    );
+
+    let token_client = TokenClient::new(&env, &token);
+    assert_eq!(token_client.balance(&client.address), 1000i128);
+
+    // No ZK attestation needed: recipients are named Addresses at creation,
+    // so `recipient.require_auth()` alone gates each claim.
+    let salt = make_salt(&env, 0);
+    for (recipient, share) in [(&r1, 500i128), (&r2, 300i128), (&r3, 200i128)] {
+        let (relayer, fee) = no_relayer(&env);
+        client.claim_split(&id, recipient, &share, &salt, &relayer, &fee);
+        assert_eq!(token_client.balance(recipient), share);
+    }
+
+    assert_eq!(token_client.balance(&client.address), 0);
+}
+
+#[test]
+fn test_split_partial_claims_accumulate_to_full_allocation() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let (client, _verifier, sender, token) = setup_test(&env);
+    let id = make_link_hash(&env, 2);
+    let expiry = env.ledger().timestamp() + 1000;
+    let recipient = Address::generate(&env);
+
+    client.create_split_link(
+        &id,
+        &0u32,
+        &Bytes::new(&env),
+        &token,
+        &expiry,
+        &sender,
+        &vec![&env, recipient.clone()],
+        &vec![&env, 1000i128],
+        &1000u32, // 10% minimum per non-final partial claim
+    );
+
+    let (relayer, fee) = no_relayer(&env);
+    let salt = make_salt(&env, 0);
+
+    // First partial claim: 400 (>= 10% of 1000).
+    client.claim_split(&id, &recipient, &400i128, &salt, &relayer, &fee);
+
+    // Second claim closes out the exact remainder (600), which is always
+    // allowed regardless of the minimum floor.
+    client.claim_split(&id, &recipient, &600i128, &salt, &relayer, &fee);
+
+    let token_client = TokenClient::new(&env, &token);
+    assert_eq!(token_client.balance(&recipient), 1000i128);
+    assert_eq!(token_client.balance(&client.address), 0);
+
+    // Nothing left to claim.
+    assert!(client
+        .try_claim_split(&id, &recipient, &1i128, &salt, &relayer, &fee)
+        .is_err());
+}
+
+#[test]
+fn test_split_partial_claim_below_minimum_fails() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let (client, _verifier, sender, token) = setup_test(&env);
+    let id = make_link_hash(&env, 3);
+    let expiry = env.ledger().timestamp() + 1000;
+    let recipient = Address::generate(&env);
+
+    client.create_split_link(
+        &id,
+        &0u32,
+        &Bytes::new(&env),
+        &token,
+        &expiry,
+        &sender,
+        &vec![&env, recipient.clone()],
+        &vec![&env, 1000i128],
+        &5000u32, // 50% minimum per non-final partial claim
+    );
+
+    let salt = make_salt(&env, 0);
+    let (relayer, fee) = no_relayer(&env);
+
+    // 100 is below the 50% floor and doesn't close out the remainder.
+    assert!(client
+        .try_claim_split(&id, &recipient, &100i128, &salt, &relayer, &fee)
+        .is_err());
+}
+
+#[test]
+fn test_split_claim_exceeds_allocation_fails() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let (client, _verifier, sender, token) = setup_test(&env);
+    let id = make_link_hash(&env, 4);
+    let expiry = env.ledger().timestamp() + 1000;
+    let recipient = Address::generate(&env);
+
+    client.create_split_link(
+        &id,
+        &0u32,
+        &Bytes::new(&env),
+        &token,
+        &expiry,
+        &sender,
+        &vec![&env, recipient.clone()],
+        &vec![&env, 1000i128],
+        &0u32,
+    );
+
+    let salt = make_salt(&env, 0);
+    let (relayer, fee) = no_relayer(&env);
+
+    assert!(client
+        .try_claim_split(&id, &recipient, &1001i128, &salt, &relayer, &fee)
+        .is_err());
+}
+
+#[test]
+#[should_panic(expected = "not a recipient of this link")]
+fn test_split_claim_by_non_recipient_fails() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let (client, _verifier, sender, token) = setup_test(&env);
+    let id = make_link_hash(&env, 5);
+    let expiry = env.ledger().timestamp() + 1000;
+    let recipient = Address::generate(&env);
+    let stranger = Address::generate(&env);
+
+    client.create_split_link(
+        &id,
+        &0u32,
+        &Bytes::new(&env),
+        &token,
+        &expiry,
+        &sender,
+        &vec![&env, recipient.clone()],
+        &vec![&env, 1000i128],
+        &0u32,
+    );
+
+    let salt = make_salt(&env, 0);
+    let (relayer, fee) = no_relayer(&env);
+    client.claim_split(&id, &stranger, &1000i128, &salt, &relayer, &fee);
+}
+
+#[test]
+fn test_split_duplicate_recipient_fails() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let (client, _verifier, sender, token) = setup_test(&env);
+    let id = make_link_hash(&env, 6);
+    let expiry = env.ledger().timestamp() + 1000;
+    let recipient = Address::generate(&env);
+
+    assert!(client
+        .try_create_split_link(
+            &id,
+            &0u32,
+            &Bytes::new(&env),
+            &token,
+            &expiry,
+            &sender,
+            &vec![&env, recipient.clone(), recipient.clone()],
+            &vec![&env, 500i128, 500i128],
+            &0u32,
+        )
+        .is_err());
+}
+
+#[test]
+fn test_split_recipients_shares_length_mismatch_fails() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let (client, _verifier, sender, token) = setup_test(&env);
+    let id = make_link_hash(&env, 7);
+    let expiry = env.ledger().timestamp() + 1000;
+    let r1 = Address::generate(&env);
+    let r2 = Address::generate(&env);
+
+    assert!(client
+        .try_create_split_link(
+            &id,
+            &0u32,
+            &Bytes::new(&env),
+            &token,
+            &expiry,
+            &sender,
+            &vec![&env, r1, r2],
+            &vec![&env, 1000i128],
+            &0u32,
+        )
+        .is_err());
+}
+
+#[test]
+fn test_split_zero_recipients_fails() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let (client, _verifier, sender, token) = setup_test(&env);
+    let id = make_link_hash(&env, 8);
+    let expiry = env.ledger().timestamp() + 1000;
+
+    assert!(client
+        .try_create_split_link(
+            &id,
+            &0u32,
+            &Bytes::new(&env),
+            &token,
+            &expiry,
+            &sender,
+            &Vec::<Address>::new(&env),
+            &Vec::<i128>::new(&env),
+            &0u32,
+        )
+        .is_err());
+}
+
+// Property-style test: for a range of split configurations, whatever the
+// mix of full claims, partial claims, and a mid-flight cancellation, every
+// stroop that left the escrow lands in exactly one of "paid to a recipient"
+// or "returned to the creator" — nothing is minted, burned, or stuck.
+#[test]
+fn test_split_balance_conservation_across_claim_and_cancel_combinations() {
+    for seed in 0u8..6 {
+        let env = Env::default();
+        env.mock_all_auths();
+
+        let (client, _verifier, sender, token) = setup_test(&env);
+        let id = make_link_hash(&env, 100 + seed);
+        let expiry = env.ledger().timestamp() + 1000;
+
+        let recipients_addrs = vec![
+            &env,
+            Address::generate(&env),
+            Address::generate(&env),
+            Address::generate(&env),
+        ];
+        let shares = vec![&env, 300i128, 300i128, 400i128];
+        let total = 1000i128;
+
+        client.create_split_link(
+            &id,
+            &0u32,
+            &Bytes::new(&env),
+            &token,
+            &expiry,
+            &sender,
+            &recipients_addrs,
+            &shares,
+            &0u32,
+        );
+
+        let token_client = TokenClient::new(&env, &token);
+        let (relayer, relayer_fee) = (Address::generate(&env), 10i128 * (seed as i128 % 3));
+        let mut paid_to_recipients: i128 = 0;
+        let mut paid_to_relayer: i128 = 0;
+
+        let salt = make_salt(&env, 0);
+
+        // Recipient 0 always fully claims.
+        let r0 = recipients_addrs.get(0).unwrap();
+        client.claim_split(&id, &r0, &300i128, &salt, &relayer, &relayer_fee);
+        paid_to_recipients += 300 - relayer_fee;
+        paid_to_relayer += relayer_fee;
+
+        // Recipient 1 partially claims when seed is even, leaving the rest
+        // for the sender's cancellation; fully claims when seed is odd.
+        let r1 = recipients_addrs.get(1).unwrap();
+        let claim1 = if seed % 2 == 0 { 150i128 } else { 300i128 };
+        client.claim_split(&id, &r1, &claim1, &salt, &Address::generate(&env), &0i128);
+        paid_to_recipients += claim1;
+
+        // Recipient 2 never claims.
+
+        let sender_balance_before_cancel = token_client.balance(&sender);
+        client.cancel_split_link(&id);
+        let returned_to_creator = token_client.balance(&sender) - sender_balance_before_cancel;
+
+        let escrowed_after = token_client.balance(&client.address);
+        assert_eq!(escrowed_after, 0, "seed {seed}: escrow must be fully drained");
+        assert_eq!(
+            paid_to_recipients + paid_to_relayer + returned_to_creator,
+            total,
+            "seed {seed}: every stroop must be accounted for"
+        );
+        assert_eq!(
+            token_client.balance(&r0) + token_client.balance(&r1),
+            paid_to_recipients,
+            "seed {seed}: recipient balances must match what was claimed"
+        );
+
+        // Cancellation is terminal: no further claims, even from the
+        // recipient who never claimed.
+        let r2 = recipients_addrs.get(2).unwrap();
+        assert!(client
+            .try_claim_split(&id, &r2, &400i128, &salt, &relayer, &0i128)
+            .is_err());
+    }
+}
+
+#[test]
+#[should_panic(expected = "cancel window closed")]
+fn test_split_cancel_after_expiry_fails() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let (client, _verifier, sender, token) = setup_test(&env);
+    let id = make_link_hash(&env, 9);
+    let expiry = env.ledger().timestamp() + 1;
+
+    client.create_split_link(
+        &id,
+        &0u32,
+        &Bytes::new(&env),
+        &token,
+        &expiry,
+        &sender,
+        &vec![&env, Address::generate(&env)],
+        &vec![&env, 1000i128],
+        &0u32,
+    );
+
+    env.ledger().set_timestamp(expiry + 1);
+    client.cancel_split_link(&id);
+}
+
+#[test]
+fn test_split_refund_after_expiry_returns_unclaimed_remainder() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let (client, _verifier, sender, token) = setup_test(&env);
+    let id = make_link_hash(&env, 10);
+    let expiry = env.ledger().timestamp() + 1000;
+    let recipient = Address::generate(&env);
+
+    client.create_split_link(
+        &id,
+        &0u32,
+        &Bytes::new(&env),
+        &token,
+        &expiry,
+        &sender,
+        &vec![&env, recipient.clone()],
+        &vec![&env, 1000i128],
+        &0u32,
+    );
+
+    // Partially claim before expiry.
+    let salt = make_salt(&env, 0);
+    let (relayer, fee) = no_relayer(&env);
+    client.claim_split(&id, &recipient, &400i128, &salt, &relayer, &fee);
+
+    env.ledger().set_timestamp(expiry + 1);
+    client.refund_split_link(&id);
+
+    let token_client = TokenClient::new(&env, &token);
+    assert_eq!(token_client.balance(&recipient), 400i128);
+    assert_eq!(token_client.balance(&sender), 10000i128 - 400i128);
+    assert_eq!(token_client.balance(&client.address), 0);
+
+    // Terminal: refunding twice must fail.
+    assert!(client.try_refund_split_link(&id).is_err());
+}
+
+#[test]
+fn test_split_refund_before_expiry_fails() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let (client, _verifier, sender, token) = setup_test(&env);
+    let id = make_link_hash(&env, 11);
+    let expiry = env.ledger().timestamp() + 1000;
+
+    client.create_split_link(
+        &id,
+        &0u32,
+        &Bytes::new(&env),
+        &token,
+        &expiry,
+        &sender,
+        &vec![&env, Address::generate(&env)],
+        &vec![&env, 1000i128],
+        &0u32,
+    );
+
+    assert!(client.try_refund_split_link(&id).is_err());
+}
+
+#[test]
+fn test_split_email_restricted_claim() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let (client, verifier, sender, token) = setup_test(&env);
+    let id = make_link_hash(&env, 12);
+    let expiry = env.ledger().timestamp() + 1000;
+    let recipient = Address::generate(&env);
+    let intended_hash = email_hash(&env, "alice@example.com");
+    let policy_params = Bytes::from_array(&env, &intended_hash.to_array());
+
+    client.create_split_link(
+        &id,
+        &1u32,
+        &policy_params,
+        &token,
+        &expiry,
+        &sender,
+        &vec![&env, recipient.clone()],
+        &vec![&env, 1000i128],
+        &0u32,
+    );
+
+    let salt = make_salt(&env, 0x9A);
+    let (relayer, fee) = no_relayer(&env);
+
+    // No email attestation recorded yet — claim must fail.
+    assert!(client
+        .try_claim_split(&id, &recipient, &1000i128, &salt, &relayer, &fee)
+        .is_err());
+
+    let email_key = blinded_key(
+        &env,
+        EMAIL_DOMAIN,
+        &id,
+        &strkey_ascii(&recipient),
+        Some(&intended_hash.to_array()),
+        &salt,
+    );
+    MockVerifierClient::new(&env, &verifier).attest_email(&email_key);
+
+    client.claim_split(&id, &recipient, &1000i128, &salt, &relayer, &fee);
+    let token_client = TokenClient::new(&env, &token);
+    assert_eq!(token_client.balance(&recipient), 1000i128);
+}

@@ -93,6 +93,127 @@ export const getLinkInfo = async (linkHashHex: string): Promise<LinkInfo | null>
   return out as LinkInfo;
 };
 
+/**
+ * On-chain SplitRecipient / SplitLinkInfo structs, mirror
+ * `contracts/atreus-contract/src/lib.rs::{SplitRecipient, SplitLinkInfo}` (#120).
+ * amount/allocated/claimed are stroops (i128).
+ */
+export interface SplitRecipientInfo {
+  address: string;
+  allocated: bigint;
+  claimed: bigint;
+}
+
+export interface SplitLinkInfo {
+  creator: string;
+  amount: bigint;
+  asset: string;
+  policyType: number;
+  policyParams: string; // hex
+  expiresAt: bigint;
+  minClaimBps: number;
+  recipients: SplitRecipientInfo[];
+  closed: boolean;
+}
+
+/**
+ * `#[contracttype] enum SplitDataKey { SplitLink(BytesN<32>) }` encodes as
+ * `ScVal::Vec([ScVal::Symbol("SplitLink"), ScVal::Bytes(id)])` — a Soroban
+ * enum-with-data variant is always a symbol discriminant followed by its
+ * fields. This must stay in lockstep with the Rust `#[contracttype]` derive.
+ */
+const splitLinkStorageKey = (idHex: string): xdr.ScVal =>
+  xdr.ScVal.scvVec([
+    xdr.ScVal.scvSymbol("SplitLink"),
+    xdr.ScVal.scvBytes(Buffer.from(idHex, "hex")),
+  ]);
+
+const scValToMap = (val: any): Map<string, any> | null => {
+  const map: any = (() => { try { return val.map(); } catch { return null; } })();
+  if (!map) return null;
+  const out = new Map<string, any>();
+  for (let i = 0; i < map.length; i++) {
+    const kv: any = map[i];
+    const attrs = kv._attributes || kv;
+    const k: any = attrs.key;
+    if (!k || k._arm !== "sym") continue;
+    out.set(Buffer.from(k._value).toString("utf8"), attrs.val);
+  }
+  return out;
+};
+
+/**
+ * Read a SplitLinkInfo from the AtreusContract's persistent storage (#120).
+ * Same direct-storage-read approach as getLinkInfo, keyed by the enum-wrapped
+ * SplitDataKey instead of a bare BytesN<32>. Returns null when the entry
+ * does not exist or is malformed.
+ */
+export const getSplitLinkInfo = async (idHex: string): Promise<SplitLinkInfo | null> => {
+  const contractId = process.env.NEXT_PUBLIC_CONTRACT_ID;
+  if (!contractId) throw new Error("NEXT_PUBLIC_CONTRACT_ID is not configured");
+  if (!/^[0-9a-fA-F]{64}$/.test(idHex)) throw new Error("id must be 64 hex chars");
+
+  const key = splitLinkStorageKey(idHex);
+  let entry: any;
+  try {
+    entry = await rpcServer.getContractData(contractId, key, Durability.Persistent);
+  } catch (err: any) {
+    if (err?.status === 404 || err?.response?.status === 404) return null;
+    throw err;
+  }
+  if (!entry) return null;
+
+  const val = entry.val.contractData().val();
+  const map = scValToMap(val);
+  if (!map) return null;
+
+  const out: Partial<SplitLinkInfo> = {};
+  const creatorVal = map.get("creator");
+  if (creatorVal) { try { out.creator = Address.fromScVal(creatorVal).toString(); } catch { /* malformed */ } }
+  const assetVal = map.get("asset");
+  if (assetVal) { try { out.asset = Address.fromScVal(assetVal).toString(); } catch { /* malformed */ } }
+  const amountVal = map.get("amount");
+  if (amountVal) { const n = extractI128(amountVal); if (n !== null) out.amount = n; }
+  const policyTypeVal = map.get("policy_type");
+  if (policyTypeVal?._arm === "u32") out.policyType = Number(policyTypeVal._value);
+  const policyParamsVal = map.get("policy_params");
+  if (policyParamsVal?._arm === "bytes") out.policyParams = Buffer.from(policyParamsVal._value).toString("hex");
+  const expiresAtVal = map.get("expires_at");
+  if (expiresAtVal?._arm === "u64") out.expiresAt = BigInt(expiresAtVal._value);
+  const minClaimBpsVal = map.get("min_claim_bps");
+  if (minClaimBpsVal?._arm === "u32") out.minClaimBps = Number(minClaimBpsVal._value);
+  const closedVal = map.get("closed");
+  if (closedVal?._arm === "b") out.closed = closedVal._value === true;
+
+  const recipientsVal = map.get("recipients");
+  if (recipientsVal) {
+    try {
+      const vec = recipientsVal.vec();
+      const recipients: SplitRecipientInfo[] = [];
+      for (let i = 0; i < vec.length; i++) {
+        const rMap = scValToMap(vec[i]);
+        if (!rMap) continue;
+        const addressVal = rMap.get("address");
+        const allocatedVal = rMap.get("allocated");
+        const claimedVal = rMap.get("claimed");
+        if (!addressVal || !allocatedVal || !claimedVal) continue;
+        const allocated = extractI128(allocatedVal);
+        const claimed = extractI128(claimedVal);
+        if (allocated === null || claimed === null) continue;
+        recipients.push({ address: Address.fromScVal(addressVal).toString(), allocated, claimed });
+      }
+      out.recipients = recipients;
+    } catch { /* malformed */ }
+  }
+
+  if (out.creator === undefined || out.amount === undefined || out.asset === undefined ||
+      out.policyType === undefined || out.policyParams === undefined || out.expiresAt === undefined ||
+      out.minClaimBps === undefined || out.recipients === undefined || out.closed === undefined) {
+    return null;
+  }
+  return out as SplitLinkInfo;
+};
+
 export const createBatchEscrowTransaction = async (
   creator: string,
   row: BatchInputRow,
@@ -219,6 +340,70 @@ export const submitAttestation = async (
     await new Promise((resolve) => setTimeout(resolve, 1500));
   }
   throw new Error(`Timed out waiting for attestation tx (hash: ${sendResult.hash})`);
+};
+
+/**
+ * Submits VerifierContract.attest_email(attester, email_key) alone, with no
+ * accompanying VerifierContract.attest() call and no ZK proof involved.
+ *
+ * `claim_split` (#120) gates non-restricted split-link claims on
+ * `recipient.require_auth()` alone — the sender named the recipient's
+ * Address directly in `create_split_link`, so there is no bearer secret to
+ * prove knowledge of, unlike `claim_link`'s links. Email-restricted split
+ * links (`policy_type == 1`) still need the DKIM-backed email attestation,
+ * so this is submitAttestation() with the ZK/attest() half removed. Callers
+ * must still gate on isEmailHashVerified(emailHash) before calling this —
+ * see POST /api/links/:id/attest-split-email.
+ */
+export const submitEmailOnlyAttestation = async (
+  linkHash: Uint8Array,
+  recipient: string,
+  emailHash: Uint8Array,
+): Promise<AttestationResult> => {
+  if (emailHash.length !== 32) throw new Error("emailHash must be 32 bytes");
+
+  const verifierContractId = process.env.NEXT_PUBLIC_VERIFIER_CONTRACT_ID;
+  if (!verifierContractId) throw new Error("NEXT_PUBLIC_VERIFIER_CONTRACT_ID is not configured");
+
+  const attesterSecret = process.env.ATTESTER_SECRET_KEY;
+  if (!attesterSecret) throw new Error("ATTESTER_SECRET_KEY is not configured");
+
+  const attesterKp = Keypair.fromSecret(attesterSecret);
+  const contract = new Contract(verifierContractId);
+
+  const salt = randomBytes(SALT_BYTES);
+  const operation = contract.call(
+    "attest_email",
+    new Address(attesterKp.publicKey()).toScVal(),
+    xdr.ScVal.scvBytes(computeEmailKey(linkHash, recipient, emailHash, salt)),
+  );
+
+  const account = await rpcServer.getAccount(attesterKp.publicKey());
+  let tx = new TransactionBuilder(account, { fee: "200000", networkPassphrase })
+    .addOperation(operation)
+    .setTimeout(60)
+    .build();
+
+  tx = (await rpcServer.prepareTransaction(tx)) as any;
+  tx.sign(attesterKp);
+
+  const sendResult = await rpcServer.sendTransaction(tx as any);
+  if (sendResult.status === "ERROR") {
+    throw new Error(`Email attestation tx rejected: ${(sendResult as any).errorResultXdr || (sendResult as any).errorResult}`);
+  }
+
+  const start = Date.now();
+  while (Date.now() - start < 30_000) {
+    const result = await rpcServer.getTransaction(sendResult.hash);
+    if (result.status === rpc.Api.GetTransactionStatus.SUCCESS) {
+      return { txHash: sendResult.hash, claimSalt: salt.toString("hex") };
+    }
+    if (result.status === rpc.Api.GetTransactionStatus.FAILED) {
+      throw new Error(`Email attestation tx failed on-chain (hash: ${sendResult.hash})`);
+    }
+    await new Promise((resolve) => setTimeout(resolve, 1500));
+  }
+  throw new Error(`Timed out waiting for email attestation tx (hash: ${sendResult.hash})`);
 };
 
 /**

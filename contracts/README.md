@@ -12,6 +12,12 @@ Soroban smart contracts for the Atreus protocol on Stellar.
 | `create_link(id, policy_type, policy_params, amount, asset, expiry, sender)` | Escrows tokens from sender, stores link info, emits `("created", id)` |
 | `claim_link(link_hash, recipient, claim_salt, relayer_address, relayer_fee)` | Recomputes the blinded `claim_key`, checks that `VerifierContract.is_attested(claim_key)` returns true, rejects an already-claimed link, pays the relayer fee and the remainder to the recipient, emits `("claimed",)` with no data |
 | `refund_link(link_hash)` | Creator reclaims tokens after expiry |
+| `create_split_link(id, policy_type, policy_params, asset, expiry, sender, recipients, shares, min_claim_bps)` | Multi-recipient / partial-claim escrow (#120). Escrows `sum(shares)`, one allocation per `recipients[i]`. A single recipient is the "partial claims" mode; several is "split recipients". Emits `("splitnew", id)`. |
+| `claim_split(link_hash, recipient, claim_amount, claim_salt, relayer_address, relayer_fee)` | Claims up to `claim_amount` from `recipient`'s remaining allocation. Gated by `recipient.require_auth()` only — no ZK attestation, since split recipients are named `Address`es at creation rather than bearer-secret holders — plus `claim_link`'s email-policy check when `policy_type == 1`. Non-final partial claims must clear `min_claim_bps`; closing out the exact remainder always succeeds. Emits `("splitclm",)` with no data. |
+| `cancel_split_link(link_hash)` | Creator-only clawback of every recipient's unclaimed remainder, only before `expires_at`. Already-claimed amounts are untouched. Terminal — closes the link. |
+| `refund_split_link(link_hash)` | Creator-only sweep of the unclaimed remainder after `expires_at`, the split-link analogue of `refund_link`. Terminal. |
+
+See [`docs/architecture.md`](../docs/architecture.md) §5.1 for the split-link state machine and cancel/claim precedence rules.
 
 **Data structures:**
 
@@ -55,7 +61,7 @@ as `claim_salt`.
 
 ## Tests
 
-14 tests in `atreus-contract/src/test.rs`, 12 in `verifier-contract/src/test.rs`.
+27 tests in `atreus-contract/src/test.rs`, 24 in `verifier-contract/src/test.rs`.
 Notable ones:
 
 | Test | What it verifies |
@@ -66,10 +72,13 @@ Notable ones:
 | `test_double_claim_fails` | The `claimed` flag stops a second claim |
 | `test_email_restricted_claim` | Email-restricted policy through the blinded `email_key` |
 | `test_attested_event_carries_no_data` | Verifier events publish no key material |
+| `test_split_partial_claims_accumulate_to_full_allocation` | Two partial claims (one below, one closing the remainder) sum to a recipient's full share |
+| `test_split_balance_conservation_across_claim_and_cancel_combinations` | Balance-conservation property test: across full/partial claims plus a mid-flight cancel, every stroop lands as a recipient payout, a relayer fee, or a creator refund — never stuck or duplicated |
+| `test_split_cancel_after_expiry_fails` / `test_split_refund_before_expiry_fails` | `cancel_split_link` and `refund_split_link` enforce disjoint, non-overlapping time windows |
 
 ```bash
 cd contracts
-cargo test --all    # 26 passed, 0 failed
+cargo test --all    # 51 passed, 0 failed
 ```
 
 ## Tech Stack
