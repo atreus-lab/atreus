@@ -10,10 +10,7 @@ Thumbs.db
 *.tsbuildinfo
 test_snapshots/
 coverage/
-<<<<<<< HEAD
 *.wasm.gz
-=======
->>>>>>> be39da3417c359e936ceeba0e20d5d4b0f243702
 .opencode/
 .vercel
 .env*

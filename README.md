@@ -50,7 +50,7 @@ flowchart LR
 
 ### Payment Links
 1. **Sender** generates a 32-byte secret → SHA-256 hash → `create_link()` on the escrow contract
-2. **Recipient** opens the URL containing the secret → generates a ZK proof client-side → backend attester verifies the proof and submits an on-chain attestation → `claim_link()` checks both the secret hash and attestation → funds released
+2. **Recipient** opens the URL containing the secret → generates a ZK proof client-side → backend attester verifies the proof and submits an on-chain attestation → `claim_link()` checks the attestation only (the secret never appears as a transaction argument) → funds released
 
 ## Quick Start
 
