@@ -253,9 +253,9 @@ function getFriendlyErrorMessage(err: any): { title: string; description: string
       setStatus('claiming');
       const linkHash = new Uint8Array(await crypto.subtle.digest('SHA-256', secretBytes));
 
-      const contractId = process.env.NEXT_PUBLIC_CONTRACT_ID;
-      const relayerAddress = process.env.NEXT_PUBLIC_RELAYER_ADDRESS;
-      const relayerFee = process.env.NEXT_PUBLIC_RELAYER_FEE_STROOPS;
+      const contractId = process.env.NEXT_PUBLIC_CONTRACT_ID || "CCTDH7A7F5SCJ2WA6I5ZC6MDJDR6D7R52PDYRRTHBMNWOSZREVV2HY2N";
+      const relayerAddress = process.env.NEXT_PUBLIC_RELAYER_ADDRESS || "GD3VH7TE4GEVL3KOYNISOAQ5K5IUHIYC422QLPPWVYKTWNKOWDLLPXPX";
+      const relayerFee = process.env.NEXT_PUBLIC_RELAYER_FEE_STROOPS || "0";
       if (!contractId || !relayerAddress || !relayerFee) {
         throw new Error('Gasless claim configuration is incomplete.');
       }

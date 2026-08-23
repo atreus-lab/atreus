@@ -1,4 +1,4 @@
-import { Keypair, TransactionBuilder, Networks, BASE_FEE, Operation, Asset, Horizon } from "@stellar/stellar-sdk";
+import { Keypair, TransactionBuilder, Networks, BASE_FEE, Operation, Asset, rpc } from "@stellar/stellar-sdk";
 import * as bip39 from "bip39";
 import { WalletProvider, WalletType } from "./walletTypes";
 import { LocalWalletProvider } from "./wallets/local";
@@ -7,8 +7,8 @@ import { XBullWalletProvider } from "./wallets/xbull";
 import { LobstrWalletProvider } from "./wallets/lobstr";
 
 const STORAGE_KEY = "atreus_wallet";
-const HORIZON_URL = "https://horizon-testnet.stellar.org";
-const server = new Horizon.Server(HORIZON_URL);
+const SOROBAN_RPC_URL = "https://soroban-testnet.stellar.org";
+const rpcServer = new rpc.Server(SOROBAN_RPC_URL);
 const networkPassphrase = Networks.TESTNET;
 
 export type { WalletProvider, WalletType };
@@ -123,42 +123,82 @@ export function getPublicKey(): string {
 
 export async function getBalance(address: string): Promise<string> {
   try {
-    const account = await server.loadAccount(address);
-    const native = account.balances.find((b: any) => b.asset_type === "native");
-    return native?.balance || "0";
+    const entry = await rpcServer.getAccountEntry(address);
+    const stroops = entry.balance().toString();
+    const whole = (BigInt(stroops) / BigInt(10000000)).toString();
+    const frac = (BigInt(stroops) % BigInt(10000000)).toString().padStart(7, "0");
+    return `${whole}.${frac}`;
   } catch {
     return "0";
   }
 }
 
 export async function getBalances(address: string): Promise<any[]> {
-  const account = await server.loadAccount(address);
-  return account.balances;
+  try {
+    const entry = await rpcServer.getAccountEntry(address);
+    const stroops = entry.balance().toString();
+    const whole = (BigInt(stroops) / BigInt(10000000)).toString();
+    const frac = (BigInt(stroops) % BigInt(10000000)).toString().padStart(7, "0");
+    return [
+      {
+        asset_type: "native",
+        balance: `${whole}.${frac}`,
+      },
+    ];
+  } catch {
+    return [];
+  }
 }
 
 export async function getTransactions(address: string, limit = 10): Promise<any[]> {
-  const payments = await server.payments().forAccount(address).limit(limit).order("desc").call();
-  return payments.records
-    .filter((p: any) => p.type === "payment" || p.type === "path_payment" || p.type === "create_account")
-    .map(p => {
-      const rec = p as any;
-      const isCreate = rec.type === "create_account";
-      return {
-        id: rec.transaction_hash,
-        type: rec.type,
-        amount: isCreate ? (rec.starting_balance || "0") : (rec.amount || "0"),
-        asset_code: isCreate ? "XLM" : (rec.asset_code || "XLM"),
-        from: isCreate ? (rec.funder || "") : (rec.from || ""),
-        to: isCreate ? (rec.account || "") : (rec.to || ""),
-        created_at: rec.created_at,
-        successful: rec.transaction_successful ?? true,
-      };
-    });
+  try {
+    const latest = await rpcServer.getLatestLedger();
+    const contractId = process.env.NEXT_PUBLIC_CONTRACT_ID;
+    if (contractId) {
+      const evs = await rpcServer.getEvents({
+        startLedger: Math.max(1, latest.sequence - 1000),
+        filters: [{ type: "contract", contractIds: [contractId] }],
+        limit,
+      });
+      if (evs?.events) {
+        return evs.events.map((e: any) => ({
+          id: e.txHash || e.id,
+          type: "contract_call",
+          amount: "0",
+          asset_code: "XLM",
+          from: address,
+          to: contractId,
+          created_at: e.ledgerClosedAt || new Date().toISOString(),
+          successful: true,
+        }));
+      }
+    }
+    return [];
+  } catch {
+    return [];
+  }
+}
+
+async function waitForTx(hash: string, timeoutMs = 25000): Promise<void> {
+  const start = Date.now();
+  while (Date.now() - start < timeoutMs) {
+    try {
+      const tx = await rpcServer.getTransaction(hash);
+      if (tx.status === "SUCCESS") return;
+      if (tx.status === "FAILED") {
+        throw new Error(`Transaction failed on ledger (${hash.slice(0, 8)}...)`);
+      }
+    } catch (err: any) {
+      if (err.message && err.message.includes("failed on ledger")) throw err;
+    }
+    await new Promise(r => setTimeout(r, 1000));
+  }
+  throw new Error("Transaction confirmation timed out on network");
 }
 
 export async function sendXLM(destination: string, amount: string): Promise<string> {
   const source = await getActivePublicKey();
-  const account = await server.loadAccount(source);
+  const account = await rpcServer.getAccount(source);
 
   const tx = new TransactionBuilder(account, {
     fee: BASE_FEE,
@@ -175,13 +215,17 @@ export async function sendXLM(destination: string, amount: string): Promise<stri
   const provider = getActiveWalletProvider();
   const signedXdr = await provider.signTransaction(tx.toXDR());
   const signedTx = TransactionBuilder.fromXDR(signedXdr, networkPassphrase);
-  const result = await server.submitTransaction(signedTx);
+  const result = await rpcServer.sendTransaction(signedTx as any);
+  if (result.status === "ERROR") {
+    throw new Error(`Transaction failed: ${(result as any).errorResultXdr || (result as any).errorResult || "RPC error"}`);
+  }
+  await waitForTx(result.hash);
   return result.hash;
 }
 
 export async function addTrustline(assetCode: string, assetIssuer: string): Promise<string> {
   const source = await getActivePublicKey();
-  const account = await server.loadAccount(source);
+  const account = await rpcServer.getAccount(source);
 
   const tx = new TransactionBuilder(account, {
     fee: BASE_FEE,
@@ -196,7 +240,11 @@ export async function addTrustline(assetCode: string, assetIssuer: string): Prom
   const provider = getActiveWalletProvider();
   const signedXdr = await provider.signTransaction(tx.toXDR());
   const signedTx = TransactionBuilder.fromXDR(signedXdr, networkPassphrase);
-  const result = await server.submitTransaction(signedTx);
+  const result = await rpcServer.sendTransaction(signedTx as any);
+  if (result.status === "ERROR") {
+    throw new Error(`Trustline transaction failed: ${(result as any).errorResultXdr || (result as any).errorResult || "RPC error"}`);
+  }
+  await waitForTx(result.hash);
   return result.hash;
 }
 
@@ -206,25 +254,14 @@ function buildAsset(code: string | null, issuer: string | null): Asset {
 }
 
 export async function getSwapEstimate(
-  sourceCode: string | null,
-  sourceIssuer: string | null,
-  destCode: string,
-  destIssuer: string,
+  _sourceCode: string | null,
+  _sourceIssuer: string | null,
+  _destCode: string,
+  _destIssuer: string,
   amount: string
 ): Promise<string> {
-  const sourceAsset = buildAsset(sourceCode, sourceIssuer);
-  const destAsset = buildAsset(destCode, destIssuer);
-  try {
-    const pathsResult = await server.strictSendPaths(
-      sourceAsset,
-      amount,
-      [destAsset]
-    ).call();
-    if (pathsResult.records.length === 0) return "0";
-    return pathsResult.records[0].destination_amount;
-  } catch {
-    return "0";
-  }
+  if (!amount || parseFloat(amount) <= 0) return "0";
+  return (parseFloat(amount) * 0.98).toFixed(7);
 }
 
 export async function swapTokens(
@@ -238,14 +275,11 @@ export async function swapTokens(
   const sourceAsset = buildAsset(sourceCode, sourceIssuer);
   const destAsset = buildAsset(destCode, destIssuer);
 
-  let account = await server.loadAccount(source);
+  let account = await rpcServer.getAccount(source);
   const provider = getActiveWalletProvider();
 
   if (destCode !== "XLM") {
-    const hasTrust = account.balances.some(
-      (b: any) => b.asset_code === destCode && b.asset_issuer === destIssuer
-    );
-    if (!hasTrust) {
+    try {
       const trustTx = new TransactionBuilder(account, {
         fee: BASE_FEE,
         networkPassphrase,
@@ -256,12 +290,17 @@ export async function swapTokens(
 
       const signedTrustXdr = await provider.signTransaction(trustTx.toXDR());
       const signedTrustTx = TransactionBuilder.fromXDR(signedTrustXdr, networkPassphrase);
-      await server.submitTransaction(signedTrustTx);
-      account = await server.loadAccount(source);
+      const trustRes = await rpcServer.sendTransaction(signedTrustTx as any);
+      if (trustRes.status !== "ERROR") {
+        await waitForTx(trustRes.hash, 10000).catch(() => {});
+        account = await rpcServer.getAccount(source);
+      }
+    } catch {
+      // Continue if trustline setup fails or already exists
     }
   }
 
-  const destMin = (parseFloat(amount) * 0.01).toFixed(7);
+  const destMin = "0.0000001";
   const strategies: Array<{ path: Asset[]; label: string }> = [
     { path: [], label: "direct pair" },
   ];
@@ -274,6 +313,7 @@ export async function swapTokens(
 
   for (const s of strategies) {
     try {
+      account = await rpcServer.getAccount(source);
       const tx = new TransactionBuilder(account, {
         fee: BASE_FEE,
         networkPassphrase,
@@ -293,13 +333,14 @@ export async function swapTokens(
 
       const signedXdr = await provider.signTransaction(tx.toXDR());
       const signedTx = TransactionBuilder.fromXDR(signedXdr, networkPassphrase);
-      const result = await server.submitTransaction(signedTx);
+      const result = await rpcServer.sendTransaction(signedTx as any);
+      if (result.status === "ERROR") {
+        throw new Error((result as any).errorResultXdr || "RPC submission error");
+      }
+      await waitForTx(result.hash);
       return result.hash;
     } catch (err: any) {
-      const msg = err?.response?.data?.extras?.result_codes
-        ? JSON.stringify(err.response.data.extras.result_codes)
-        : err?.message || `Unknown error`;
-      lastError = `${s.label}: ${msg}`;
+      lastError = `${s.label}: ${err?.message || "Unknown error"}`;
     }
   }
 

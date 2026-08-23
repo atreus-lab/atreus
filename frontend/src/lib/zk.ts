@@ -212,7 +212,19 @@ export async function requestAttestation(
     body: JSON.stringify(body),
   });
 
-  const data = await resp.json();
+  const text = await resp.text();
+  let data: any = {};
+  try {
+    data = JSON.parse(text);
+  } catch {
+    if (!resp.ok) {
+      throw new Error(
+        `Backend service unavailable (${resp.status}). Please ensure the backend server is running on port 3001 (run 'pnpm dev' or 'pnpm dev:backend').`
+      );
+    }
+    throw new Error("Invalid response from attestation service");
+  }
+
   if (!resp.ok) {
     throw new Error(data.error || "Attestation request failed");
   }
