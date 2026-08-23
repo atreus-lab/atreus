@@ -202,86 +202,50 @@ export default function ClaimPage() {
   }
 
   /** Map contract panic messages and network errors to user-friendly messages */
-  function getFriendlyErrorMessage(err: any): { title: string; description: string } {
-    const rawMsg = err?.message || err?.toString() || '';
-    const msg = rawMsg.toLowerCase();
+function getFriendlyErrorMessage(err: any): { title: string; description: string } {
+  const rawMsg = err?.message || err?.toString() || '';
+  const msg = rawMsg.toLowerCase();
 
-    // ── Specific contract panics & Soroswap errors ──
-    if (msg.includes('insufficient_output_amount') || msg.includes('insufficient output amount'))
-      return {
-        title: 'Slippage limit exceeded',
-        description: 'The market price changed during the swap. Try claiming again or claim without swapping.',
-      };
-    if (msg.includes('router: expired') || msg.includes('deadline expired'))
-      return {
-        title: 'Swap deadline expired',
-        description: 'The transaction took longer than expected to execute on-chain. Please try again.',
-      };
-    if (msg.includes('invalid path') || msg.includes('path must start'))
-      return {
-        title: 'Invalid swap route',
-        description: 'The requested token swap path is not supported on Soroswap.',
-      };
-    if (msg.includes('invalid secret'))
-      return {
-        title: 'Invalid link',
-        description: 'The secret key for this link is incorrect. Please check the link and try again.',
-      };
-    if (msg.includes('link expired') || msg.includes('expired'))
-      return {
-        title: 'Link expired',
-        description: 'This payment link has expired and can no longer be claimed.',
-      };
-    if (msg.includes('no valid zk attestation'))
-      return {
-        title: 'Proof verification pending',
-        description: 'The ZK proof attestation has not been recorded yet. Please complete the full claim flow.',
-      };
-    if (msg.includes('link not found'))
-      return {
-        title: 'Link not found',
-        description: 'This payment link does not exist in the contract. It may have been refunded or never created.',
-      };
-    if (msg.includes('nullifier already used'))
-      return {
-        title: 'Already claimed',
-        description: 'This payment link has already been claimed with a different wallet.',
-      };
-    if (msg.includes('already claimed'))
-      return {
-        title: 'Funds already claimed',
-        description: 'This payment link has already been claimed. The funds are no longer available.',
-      };
-    if (msg.includes('invalid relayer fee'))
-      return {
-        title: 'Configuration error',
-        description: 'The relayer fee is invalid. Please contact support.',
-      };
-    if (msg.includes('relayer request failed'))
-      return {
-        title: 'Relay service error',
-        description: 'The gasless relay service could not process the claim. Please try again later.',
-      };
+  // ── Ordered checks: specific contract panics FIRST ──
+  // These must come BEFORE the HostError/WasmVm trap block because when Soroban's
+  // prepareTransaction fails it wraps the contract panic in a "HostError" that also
+  // contains the outer function name ("claim_link"), which would trigger the generic
+  // VM trap handler first and mask the real error.
 
-    // ── WasmVm / HostError trap fallback ──
-    if (
-      msg.includes('wasmvm') ||
-      msg.includes('invalidaction') ||
-      msg.includes('unreachablecodereached') ||
-      msg.includes('vm call trapped') ||
-      (msg.includes('hosterror') && (msg.includes('claim_link') || msg.includes('claim_and_swap_link')))
-    ) {
-      if (msg.includes('fn_return') && msg.includes('is_attested') && msg.includes('true')) {
-        return {
-          title: 'Funds already claimed',
-          description: 'This payment link has already been claimed. The funds are no longer available.',
-        };
-      }
-      return {
-        title: 'Contract error',
-        description:
-          'The transaction could not be completed. This link may have already been claimed or is invalid. Please check the link and try again.',
-      };
+  if (msg.includes('invalid secret'))
+    return { title: 'Invalid link', description: 'The secret key for this link is incorrect. Please check the link and try again.' };
+  if (msg.includes('link expired') || msg.includes('expired'))
+    return { title: 'Link expired', description: 'This payment link has expired and can no longer be claimed.' };
+  if (msg.includes('no valid zk attestation'))
+    return { title: 'Proof verification pending', description: 'The ZK proof attestation has not been recorded yet. Please complete the full claim flow.' };
+  if (msg.includes('invalid claim salt'))
+    return { title: 'Attestation service error', description: 'The attester returned an invalid claim salt. Please try again.' };
+  if (msg.includes('link not found'))
+    return { title: 'Link not found', description: 'This payment link does not exist in the contract. It may have been refunded or never created.' };
+  if (msg.includes('nullifier already used'))
+    return { title: 'Already claimed', description: 'This payment link has already been claimed with a different wallet.' };
+  if (msg.includes('already claimed'))
+    return { title: 'Funds already claimed', description: 'This payment link has already been claimed. The funds are no longer available.' };
+  if (msg.includes('invalid relayer fee'))
+    return { title: 'Configuration error', description: 'The relayer fee is invalid. Please contact support.' };
+  if (msg.includes('relayer request failed'))
+    return { title: 'Relay service error', description: 'The gasless relay service could not process the claim. Please try again later.' };
+
+  // ── WasmVm / HostError trap fallback ──
+  // When the contract VM crashes instead of cleanly panicking (e.g. UnreachableCodeReached
+  // after a successful attestation check), we catch that here.  But specific panics
+  // are already handled above.
+  if (
+    msg.includes('wasmvm') ||
+    msg.includes('invalidaction') ||
+    msg.includes('unreachablecodereached') ||
+    msg.includes('vm call trapped') ||
+    msg.includes('hosterror') && msg.includes('claim_link')
+  ) {
+    // Check the event log for telltale signs of "already claimed" or "expired"
+    if (msg.includes('fn_return') && msg.includes('is_attested') && msg.includes('true')) {
+      // is_attested returned true, then claim_link trapped → almost certainly "already claimed"
+      return { title: 'Funds already claimed', description: 'This payment link has already been claimed. The funds are no longer available.' };
     }
 
     if (msg.includes('insufficient balance'))
@@ -315,14 +279,33 @@ export default function ClaimPage() {
   }
 
   const parseLinkInput = () => {
-    const hash = linkInput.split('#')[1]?.split(/[,;\s]/)[0];
+    let hash = '';
+    const trimmed = linkInput.trim();
+    if (trimmed.includes('#')) {
+      hash = trimmed.split('#')[1]?.split(/[,;\s]/)[0] || '';
+    } else if (trimmed.includes('secret=')) {
+      try {
+        const u = new URL(trimmed, window.location.origin);
+        hash = u.searchParams.get('secret') || '';
+      } catch {
+        hash = trimmed.split('secret=')[1]?.split(/[,;&\s]/)[0] || '';
+      }
+    } else if (/^[0-9a-fA-F]{64}$/.test(trimmed)) {
+      hash = trimmed;
+    }
     if (hash) {
       setSecretHex(hash);
       setLinkInput('');
     }
   };
 
-  const getHashFromUrl = () => window.location.hash.substring(1).split(/[,;\s]/)[0];
+  const getHashFromUrl = () => {
+    if (typeof window === 'undefined') return '';
+    const hash = window.location.hash.substring(1).split(/[,;\s]/)[0];
+    if (hash) return hash;
+    const sp = new URLSearchParams(window.location.search);
+    return sp.get('secret') || '';
+  };
 
   useEffect(() => {
     const hash = getHashFromUrl();
@@ -387,24 +370,18 @@ export default function ClaimPage() {
 
       setStatus('attesting');
       const proofHex = bytesToHex(proof);
-      let recipientEmailHash: string | undefined;
-      const emailHashBytes = intendedEmail
-        ? new Uint8Array(await sha256Hash(intendedEmail))
-        : new Uint8Array(32);
-      if (intendedEmail) {
-        recipientEmailHash = Array.from(emailHashBytes)
-          .map((b) => b.toString(16).padStart(2, '0'))
-          .join('');
-      }
+      // Email hash goes to the attester only — email-restricted links
+      const recipientEmailHash = intendedEmail
+        ? bytesToHex(await sha256Hash(intendedEmail))
+        : undefined;
 
-      await requestAttestation(
-        linkHashHex,
-        proofHex,
-        recipient,
-        linkHashFieldHex,
-        nullifierFieldHex,
-        recipientEmailHash
-      );
+      const { claimSalt } = await requestAttestation(linkHashHex, proofHex, recipient, linkHashFieldHex, nullifierFieldHex, recipientEmailHash);
+
+      // The attester binds the claim to this salt — the contract rejects any other value
+      const claimSaltBytes = Buffer.from(claimSalt ?? '', 'hex');
+      if (claimSaltBytes.length !== 32) {
+        throw new Error('Invalid claim salt: the attester returned a value that is not 32 bytes.');
+      }
 
       setStatus('claiming');
       const linkHash = new Uint8Array(await crypto.subtle.digest('SHA-256', secretBytes));
@@ -420,37 +397,14 @@ export default function ClaimPage() {
       }
 
       const contract = new Contract(contractId);
-      const isSwapping = Boolean(swapQuote && swapQuote.path.length >= 2);
-
-      let claimOperation: xdr.Operation;
-
-      if (isSwapping && swapQuote) {
-        const routerAddress = getSoroswapRouterAddress();
-        const deadlineSec = BigInt(Math.floor(Date.now() / 1000) + 300); // 5 minutes deadline
-
-        claimOperation = contract.call(
-          'claim_and_swap_link',
-          xdr.ScVal.scvBytes(Buffer.from(linkHash)),
-          xdr.ScVal.scvBytes(Buffer.from(secretBytes)),
-          new Address(recipient).toScVal(),
-          new Address(routerAddress).toScVal(),
-          buildPathScVal(swapQuote.path),
-          nativeToScVal(swapQuote.minAmountOutStroops, { type: 'i128' }),
-          nativeToScVal(deadlineSec, { type: 'u64' }),
-          nativeToScVal(BigInt(relayerFee), { type: 'i128' }),
-          new Address(relayerAddress).toScVal()
-        );
-      } else {
-        claimOperation = contract.call(
-          'claim_link',
-          xdr.ScVal.scvBytes(Buffer.from(linkHash)),
-          new Address(recipient).toScVal(),
-          xdr.ScVal.scvBytes(Buffer.from(secretBytes)),
-          xdr.ScVal.scvBytes(Buffer.from(emailHashBytes)),
-          new Address(relayerAddress).toScVal(),
-          nativeToScVal(BigInt(relayerFee), { type: 'i128' })
-        );
-      }
+      const claimOperation = contract.call(
+        'claim_link',
+        xdr.ScVal.scvBytes(Buffer.from(linkHash)),
+        new Address(recipient).toScVal(),
+        xdr.ScVal.scvBytes(claimSaltBytes),
+        new Address(relayerAddress).toScVal(),
+        nativeToScVal(BigInt(relayerFee), { type: 'i128' }),
+      );
 
       const account = await rpcServer.getAccount(recipient);
       let transaction = new TransactionBuilder(account, {
@@ -499,7 +453,6 @@ export default function ClaimPage() {
         expiresAt: 0,
         claimed: true,
         txHash: hash,
-        counterpartyAddress: linkInfo.creator || undefined,
       });
     } catch (err: any) {
       console.error(err);
@@ -889,7 +842,7 @@ export default function ClaimPage() {
             />
             <button
               onClick={parseLinkInput}
-              disabled={!linkInput.includes('#')}
+              disabled={!linkInput.trim()}
               className="w-full py-3.5 rounded-2xl text-sm font-bold text-white bg-indigo-600 hover:bg-indigo-700 disabled:opacity-40 disabled:cursor-not-allowed transition-all shadow-[0_4px_12px_rgba(79,70,229,0.3)]"
             >
               Start Claim
