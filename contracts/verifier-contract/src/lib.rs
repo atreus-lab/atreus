@@ -1,15 +1,31 @@
 #![no_std]
 use soroban_sdk::{
-    contract, contractimpl, contracttype, symbol_short, Address, Bytes, BytesN, Env,
+    contract, contractimpl, contracttype, symbol_short, Address, Bytes, BytesN, Env, Vec,
 };
 
 const STORAGE_TTL_THRESHOLD: u32 = 535_679;
 const STORAGE_TTL_EXTEND_TO: u32 = 535_679;
 
-/// Attestations are keyed by a blinded key the attester derives off-chain
-/// (see `attest`), never by (link_hash, recipient): both the call arguments and
-/// the storage keys are public, so a joinable key would let the link creator
-/// watch who claims which link.
+/// Byte length of an UltraHonk proof produced by the Atreus claim circuit:
+/// 458 BN254 field elements x 32 bytes. Measured against the pinned toolchain
+/// (Noir 1.0.0-beta.22 / @aztec/bb.js 5.0.0-nightly.20260522), not assumed.
+///
+/// The previous value here was 2144 bytes (67 field elements), which is the
+/// legacy Barretenberg *UltraPlonk* proof size. It predates this project's
+/// migration to UltraHonk and was never updated, so the check rejected every
+/// proof the circuit actually produces.
+pub const ULTRA_HONK_PROOF_LEN: u32 = 14_656;
+
+/// Upper bound on claims accepted by `attest_batch` in one call.
+///
+/// Each claim performs up to three persistent writes (nullifier, attestation,
+/// optional email attestation) plus TTL extensions, so the real ceiling is
+/// Soroban's per-transaction ledger-write and CPU budget, not this constant.
+/// This bound exists so an oversized batch fails fast with a clear error
+/// instead of burning fees to hit a resource-limit trap. The value that
+/// actually fits must be confirmed on testnet.
+pub const MAX_BATCH_CLAIMS: u32 = 100;
+
 #[contracttype]
 pub enum DataKey {
     VerificationKey,
@@ -19,6 +35,27 @@ pub enum DataKey {
     Nullifier(BytesN<32>),
 }
 
+/// One claim inside an `attest_batch` call.
+///
+/// Every field is a blinded digest, never the underlying link or recipient.
+/// `claim_key` and `email_key` are the same values `attest` and `attest_email`
+/// take, computed off-chain by the attester (issue #118), so a batch reveals no
+/// more to an on-chain observer than the same claims attested one at a time.
+///
+/// This matters more for a batch than for a single claim: passing `link_hash`
+/// and `recipient` in the clear here would not only deanonymise each claim, it
+/// would also group them, showing an observer that these particular recipients
+/// were paid together by one sender.
+///
+/// `nullifier` stays in the clear because it is already a public output of the
+/// ZK circuit and `mark_nullifier` publishes it the same way.
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct BatchClaim {
+    pub claim_key: BytesN<32>,
+    pub nullifier: BytesN<32>,
+    pub email_key: Option<BytesN<32>>,
+}
 #[contract]
 pub struct VerifierContract;
 
@@ -43,9 +80,10 @@ impl VerifierContract {
             panic!("proof cannot be empty");
         }
 
-        // UltraHonk proofs are standardized at 2144 bytes
-        if proof.len() != 2144 {
-            panic!("invalid proof length: expected 2144 bytes");
+        // Reject anything that is not exactly one UltraHonk proof from this
+        // circuit. See ULTRA_HONK_PROOF_LEN for why this is not 2144.
+        if proof.len() != ULTRA_HONK_PROOF_LEN {
+            panic!("invalid proof length");
         }
 
         // The event keeps no recipient: it would tie a submission to an identity.
@@ -196,6 +234,104 @@ impl VerifierContract {
             .persistent()
             .get(&DataKey::Nullifier(nullifier))
             .unwrap_or(false)
+    }
+
+    /// Record N claims' attestations, nullifiers, and (where present) email bindings
+    /// in a single transaction. Returns the number of claims written.
+    ///
+    /// This is the batching win: the per-claim path costs up to three separate
+    /// attester transactions (`attest`, `attest_email`, `mark_nullifier`), so a
+    /// batch of N claims collapses up to 3N transactions into one. It writes the
+    /// *same* storage keys as those three functions, so `is_attested`,
+    /// `is_email_attested`, and `is_nullifier_used` — and therefore `claim_link` —
+    /// behave identically whether a claim was attested singly or in a batch.
+    ///
+    /// Security properties deliberately preserved:
+    ///
+    /// - **Unlinkability (issue #118).** Claims are supplied as blinded `claim_key` /
+    ///   `email_key` digests, exactly as `attest` and `attest_email` take them. A batch
+    ///   therefore leaks no link or recipient, and emits no per-claim topic that would
+    ///   let an observer group recipients paid by one sender.
+    /// - **Replay protection.** Each nullifier is checked against storage and then
+    ///   marked before the next claim is processed. Because a claim's nullifier is
+    ///   marked as it is handled, a batch containing the same nullifier twice fails
+    ///   on the second occurrence: batching cannot become a way to spend one link
+    ///   twice. Panicking reverts the whole transaction, so a batch is atomic —
+    ///   either every claim is recorded or none is. That is the safe default: a
+    ///   used nullifier in a batch means a bug or a race upstream, and silently
+    ///   skipping it would mask a double-spend attempt from the caller.
+    /// - **Email restriction.** An email binding is recorded only when the caller
+    ///   supplies one, exactly as `attest_email` does. Batching does not create a
+    ///   path that settles an email-restricted link without its binding, because
+    ///   `claim_link` still independently requires `is_email_attested`.
+    /// - **Attester trust.** Checked once for the batch, identically to the
+    ///   single-claim functions.
+    ///
+    /// Note this does NOT weaken recipient authorization: `claim_link` still
+    /// requires `recipient.require_auth()` per claim at settlement. Attestation
+    /// and settlement remain separate steps; only attestation is batched here.
+    pub fn attest_batch(env: Env, attester: Address, claims: Vec<BatchClaim>) -> u32 {
+        attester.require_auth();
+
+        let trusted: Address = env
+            .storage()
+            .instance()
+            .get(&DataKey::Attester)
+            .expect("attester not set");
+        if attester != trusted {
+            panic!("untrusted attester");
+        }
+
+        let count = claims.len();
+        if count == 0 {
+            panic!("empty batch");
+        }
+        if count > MAX_BATCH_CLAIMS {
+            panic!("batch exceeds maximum size");
+        }
+
+        for claim in claims.iter() {
+            // Replay check first, and mark immediately — this is what makes a
+            // duplicate nullifier *within* one batch fail on its second occurrence.
+            let nullifier_key = DataKey::Nullifier(claim.nullifier.clone());
+            let used: bool = env.storage().persistent().get(&nullifier_key).unwrap_or(false);
+            if used {
+                panic!("nullifier already used");
+            }
+            env.storage().persistent().set(&nullifier_key, &true);
+            env.storage().persistent().extend_ttl(
+                &nullifier_key,
+                STORAGE_TTL_THRESHOLD,
+                STORAGE_TTL_EXTEND_TO,
+            );
+
+            let attestation_key = DataKey::Attestation(claim.claim_key.clone());
+            env.storage().persistent().set(&attestation_key, &true);
+            env.storage().persistent().extend_ttl(
+                &attestation_key,
+                STORAGE_TTL_THRESHOLD,
+                STORAGE_TTL_EXTEND_TO,
+            );
+
+            if let Some(email_key) = claim.email_key.clone() {
+                let email_attestation_key = DataKey::EmailAttestation(email_key);
+                env.storage().persistent().set(&email_attestation_key, &true);
+                env.storage().persistent().extend_ttl(
+                    &email_attestation_key,
+                    STORAGE_TTL_THRESHOLD,
+                    STORAGE_TTL_EXTEND_TO,
+                );
+            }
+        }
+
+        // Topics carry no per-claim data, matching `attest`. Publishing the count
+        // alone still tells an observer a batch happened and how large it was;
+        // that is unavoidable from the transaction itself and reveals nothing
+        // about which links or recipients it covered.
+        env.events()
+            .publish((symbol_short!("att_batch"),), count);
+
+        count
     }
 }
 
