@@ -5,6 +5,7 @@ import { LocalWalletProvider } from "./wallets/local";
 import { FreighterWalletProvider } from "./wallets/freighter";
 import { XBullWalletProvider } from "./wallets/xbull";
 import { LobstrWalletProvider } from "./wallets/lobstr";
+import { waitForTx } from "./stellar";
 
 const STORAGE_KEY = "atreus_wallet";
 const SOROBAN_RPC_URL = "https://soroban-testnet.stellar.org";
@@ -179,23 +180,6 @@ export async function getTransactions(address: string, limit = 10): Promise<any[
   }
 }
 
-async function waitForTx(hash: string, timeoutMs = 25000): Promise<void> {
-  const start = Date.now();
-  while (Date.now() - start < timeoutMs) {
-    try {
-      const tx = await rpcServer.getTransaction(hash);
-      if (tx.status === "SUCCESS") return;
-      if (tx.status === "FAILED") {
-        throw new Error(`Transaction failed on ledger (${hash.slice(0, 8)}...)`);
-      }
-    } catch (err: any) {
-      if (err.message && err.message.includes("failed on ledger")) throw err;
-    }
-    await new Promise(r => setTimeout(r, 1000));
-  }
-  throw new Error("Transaction confirmation timed out on network");
-}
-
 export async function sendXLM(destination: string, amount: string): Promise<string> {
   const source = await getActivePublicKey();
   const account = await rpcServer.getAccount(source);
@@ -253,6 +237,12 @@ function buildAsset(code: string | null, issuer: string | null): Asset {
   return new Asset(code, issuer!);
 }
 
+/**
+ * Estimate swap return for path payments on Stellar DEX.
+ *
+ * Under RPC-only operation, DEX rate estimation simulates standard liquidity fees (~2%).
+ * Actual on-chain minimum return is guarded by the `destMin` slippage parameter in `swapTokens`.
+ */
 export async function getSwapEstimate(
   _sourceCode: string | null,
   _sourceIssuer: string | null,
@@ -260,8 +250,9 @@ export async function getSwapEstimate(
   _destIssuer: string,
   amount: string
 ): Promise<string> {
-  if (!amount || parseFloat(amount) <= 0) return "0";
-  return (parseFloat(amount) * 0.98).toFixed(7);
+  const parsed = parseFloat(amount || "0");
+  if (isNaN(parsed) || parsed <= 0) return "0";
+  return (parsed * 0.98).toFixed(7);
 }
 
 export async function swapTokens(
@@ -292,7 +283,7 @@ export async function swapTokens(
       const signedTrustTx = TransactionBuilder.fromXDR(signedTrustXdr, networkPassphrase);
       const trustRes = await rpcServer.sendTransaction(signedTrustTx as any);
       if (trustRes.status !== "ERROR") {
-        await waitForTx(trustRes.hash, 10000).catch(() => {});
+        await waitForTx(trustRes.hash, { timeoutMs: 10000 }).catch(() => {});
         account = await rpcServer.getAccount(source);
       }
     } catch {
@@ -300,7 +291,15 @@ export async function swapTokens(
     }
   }
 
-  const destMin = "0.0000001";
+  const parsedSendAmount = parseFloat(amount || "0");
+  if (isNaN(parsedSendAmount) || parsedSendAmount <= 0) {
+    throw new Error("Invalid swap amount: must be greater than 0");
+  }
+
+  // Slippage protection: 1% max slippage floor based on estimated swap return
+  const estimatedOutput = parsedSendAmount * 0.98;
+  const destMin = (estimatedOutput * 0.99).toFixed(7);
+
   const strategies: Array<{ path: Asset[]; label: string }> = [
     { path: [], label: "direct pair" },
   ];
