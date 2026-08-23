@@ -285,8 +285,7 @@ function getFriendlyErrorMessage(err: any): { title: string; description: string
 
       const provider = getActiveWalletProvider();
       const signedXdr = await provider.signTransaction(transaction.toXDR());
-      const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:3001';
-      const relayResponse = await fetch(`${backendUrl}/api/relay`, {
+      const relayResponse = await fetch('/api/relay', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ transactionXdr: signedXdr }),

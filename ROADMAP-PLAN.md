@@ -84,8 +84,8 @@ atreus/
 │  │  claim_link(         │     ┌──────────────────────────────┐    │
 │  │    link_hash,        │     │  Token (SAC / native)        │    │
 │  │    recipient,        ├─────┤                              │    │
-│  │    secret,           │     │  transfer() on claim/refund  │    │
-│  │    email_hash        │     └──────────────────────────────┘    │
+│  │    email_hash,       │     │  transfer() on claim/refund  │    │
+│  │    relayer, fee      │     └──────────────────────────────┘    │
 │  │  )                   │                                         │
 │  │                      │                                         │
 │  │  refund_link(        │                                         │

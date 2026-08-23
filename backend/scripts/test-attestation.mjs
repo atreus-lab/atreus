@@ -168,6 +168,7 @@ async function main() {
   }
 
   console.log("\n✅ Attestation successful! TX hash:", body.attestationTx);
+  console.log("claim_link no longer takes a secret argument; the attestation above is the on-chain gate.");
   console.log("\nTo verify is_attested on-chain, run:");
   console.log(`  stellar contract invoke --id CB3GJLFAGH2WQTQHSMAB7GABK4NC5Q74XDV2U7MWAYEKQV7YMBV2O7KD --source-account atreus-deployer --network testnet -- is_attested --link_hash ${linkHashSha} --recipient ${recipient}`);
 }

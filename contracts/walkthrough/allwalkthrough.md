@@ -29,7 +29,7 @@ pub struct LinkInfo {
 
 **Entry points:**
 - `create_link(id, policy_type, policy_params, amount, asset, expiry, sender)` — requires sender auth, transfers tokens to contract (escrow), stores LinkInfo in persistent storage
-- `claim_link(link_hash, recipient, secret)` — requires recipient auth, verifies `sha256(secret) == link_hash`, checks not claimed/expired, nullifier = `sha256(link_hash)` stored in temporary storage, transfers to recipient
+- `claim_link(link_hash, recipient, recipient_email_hash, relayer, relayer_fee)` — requires recipient auth, checks `VerifierContract.is_attested(link_hash, recipient)` (secret is proven off-chain and is never a tx argument), checks not claimed/expired, nullifier = `sha256(link_hash)`, transfers to recipient
 - `refund_link(link_hash)` — requires creator auth, checks not claimed + expired, transfers back to creator, removes from storage
 
 **Events:** `("created", id)`, `("claimed", link_hash)`, `("refunded", link_hash)`
@@ -162,9 +162,10 @@ writeup (single attester = single point of failure, by design, pending CAP-0074)
 - `verifier-contract`: constructor now also takes a trusted `attester: Address`. Added `attest()` and
   `is_attested()`. `verify_proof()` kept as-is with an updated, accurate doc comment (not deleted — still
   evidence the on-chain-verification path was designed, just not the active gate).
-- `atreus-contract`: `claim_link` now also requires `VerifierContract.is_attested(link_hash, recipient) ==
-  true`, via cross-contract call (`env.invoke_contract`), in addition to the unchanged `sha256(secret) ==
-  link_hash` check. `create_link` and `refund_link` are untouched.
+- `atreus-contract`: `claim_link` requires `VerifierContract.is_attested(link_hash, recipient) ==
+  true` via cross-contract call (`env.invoke_contract`). The plaintext `secret` argument and
+  on-chain `sha256(secret) == link_hash` check were removed — Soroban args are public, so the ZK
+  attestation is the sole knowledge-of-secret gate. `create_link` and `refund_link` are untouched.
 - Confirmed via existing code review (not assumed): `claim_link`'s replay protection (the `claimed` flag
   + its own `sha256(link_hash)`-based nullifier) was already independent of the ZK circuit's own
   Pedersen-domain nullifier, which only binds the proof to a specific recipient (anti-sniping) — so no
