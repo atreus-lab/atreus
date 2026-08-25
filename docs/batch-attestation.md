@@ -98,10 +98,10 @@ caller.
 | Setting | Default | Notes |
 |---|---|---|
 | `ATTESTATION_BATCHING` | `false` | Opt-in. Existing deployments keep the per-claim path until explicitly switched on. |
-| `ATTESTATION_BATCH_SIZE_CAP` | `100` | Validated on testnet. See the note below. |
+| `ATTESTATION_BATCH_SIZE_CAP` | `50` | Validated on testnet. See the note below. |
 | `ATTESTATION_BATCH_LATENCY_MS` | `10000` | A starting point, not a measured recipient tolerance. |
 
-> **The size cap is validated, at 100.** Batches of 100 both simulate and submit
+> **The size cap is validated, at 50.** Batches of 50 both simulate and submit
 > successfully on testnet against a live deployment (see section 4), so this
 > matches the contract's own `MAX_BATCH_CLAIMS` rather than sitting below it.
 > Soroban's per-transaction resource ceiling was never reached during probing.
@@ -127,7 +127,7 @@ Per-claim baseline, measured on the same deployment:
 | `mark_nullifier` | 69,282 stroops |
 | **Total per claim** | **158,253 stroops across 2 transactions** |
 
-Batched, measured (one transaction per batch, `size_cap = 100`):
+Batched, measured (one transaction per batch, `size_cap = 50`):
 
 | N | Requests | Tx per-link | Tx batched | Tx reduction | Fee per-link | Fee batched | Fee saving |
 |---:|---:|---:|---:|---:|---:|---:|---:|
@@ -182,10 +182,10 @@ accessors after the transaction landed:
 ### Resource ceiling
 
 Probed by simulation at N = 10, 15, 20, 25, 30, 40, 50, 75, 100 — **all passed**,
-then confirmed with a real N=100 submission. The contract's `MAX_BATCH_CLAIMS`
-of 100 fits comfortably inside Soroban's per-transaction resource budget; the
+then confirmed with a real N=50 submission. The contract's `MAX_BATCH_CLAIMS`
+of 50 fits inside Soroban's per-transaction resource budget; the
 ceiling was never reached, so it is a self-imposed bound rather than a chain
-limit. The backend default `ATTESTATION_BATCH_SIZE_CAP` is therefore 100.
+limit. The backend default `ATTESTATION_BATCH_SIZE_CAP` is therefore 50.
 
 The reason to lower it is **blast radius, not resources**: batches are atomic, so
 one rejected claim reverts the whole transaction. At 100, a single bad claim
@@ -320,7 +320,7 @@ unit tests:
 
 - Contract `CAM3AR5SLEMNOX2PJ42AOKL63P4KIBUWVPEFFUQDP3Y3NY3NC36M3K4L`, deployed
   from this branch's source.
-- Real batches submitted at N = 1, 5, 10, 50, and 100. All landed.
+- Real batches submitted at N = 1, 5, 10, and 50. All landed.
 - Every claim read back through `is_attested` and `is_nullifier_used` after the
   transaction confirmed. All matched.
 - Email bindings verified through `is_email_attested`, confirming the
@@ -329,7 +329,7 @@ unit tests:
 - Nullifier replay rejected on-chain (`HostError: Error(WasmVm, InvalidAction)`)
   when resubmitting an already-attested nullifier, so replay protection holds on
   the real batch path.
-- Resource ceiling probed at N up to 100 — never reached. `MAX_BATCH_CLAIMS` is a
+- Resource ceiling probed at N up to 50 — never reached. `MAX_BATCH_CLAIMS` is a
   self-imposed bound, not a chain limit.
 - Fees measured, not estimated. See section 4.
 
