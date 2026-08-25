@@ -5,7 +5,7 @@ extern crate std;
 use super::*;
 use proptest::prelude::*;
 use soroban_sdk::testutils::Address as _;
-use soroban_sdk::{Address, Bytes, BytesN, Env};
+use soroban_sdk::{Address, Bytes, BytesN, Env, Vec};
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -27,8 +27,8 @@ fn arb_32bytes() -> impl Strategy<Value = [u8; 32]> {
 // ---------------------------------------------------------------------------
 // Property: Attestation idempotency
 //
-// Attesting the same (link_hash, recipient) pair twice should not cause
-// errors, and is_attested should still return true.
+// Attesting the same claim_key twice should not cause errors,
+// and is_attested should still return true.
 // ---------------------------------------------------------------------------
 
 proptest! {
@@ -36,31 +36,29 @@ proptest! {
 
     #[test]
     fn prop_attestation_idempotent(
-        link_bytes in arb_32bytes(),
-        _recipient_bytes in arb_32bytes(),
+        claim_bytes in arb_32bytes(),
     ) {
         let (env, client, attester) = setup_env();
-        let link_hash = BytesN::from_array(&env, &link_bytes);
-        let recipient = Address::generate(&env);
+        let claim_key = BytesN::from_array(&env, &claim_bytes);
 
         // Initially not attested
-        prop_assert!(!client.is_attested(&link_hash, &recipient));
+        prop_assert!(!client.is_attested(&claim_key));
 
         // First attestation
-        client.attest(&attester, &link_hash, &recipient);
-        prop_assert!(client.is_attested(&link_hash, &recipient));
+        client.attest(&attester, &claim_key);
+        prop_assert!(client.is_attested(&claim_key));
 
         // Second attestation (idempotent)
-        client.attest(&attester, &link_hash, &recipient);
-        prop_assert!(client.is_attested(&link_hash, &recipient));
+        client.attest(&attester, &claim_key);
+        prop_assert!(client.is_attested(&claim_key));
     }
 }
 
 // ---------------------------------------------------------------------------
 // Property: Email attestation binding
 //
-// is_email_attested should only return true for the exact
-// (link_hash, recipient, email_hash) triple that was attested.
+// is_email_attested should only return true for the exact email_key
+// that was attested.
 // ---------------------------------------------------------------------------
 
 proptest! {
@@ -68,29 +66,26 @@ proptest! {
 
     #[test]
     fn prop_email_attestation_binding(
-        link_bytes in arb_32bytes(),
-        email_hash_bytes in arb_32bytes(),
+        email_bytes in arb_32bytes(),
     ) {
         let (env, client, attester) = setup_env();
-        let link_hash = BytesN::from_array(&env, &link_bytes);
-        let recipient = Address::generate(&env);
-        let email_hash = BytesN::from_array(&env, &email_hash_bytes);
+        let email_key = BytesN::from_array(&env, &email_bytes);
 
         // Initially not attested
-        prop_assert!(!client.is_email_attested(&link_hash, &recipient, &email_hash));
+        prop_assert!(!client.is_email_attested(&email_key));
 
         // Attest
-        client.attest_email(&attester, &link_hash, &recipient, &email_hash);
-        prop_assert!(client.is_email_attested(&link_hash, &recipient, &email_hash));
+        client.attest_email(&attester, &email_key);
+        prop_assert!(client.is_email_attested(&email_key));
 
-        // Different email hash should not be attested
-        let mut other_hash_bytes = email_hash_bytes;
-        other_hash_bytes[0] = other_hash_bytes[0].wrapping_add(1);
-        if other_hash_bytes == email_hash_bytes {
-            other_hash_bytes[31] = other_hash_bytes[31].wrapping_add(1);
+        // Different email key should not be attested
+        let mut other_bytes = email_bytes;
+        other_bytes[0] = other_bytes[0].wrapping_add(1);
+        if other_bytes == email_bytes {
+            other_bytes[31] = other_bytes[31].wrapping_add(1);
         }
-        let other_hash = BytesN::from_array(&env, &other_hash_bytes);
-        prop_assert!(!client.is_email_attested(&link_hash, &recipient, &other_hash));
+        let other_key = BytesN::from_array(&env, &other_bytes);
+        prop_assert!(!client.is_email_attested(&other_key));
     }
 }
 
@@ -135,24 +130,23 @@ proptest! {
 
     #[test]
     fn prop_untrusted_attester_rejection(
-        link_bytes in arb_32bytes(),
+        claim_bytes in arb_32bytes(),
         null_bytes in arb_32bytes(),
     ) {
         let (env, client, _attester) = setup_env();
         let impostor = Address::generate(&env);
-        let link_hash = BytesN::from_array(&env, &link_bytes);
-        let recipient = Address::generate(&env);
-        let email_hash = BytesN::from_array(&env, &[0u8; 32]);
+        let claim_key = BytesN::from_array(&env, &claim_bytes);
+        let email_key = BytesN::from_array(&env, &claim_bytes);
         let nullifier = BytesN::from_array(&env, &null_bytes);
 
         // All operations by impostor must fail
-        prop_assert!(client.try_attest(&impostor, &link_hash, &recipient).is_err());
-        prop_assert!(client.try_attest_email(&impostor, &link_hash, &recipient, &email_hash).is_err());
+        prop_assert!(client.try_attest(&impostor, &claim_key).is_err());
+        prop_assert!(client.try_attest_email(&impostor, &email_key).is_err());
         prop_assert!(client.try_mark_nullifier(&impostor, &nullifier).is_err());
 
         // Nothing should be stored
-        prop_assert!(!client.is_attested(&link_hash, &recipient));
-        prop_assert!(!client.is_email_attested(&link_hash, &recipient, &email_hash));
+        prop_assert!(!client.is_attested(&claim_key));
+        prop_assert!(!client.is_email_attested(&email_key));
         prop_assert!(!client.is_nullifier_used(&nullifier));
     }
 }
@@ -186,7 +180,7 @@ proptest! {
 // ---------------------------------------------------------------------------
 // Property: Proof submission length validation
 //
-// submit_proof should only accept exactly 2144-byte proofs.
+// submit_proof should only accept exactly ULTRA_HONK_PROOF_LEN bytes.
 // ---------------------------------------------------------------------------
 
 proptest! {
@@ -194,19 +188,18 @@ proptest! {
 
     #[test]
     fn prop_proof_length_validation(
-        proof_len in 0usize..=5000,
+        proof_len in 0usize..=20000,
     ) {
         let (env, client, _attester) = setup_env();
         let recipient = Address::generate(&env);
 
-        // Build a proof of the exact requested length
         let proof_data: std::vec::Vec<u8> = std::vec![0u8; proof_len];
         let proof = soroban_sdk::Bytes::from_slice(&env, &proof_data);
 
         let result = client.try_submit_proof(&recipient, &proof);
 
-        if proof_len == 2144 {
-            prop_assert!(result.is_ok(), "2144-byte proof should be accepted");
+        if proof_len == ULTRA_HONK_PROOF_LEN as usize {
+            prop_assert!(result.is_ok(), "{}-byte proof should be accepted", proof_len);
         } else {
             prop_assert!(result.is_err(), "proof of length {} should be rejected", proof_len);
         }
@@ -234,5 +227,140 @@ proptest! {
         let client = VerifierContractClient::new(&env, &contract_id);
 
         prop_assert_eq!(client.verification_key(), vk);
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Property: Batch attestation — atomicity
+//
+// If any claim in a batch has a duplicate nullifier, the entire batch
+// must be rolled back — none of the claims should be attested.
+// ---------------------------------------------------------------------------
+
+proptest! {
+    #![proptest_config(ProptestConfig::with_cases(32))]
+
+    #[test]
+    fn prop_batch_atomicity(
+        valid_count in 1u32..=5,
+        dup_idx in 0usize..5,
+    ) {
+        let (env, client, attester) = setup_env();
+
+        let mut claims: Vec<BatchClaim> = Vec::new(&env);
+        let mut used_nulls: std::vec::Vec<[u8; 32]> = std::vec::Vec::new();
+
+        for i in 0..=valid_count {
+            let ck = BytesN::from_array(&env, &[i as u8; 32]);
+            let null_bytes = [(i + 10) as u8; 32];
+            let null = BytesN::from_array(&env, &null_bytes);
+
+            if i < valid_count {
+                used_nulls.push(null_bytes);
+            } else {
+                // Insert a duplicate nullifier
+                let dup_pos = dup_idx % used_nulls.len();
+                let null = BytesN::from_array(&env, &used_nulls[dup_pos]);
+                claims.push_back(BatchClaim {
+                    claim_key: ck,
+                    nullifier: null,
+                    email_key: None,
+                });
+                continue;
+            }
+
+            claims.push_back(BatchClaim {
+                claim_key: ck,
+                nullifier: null,
+                email_key: None,
+            });
+        }
+
+        let result = client.try_attest_batch(&attester, &claims);
+        prop_assert!(result.is_err(), "batch with duplicate nullifier must fail");
+
+        // Atomic: none of the claims should have been written
+        for claim in claims.iter() {
+            prop_assert!(!client.is_attested(&claim.claim_key),
+                "claim_key attested despite batch failure");
+            prop_assert!(!client.is_nullifier_used(&claim.nullifier),
+                "nullifier marked despite batch failure");
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Property: Batch attestation — independence from single attest
+//
+// A claim attested via batch should be indistinguishable from one attested
+// via the single-claim path.
+// ---------------------------------------------------------------------------
+
+proptest! {
+    #![proptest_config(ProptestConfig::with_cases(32))]
+
+    #[test]
+    fn prop_batch_matches_single_attest(
+        claim_bytes in arb_32bytes(),
+        null_bytes in arb_32bytes(),
+    ) {
+        let (env, client, attester) = setup_env();
+
+        let claim_key = BytesN::from_array(&env, &claim_bytes);
+        let nullifier = BytesN::from_array(&env, &null_bytes);
+
+        // Attest via batch
+        let batch_claim = BatchClaim {
+            claim_key: claim_key.clone(),
+            nullifier: nullifier.clone(),
+            email_key: None,
+        };
+        let claims = Vec::from_array(&env, [batch_claim]);
+        client.attest_batch(&attester, &claims);
+
+        // Verify via single-claim readers
+        assert!(client.is_attested(&claim_key));
+        assert!(client.is_nullifier_used(&nullifier));
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Property: Batch attestation — email binding only when supplied
+// ---------------------------------------------------------------------------
+
+proptest! {
+    #![proptest_config(ProptestConfig::with_cases(32))]
+
+    #[test]
+    fn prop_batch_email_binding_selective(
+        email_bytes in arb_32bytes(),
+    ) {
+        let (env, client, attester) = setup_env();
+
+        let email_key = BytesN::from_array(&env, &email_bytes);
+        let ck_with = BytesN::from_array(&env, &[1u8; 32]);
+        let null_with = BytesN::from_array(&env, &[10u8; 32]);
+        let ck_without = BytesN::from_array(&env, &[2u8; 32]);
+        let null_without = BytesN::from_array(&env, &[20u8; 32]);
+
+        let with_email = BatchClaim {
+            claim_key: ck_with.clone(),
+            nullifier: null_with,
+            email_key: Some(email_key.clone()),
+        };
+        let without_email = BatchClaim {
+            claim_key: ck_without.clone(),
+            nullifier: null_without,
+            email_key: None,
+        };
+
+        client.attest_batch(&attester, &Vec::from_array(&env, [with_email, without_email]));
+
+        // Email key recorded
+        assert!(client.is_email_attested(&email_key));
+
+        // No email binding means no spurious attestation for a different key
+        let other = BytesN::from_array(&env, &[0xDDu8; 32]);
+        assert!(!client.is_email_attested(&other));
     }
 }

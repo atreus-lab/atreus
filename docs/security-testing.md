@@ -14,6 +14,14 @@ The Atreus contract test suite uses three complementary approaches:
 | **Adversarial tests** | Targeted security edge cases and boundary conditions | Same `test.rs` files (adversarial section) |
 | **Property-based tests** | Randomized invariant verification across input space | `atreus-contract/src/proptests.rs`, `verifier-contract/src/proptests.rs` |
 
+### Test counts (as of merge with experimental)
+
+| Contract | Unit/Adversarial | Property-based | Total |
+|----------|-----------------|----------------|-------|
+| atreus-contract | 14 | 10 (incl. planted-bug demo) | 24 |
+| verifier-contract | 25 (incl. batch) | 9 | 34 |
+| **Total** | **39** | **19** | **58** |
+
 ---
 
 ## 2. Running Tests
@@ -33,15 +41,6 @@ cargo test -p verifier-contract
 # Property tests only
 cargo test -p atreus-contract -- proptests
 cargo test -p verifier-contract -- proptests
-
-# Adversarial tests only (filter by name prefix)
-cargo test -p atreus-contract -- test_refund_before
-cargo test -p atreus-contract -- test_claim_at_exact
-cargo test -p atreus-contract -- test_unauthorized
-cargo test -p atreus-contract -- test_negative
-cargo test -p atreus-contract -- test_claim_with_zero
-cargo test -p atreus-contract -- test_claim_with_fee_equal
-cargo test -p atreus-contract -- test_claim_full_balance
 
 # Verbose output
 cargo test --all -- --nocapture
@@ -67,8 +66,8 @@ cargo test --all -- --nocapture
 |-------|-------|
 | **Invariant** | Each link can be claimed at most once |
 | **Protected state** | Escrow funds — no double payout |
-| **Enforcing functions** | `claim_link` — checks `claimed == false` and nullifier absent |
-| **Test** | `prop_single_claim` |
+| **Enforcing functions** | `claim_link` — checks `claimed == false` |
+| **Test** | `prop_single_claim`, `test_double_claim_fails` |
 | **Detection** | Claim once → succeed. Claim again → must fail |
 
 ### 3.3 Refund Only After Expiry
@@ -88,18 +87,18 @@ cargo test --all -- --nocapture
 | **Invariant** | `0 <= relayer_fee <= amount` and `recipient_amount + relayer_fee == amount` |
 | **Protected state** | No negative fees, no overpayment to relayer, no token inflation |
 | **Enforcing functions** | `claim_link` — rejects `fee < 0` or `fee > amount` |
-| **Test** | `prop_fee_bounds`, `test_claim_rejects_fee_greater_than_amount`, `test_negative_relayer_fee_fails`, `test_claim_with_fee_equal_to_amount` |
+| **Test** | `prop_fee_bounds`, `test_claim_rejects_fee_greater_than_amount`, `test_claim_rejects_tampered_fee_*` |
 | **Detection** | Out-of-range fee → reject. In-range fee → balances correct |
 
-### 3.5 Secret Binding
+### 3.5 Blinded Claim Key Binding
 
 | Field | Value |
 |-------|-------|
-| **Invariant** | Only `sha256(secret) == link_hash` authorizes a claim |
-| **Protected state** | Only the link creator's secret can authorize payment |
-| **Enforcing functions** | `claim_link` — SHA-256 check |
-| **Test** | `prop_secret_binding`, `test_wrong_secret_fails` |
-| **Detection** | Wrong secret → panic |
+| **Invariant** | Only a claim with the correct `claim_salt` produces the blinded key the attester signed |
+| **Protected state** | No claim without ZK proof — salt + recipient binding prevents replay |
+| **Enforcing functions** | `claim_link` computes `claim_key = sha256("ATREUS_CLAIM_V1" \|\| link_hash \|\| recipient_strkey \|\| salt)` and checks `verifier.is_attested(claim_key)` |
+| **Test** | `prop_wrong_salt_fails`, `test_wrong_salt_fails` |
+| **Detection** | Wrong salt → different claim_key → "no valid ZK attestation" |
 
 ### 3.6 Duplicate Link Prevention
 
@@ -131,24 +130,34 @@ cargo test --all -- --nocapture
 | **Test** | `prop_unauthorized_refund`, `test_unauthorized_refund_fails` |
 | **Detection** | Wrong address calling → Soroban auth rejection |
 
-### 3.9 Verifier Attestation Binding
+### 3.9 Verifier Attestation Binding (Blinded Keys)
 
 | Field | Value |
 |-------|-------|
-| **Invariant** | Only the deployer-configured attester can record attestations |
+| **Invariant** | Only the deployer-configured attester can record attestations under blinded keys |
 | **Protected state** | Trust model — only the oracle can authorize claims |
-| **Enforcing functions** | `VerifierContract::attest`, `attest_email`, `mark_nullifier` — all check `attester == trusted` |
-| **Test** | `prop_untrusted_attester_rejection`, `test_attest_by_untrusted_fails`, `test_attest_email_by_untrusted_fails`, `test_mark_nullifier_by_untrusted_attester_fails` |
+| **Enforcing functions** | `VerifierContract::attest(claim_key)`, `attest_email(email_key)`, `mark_nullifier` — all check `attester == trusted` |
+| **Test** | `prop_untrusted_attester_rejection`, `test_attest_by_untrusted_attester_fails`, `test_attest_email_by_untrusted_attester_fails`, `test_mark_nullifier_by_untrusted_attester_fails` |
 | **Detection** | Impostor address → panic |
 
-### 3.10 Cross-Contract Consistency
+### 3.10 Batch Attestation Atomicity
 
 | Field | Value |
 |-------|-------|
-| **Invariant** | `claim_link` correctly calls `VerifierContract.is_attested()` and respects the result |
+| **Invariant** | A batch with a duplicate nullifier must roll back entirely — no partial writes |
+| **Protected state** | Double-spend cannot be smuggled inside a batch |
+| **Enforcing functions** | `attest_batch` — checks each nullifier before writing, panics on duplicate |
+| **Test** | `prop_batch_atomicity`, `test_attest_batch_rejects_duplicate_nullifier_within_batch`, `test_attest_batch_is_atomic_on_later_failure` |
+| **Detection** | Duplicate nullifier → entire batch reverted |
+
+### 3.11 Cross-Contract Consistency
+
+| Field | Value |
+|-------|-------|
+| **Invariant** | `claim_link` correctly calls `VerifierContract.is_attested(claim_key)` and respects the result |
 | **Protected state** | ZK attestation gate is functional |
-| **Enforcing functions** | `claim_link` — cross-contract `invoke_contract` |
-| **Test** | MockVerifier in existing tests (returns `true`/tracks email attestations) |
+| **Enforcing functions** | `claim_link` — cross-contract `invoke_contract` with blinded claim_key |
+| **Test** | MockVerifier in existing tests (computes same blinded key, returns true/false) |
 | **Detection** | Mock returning `false` → claim fails |
 
 ---
@@ -167,17 +176,18 @@ Each property test uses `ProptestConfig::with_cases(64)` (or 32 for expensive te
 
 | Strategy | Range | Used for |
 |----------|-------|----------|
-| `arb_secret_byte()` | 1..=255 | Secret preimages |
+| `arb_secret_byte()` | 1..=255 | Secret preimages (link hash derivation) |
 | `arb_amount()` | 1..=1_000_000_000 | Escrow amounts |
-| `arb_fee(amount)` | 0..=amount | Relayer fees |
 | `arb_expiry_offset()` | 2..=1_000_000 | Time until expiry |
-| `arb_32bytes()` | Any 32-byte array | Hashes, nullifiers |
-| `arb_proof_len()` | 0..=5000 | Proof byte lengths |
+| `arb_salt_byte()` | 1..=255 | Claim salt values |
+| `arb_32bytes()` | Any 32-byte array | Hashes, nullifiers, blinded keys |
+| `arb_proof_len()` | 0..=20000 | Proof byte lengths (ULTRA_HONK_PROOF_LEN = 14656) |
 
 ### Stateful Model
 
 A model-based test (`prop_stateful_escrow_model`) simulates a sequence of `CreateLink`, `ClaimLink`, and `RefundLink` operations across multiple actors. After each operation:
 
+- Blinded claim keys are computed and attested via `attest_claim()`
 - Balance invariants are checked (recipient gets `amount - fee`, relayer gets `fee`)
 - No link is both claimed and refunded
 - Total escrowed amount is consistent
@@ -186,34 +196,42 @@ A model-based test (`prop_stateful_escrow_model`) simulates a sequence of `Creat
 
 ## 5. Adversarial Test Matrix
 
+### AtreusContract Adversarial
+
 | Test | Attack | Expected Result |
 |------|--------|-----------------|
 | `test_refund_before_expiry_fails` | Refund before expiry | Rejected |
 | `test_refund_at_exact_expiry_fails` | Refund at exact expiry | Rejected |
 | `test_claim_at_exact_expiry_succeeds` | Claim at exact expiry | Accepted |
 | `test_claim_one_tick_after_expiry_fails` | Claim after expiry | Rejected |
-| `test_negative_relayer_fee_fails` | Negative fee | Rejected |
-| `test_unauthorized_refund_fails` | Non-creator refund | Rejected |
-| `test_claim_rejects_tampered_fee_not_covered_by_user_authorization` | Auth mismatch on fee | Rejected |
+| `test_claim_rejects_tampered_fee_*` | Auth mismatch on fee | Rejected |
 | `test_claim_rejects_fee_greater_than_amount` | Fee > amount | Rejected |
-| `test_claim_with_zero_amount` | Zero-amount link | Accepted |
-| `test_claim_with_fee_equal_to_amount` | Fee == amount (relayer gets all) | Accepted |
-| `test_refund_removes_from_storage` | Refund + re-claim | Rejected (link removed) |
-| `test_claim_full_balance_distributed` | Full amount to recipient | Balance = 0 in contract |
-| `test_double_claim_fails` | Double claim | Rejected (nullifier + claimed flag) |
+| `test_wrong_salt_fails` | Wrong claim salt (different blinded key) | Rejected |
+| `test_unauthorized_refund_fails` | Non-creator refund | Rejected |
+| `test_email_restricted_claim` | Email-restricted claim (correct email) | Accepted |
+| `test_email_restricted_claim_rejects_wrong_email` | Wrong email hash | Rejected |
+| `test_claimed_event_carries_no_link_or_recipient` | Privacy leak in events | No data in event |
+| `test_double_claim_fails` | Double claim | Rejected (claimed flag) |
+| `test_duplicate_link_fails` | Duplicate link creation | Rejected |
 
 ### VerifierContract Adversarial
 
 | Test | Attack | Expected Result |
 |------|--------|-----------------|
-| `test_attest_by_untrusted_fails` | Impostor attester | Rejected |
-| `test_attest_email_by_untrusted_fails` | Impostor email attester | Rejected |
+| `test_attest_by_untrusted_attester_fails` | Impostor attester | Rejected |
+| `test_attest_email_by_untrusted_attester_fails` | Impostor email attester | Rejected |
 | `test_mark_nullifier_by_untrusted_attester_fails` | Impostor nullifier mark | Rejected |
-| `test_submit_proof_empty_fails` | Empty proof | Rejected |
-| `test_submit_proof_wrong_length_fails` | 100-byte proof | Rejected |
-| `test_submit_proof_boundary_2143_fails` | 2143-byte proof | Rejected |
-| `test_submit_proof_boundary_2145_fails` | 2145-byte proof | Rejected |
-| `test_verify_proof_empty_returns_false` | Empty proof verify | Returns false |
+| `test_submit_proof_rejects_malformed_proofs` | Empty / wrong-length proofs | Rejected |
+| `test_submit_proof_rejects_legacy_ultraplonk_length` | 2144-byte legacy proof | Rejected |
+| `test_submit_proof_accepts_real_ultrahonk_proof_length` | 14656-byte UltraHonk proof | Accepted |
+| `test_attest_batch_records_every_claim` | Batch attestation | All claims recorded |
+| `test_attest_batch_rejects_duplicate_nullifier_within_batch` | Double-spend in batch | Rejected atomically |
+| `test_attest_batch_rejects_already_used_nullifier` | Used nullifier in batch | Rejected |
+| `test_attest_batch_is_atomic_on_later_failure` | Partial batch failure | Entire batch rolled back |
+| `test_attest_batch_rejects_untrusted_attester` | Impostor batch attester | Rejected |
+| `test_attest_batch_rejects_empty_batch` | Empty batch | Rejected |
+| `test_attest_batch_rejects_oversized_batch` | Batch > MAX_BATCH_CLAIMS | Rejected |
+| `test_attest_batch_at_max_size_succeeds` | Max-size batch | Accepted |
 
 ---
 
@@ -231,7 +249,7 @@ This is a realistic accounting bug — a missing subtraction before a `token_cli
 
 ### How the demonstration works
 
-1. **Run the real contract** — create a link for 5000 tokens with a 750-token fee, claim it successfully, and verify `recipient_balance == 4250` (correct).
+1. **Run the real contract** — create a link for 5000 tokens with a 750-token fee, claim it successfully via the blinded-key path, and verify `recipient_balance == 4250` (correct).
 2. **Simulate the mutated state** — use the token admin (`StellarAssetClient::mint`) to add 750 tokens to the recipient, producing the buggy state where `recipient_balance == 5000`.
 3. **Run the invariant check** — assert that `recipient_balance != amount - fee` (i.e., `5000 != 4250`). This is the exact check that `prop_fee_bounds` performs:
    ```
@@ -263,9 +281,10 @@ This is a **state-level mutation simulation**, not a true source-level mutation 
 Soroban's resource budget system is enforced by the network runtime, not the test simulator. Unit tests run without gas limits. We test resource-relevant scenarios by:
 
 1. **Large inputs** — `i128::MAX / 2` amounts, 1024-byte `policy_params`
-2. **Proof length boundaries** — 2143/2144/2145 bytes
-3. **Storage scaling** — stateful model creates multiple links to exercise persistent storage
-4. **Cross-contract calls** — `claim_link` invokes the verifier contract, exercising the cross-contract call mechanism
+2. **Proof length boundaries** — ULTRA_HONK_PROOF_LEN (14656) acceptance, 14655/14657 rejection, legacy 2144 rejection
+3. **Batch size limits** — MAX_BATCH_CLAIMS (50) boundary, empty batch, oversized batch
+4. **Storage scaling** — stateful model creates multiple links to exercise persistent storage
+5. **Cross-contract calls** — `claim_link` invokes the verifier contract with blinded keys, exercising the cross-contract call mechanism
 
 Once Soroban Protocol 25/26 ships explicit gas metering in testutils, resource-budget tests can be added.
 

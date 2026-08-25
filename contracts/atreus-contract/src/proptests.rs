@@ -7,10 +7,12 @@ use proptest::prelude::*;
 use soroban_sdk::{
     testutils::{Address as _, Ledger},
     token::{Client as TokenClient, StellarAssetClient},
-    Address, Bytes, BytesN, Env,
+    Address, Bytes, BytesN, Env, IntoVal,
 };
 
-use crate::test::MockVerifier;
+use crate::test::{
+    attest_claim, make_link_hash, make_salt, MockVerifier,
+};
 
 // ---------------------------------------------------------------------------
 // Reusable helpers
@@ -36,14 +38,6 @@ fn setup_env() -> (
     (env, client, verifier, sender, token_addr)
 }
 
-fn make_secret(env: &Env, val: u8) -> (BytesN<32>, BytesN<32>) {
-    let secret = BytesN::from_array(env, &[val; 32]);
-    let secret_bytes = Bytes::from_array(env, &secret.to_array());
-    let hash = env.crypto().sha256(&secret_bytes);
-    let link_hash = BytesN::from_array(env, &hash.to_array());
-    (secret, link_hash)
-}
-
 // ---------------------------------------------------------------------------
 // Strategies
 // ---------------------------------------------------------------------------
@@ -58,6 +52,10 @@ fn arb_amount() -> impl Strategy<Value = i128> {
 
 fn arb_expiry_offset() -> impl Strategy<Value = u64> {
     2u64..=1_000_000u64
+}
+
+fn arb_salt_byte() -> impl Strategy<Value = u8> {
+    1u8..=255u8
 }
 
 // ---------------------------------------------------------------------------
@@ -79,22 +77,21 @@ proptest! {
             ],
             1..=5,
         ),
-        fees in prop::collection::vec(any::<i128>(), 0..=5),
     ) {
         let (env, client, _verifier, sender, token) = setup_env();
         let _token_client = TokenClient::new(&env, &token);
 
-        let mut _total_escrowed = 0i128;
-        let mut created_links: std::vec::Vec<(BytesN<32>, BytesN<32>, i128, u64)> = std::vec::Vec::new();
+        let mut created_links: std::vec::Vec<(BytesN<32>, BytesN<32>, i128, u64, BytesN<32>)> = std::vec::Vec::new();
 
-        for (_i, (sec_byte, amount, exp_offset, policy)) in ops.into_iter().enumerate() {
-            let (_secret, link_hash) = make_secret(&env, sec_byte);
+        for (_i, (sec_byte, amount, exp_offset, _policy)) in ops.into_iter().enumerate() {
+            let link_hash = make_link_hash(&env, sec_byte);
+            let salt = make_salt(&env, sec_byte);
             let expiry = env.ledger().timestamp() + exp_offset;
             let policy_params = Bytes::new(&env);
 
             let create_result = client.try_create_link(
                 &link_hash,
-                &policy,
+                &_policy,
                 &policy_params,
                 &amount,
                 &token,
@@ -103,31 +100,26 @@ proptest! {
             );
 
             if create_result.is_ok() {
-                _total_escrowed += amount;
-                created_links.push((_secret, link_hash, amount, expiry));
+                created_links.push((link_hash, BytesN::from_array(&env, &[0u8; 32]), amount, expiry, salt));
             }
         }
 
-        // Claim some links
-        let claim_count = if fees.len() < created_links.len() {
-            fees.len()
-        } else {
-            created_links.len()
-        };
+        // Claim some links (up to 5)
+        let claim_count = created_links.len().min(5);
 
         for i in 0..claim_count {
-            let (secret, link_hash, amount, _expiry) = &created_links[i];
-            let fee_amount = fees[i].abs() % (amount + 1);
+            let (link_hash, _email_key, _amount, _expiry, salt) = &created_links[i];
+            let fee = 0i128;
             let recipient = Address::generate(&env);
             let relayer = Address::generate(&env);
 
+            attest_claim(&env, &_verifier, link_hash, &recipient, salt);
             let _ = client.try_claim_link(
                 link_hash,
                 &recipient,
-                secret,
-                &BytesN::from_array(&env, &[0u8; 32]),
+                salt,
                 &relayer,
-                &fee_amount,
+                &fee,
             );
         }
 
@@ -152,9 +144,11 @@ proptest! {
         sec_byte in arb_secret_byte(),
         amount in arb_amount(),
         exp_offset in arb_expiry_offset(),
+        salt_byte in arb_salt_byte(),
     ) {
-        let (env, client, _verifier, sender, token) = setup_env();
-        let (secret, link_hash) = make_secret(&env, sec_byte);
+        let (env, client, verifier, sender, token) = setup_env();
+        let link_hash = make_link_hash(&env, sec_byte);
+        let salt = make_salt(&env, salt_byte);
         let expiry = env.ledger().timestamp() + exp_offset;
         let policy_params = Bytes::new(&env);
 
@@ -170,27 +164,26 @@ proptest! {
 
         let recipient = Address::generate(&env);
         let relayer = Address::generate(&env);
-        let email_hash = BytesN::from_array(&env, &[0u8; 32]);
+
+        attest_claim(&env, &verifier, &link_hash, &recipient, &salt);
 
         // First claim succeeds
         let result1 = client.try_claim_link(
             &link_hash,
             &recipient,
-            &secret,
-            &email_hash,
+            &salt,
             &relayer,
             &0i128,
         );
         prop_assert!(result1.is_ok(), "first claim should succeed");
 
-        // Second claim must fail
+        // Second claim must fail (already claimed)
         let recipient2 = Address::generate(&env);
         let relayer2 = Address::generate(&env);
         let result2 = client.try_claim_link(
             &link_hash,
             &recipient2,
-            &secret,
-            &email_hash,
+            &salt,
             &relayer2,
             &0i128,
         );
@@ -212,7 +205,7 @@ proptest! {
         exp_offset in arb_expiry_offset(),
     ) {
         let (env, client, _verifier, sender, token) = setup_env();
-        let (_secret, link_hash) = make_secret(&env, sec_byte);
+        let link_hash = make_link_hash(&env, sec_byte);
         let expiry = env.ledger().timestamp() + exp_offset;
         let policy_params = Bytes::new(&env);
 
@@ -250,10 +243,12 @@ proptest! {
         sec_byte in arb_secret_byte(),
         amount in arb_amount(),
         exp_offset in arb_expiry_offset(),
+        salt_byte in arb_salt_byte(),
         fee_delta in -5i128..=5i128,
     ) {
-        let (env, client, _verifier, sender, token) = setup_env();
-        let (secret, link_hash) = make_secret(&env, sec_byte);
+        let (env, client, verifier, sender, token) = setup_env();
+        let link_hash = make_link_hash(&env, sec_byte);
+        let salt = make_salt(&env, salt_byte);
         let expiry = env.ledger().timestamp() + exp_offset;
         let policy_params = Bytes::new(&env);
 
@@ -270,13 +265,13 @@ proptest! {
         let test_fee = (amount / 2) + fee_delta;
         let recipient = Address::generate(&env);
         let relayer = Address::generate(&env);
-        let email_hash = BytesN::from_array(&env, &[0u8; 32]);
+
+        attest_claim(&env, &verifier, &link_hash, &recipient, &salt);
 
         let result = client.try_claim_link(
             &link_hash,
             &recipient,
-            &secret,
-            &email_hash,
+            &salt,
             &relayer,
             &test_fee,
         );
@@ -295,24 +290,25 @@ proptest! {
 }
 
 // ---------------------------------------------------------------------------
-// Property: Secret binding — wrong secret always fails
+// Property: Secret binding — wrong salt always fails
 // ---------------------------------------------------------------------------
 
 proptest! {
     #![proptest_config(ProptestConfig::with_cases(64))]
 
     #[test]
-    fn prop_secret_binding(
+    fn prop_wrong_salt_fails(
         sec_byte in arb_secret_byte(),
-        wrong_sec_byte in arb_secret_byte(),
         amount in arb_amount(),
         exp_offset in arb_expiry_offset(),
+        salt_byte in arb_salt_byte(),
+        wrong_salt_byte in arb_salt_byte(),
     ) {
-        prop_assume!(sec_byte != wrong_sec_byte);
+        prop_assume!(salt_byte != wrong_salt_byte);
 
-        let (env, client, _verifier, sender, token) = setup_env();
-        let (_secret, link_hash) = make_secret(&env, sec_byte);
-        let (wrong_secret, _wrong_hash) = make_secret(&env, wrong_sec_byte);
+        let (env, client, verifier, sender, token) = setup_env();
+        let link_hash = make_link_hash(&env, sec_byte);
+        let salt = make_salt(&env, salt_byte);
         let expiry = env.ledger().timestamp() + exp_offset;
         let policy_params = Bytes::new(&env);
 
@@ -328,17 +324,20 @@ proptest! {
 
         let recipient = Address::generate(&env);
         let relayer = Address::generate(&env);
-        let email_hash = BytesN::from_array(&env, &[0u8; 32]);
+        let wrong_salt = make_salt(&env, wrong_salt_byte);
 
+        // Attest with the correct salt
+        attest_claim(&env, &verifier, &link_hash, &recipient, &salt);
+
+        // Claim with wrong salt should fail (different claim_key)
         let result = client.try_claim_link(
             &link_hash,
             &recipient,
-            &wrong_secret,
-            &email_hash,
+            &wrong_salt,
             &relayer,
             &0i128,
         );
-        prop_assert!(result.is_err(), "wrong secret must fail");
+        prop_assert!(result.is_err(), "wrong salt must fail");
     }
 }
 
@@ -356,7 +355,7 @@ proptest! {
         exp_offset in arb_expiry_offset(),
     ) {
         let (env, client, _verifier, sender, token) = setup_env();
-        let (_secret, link_hash) = make_secret(&env, sec_byte);
+        let link_hash = make_link_hash(&env, sec_byte);
         let expiry = env.ledger().timestamp() + exp_offset;
         let policy_params = Bytes::new(&env);
 
@@ -394,14 +393,13 @@ proptest! {
 #[derive(Debug, Clone)]
 enum Command {
     CreateLink {
+        #[allow(dead_code)]
         id: u8,
         amount: i128,
-        fee: i128,
         expiry_offset: u64,
     },
     ClaimLink {
         link_idx: usize,
-        fee: i128,
     },
     RefundLink {
         link_idx: usize,
@@ -410,8 +408,10 @@ enum Command {
 
 #[derive(Debug)]
 struct ModelLink {
-    secret_byte: u8,
+    #[allow(dead_code)]
+    sec_byte: u8,
     link_hash: BytesN<32>,
+    salt: BytesN<32>,
     amount: i128,
     expiry: u64,
     claimed: bool,
@@ -435,6 +435,7 @@ impl EscrowModel {
         &mut self,
         env: &Env,
         client: &AtreusContractClient,
+        verifier: &Address,
         token: &soroban_sdk::Address,
         sender: &Address,
         cmd: &Command,
@@ -443,12 +444,12 @@ impl EscrowModel {
             Command::CreateLink {
                 id: _,
                 amount,
-                fee: _,
                 expiry_offset,
             } => {
                 let sec = self.next_secret;
                 self.next_secret = self.next_secret.wrapping_add(1).max(1);
-                let (_secret, link_hash) = make_secret(env, sec);
+                let link_hash = make_link_hash(env, sec);
+                let salt = make_salt(env, sec);
                 let expiry = env.ledger().timestamp() + expiry_offset;
                 let policy_params = Bytes::new(env);
 
@@ -464,8 +465,9 @@ impl EscrowModel {
 
                 if result.is_ok() {
                     self.links.push(ModelLink {
-                        secret_byte: sec,
+                        sec_byte: sec,
                         link_hash,
+                        salt,
                         amount: *amount,
                         expiry,
                         claimed: false,
@@ -473,7 +475,7 @@ impl EscrowModel {
                     });
                 }
             }
-            Command::ClaimLink { link_idx, fee } => {
+            Command::ClaimLink { link_idx } => {
                 if *link_idx >= self.links.len() {
                     return;
                 }
@@ -484,25 +486,21 @@ impl EscrowModel {
                 if env.ledger().timestamp() > link.expiry {
                     return;
                 }
-                let fee_capped = fee.abs() % (link.amount + 1);
-                if fee_capped < 0 || fee_capped > link.amount {
-                    return;
-                }
 
-                let (secret, _) = make_secret(env, link.secret_byte);
                 let link_hash = link.link_hash.clone();
-                let amount = link.amount;
+                let salt = link.salt.clone();
+                let link_amount = link.amount;
                 let recipient = Address::generate(env);
                 let relayer = Address::generate(env);
-                let email_hash = BytesN::from_array(env, &[0u8; 32]);
+
+                attest_claim(env, verifier, &link_hash, &recipient, &salt);
 
                 let result = client.try_claim_link(
                     &link_hash,
                     &recipient,
-                    &secret,
-                    &email_hash,
+                    &salt,
                     &relayer,
-                    &fee_capped,
+                    &0i128,
                 );
 
                 if result.is_ok() {
@@ -511,9 +509,7 @@ impl EscrowModel {
                     // Verify balance invariants
                     let token_client = TokenClient::new(env, token);
                     let recipient_bal = token_client.balance(&recipient);
-                    let relayer_bal = token_client.balance(&relayer);
-                    assert_eq!(recipient_bal, amount - fee_capped);
-                    assert_eq!(relayer_bal, fee_capped);
+                    assert_eq!(recipient_bal, link_amount);
                 }
             }
             Command::RefundLink { link_idx } => {
@@ -550,7 +546,7 @@ proptest! {
     fn prop_stateful_escrow_model(
         commands in prop::collection::vec(any::<u8>(), 1..=10),
     ) {
-        let (env, client, _verifier, sender, token) = setup_env();
+        let (env, client, verifier, sender, token) = setup_env();
         let mut model = EscrowModel::new();
 
         // Advance past all potential expiry offsets to test refund paths
@@ -562,7 +558,6 @@ proptest! {
                 0 => Command::CreateLink {
                     id: cmd_id,
                     amount: ((cmd_id as i128) * 100 + 1).min(1_000_000),
-                    fee: 0,
                     expiry_offset: 1,
                 },
                 1 => {
@@ -570,13 +565,11 @@ proptest! {
                         Command::CreateLink {
                             id: cmd_id,
                             amount: 100,
-                            fee: 0,
                             expiry_offset: 1,
                         }
                     } else {
                         Command::ClaimLink {
                             link_idx: (cmd_id as usize) % link_count,
-                            fee: 0,
                         }
                     }
                 }
@@ -585,7 +578,6 @@ proptest! {
                         Command::CreateLink {
                             id: cmd_id,
                             amount: 100,
-                            fee: 0,
                             expiry_offset: 1,
                         }
                     } else {
@@ -596,7 +588,7 @@ proptest! {
                 }
             };
 
-            model.execute(&env, &client, &token, &sender, &cmd);
+            model.execute(&env, &client, &verifier, &token, &sender, &cmd);
         }
 
         // Final invariant: no link should be both claimed and refunded
@@ -622,9 +614,11 @@ proptest! {
         sec_byte in arb_secret_byte(),
         amount in arb_amount(),
         exp_offset in 2u64..=100_000u64,
+        salt_byte in arb_salt_byte(),
     ) {
-        let (env, client, _verifier, sender, token) = setup_env();
-        let (secret, link_hash) = make_secret(&env, sec_byte);
+        let (env, client, verifier, sender, token) = setup_env();
+        let link_hash = make_link_hash(&env, sec_byte);
+        let salt = make_salt(&env, salt_byte);
         let base_time = env.ledger().timestamp();
         let expiry = base_time + exp_offset;
         let policy_params = Bytes::new(&env);
@@ -641,14 +635,13 @@ proptest! {
 
         let recipient = Address::generate(&env);
         let relayer = Address::generate(&env);
-        let email_hash = BytesN::from_array(&env, &[0u8; 32]);
 
         env.ledger().set_timestamp(expiry);
+        attest_claim(&env, &verifier, &link_hash, &recipient, &salt);
         let claim_result = client.try_claim_link(
             &link_hash,
             &recipient,
-            &secret,
-            &email_hash,
+            &salt,
             &relayer,
             &0i128,
         );
@@ -670,7 +663,7 @@ proptest! {
         exp_offset in arb_expiry_offset(),
     ) {
         let (env, client, _verifier, sender, token) = setup_env();
-        let (_secret, link_hash) = make_secret(&env, sec_byte);
+        let link_hash = make_link_hash(&env, sec_byte);
         let expiry = env.ledger().timestamp() + exp_offset;
         let policy_params = Bytes::new(&env);
 
@@ -709,19 +702,16 @@ proptest! {
 // realistic fee-accounting mutation at the state level and verifying
 // that the invariant from prop_fee_bounds would fail under that mutation.
 //
-// Mutation concept: claim_link forgets to deduct the relayer fee before
+// Mutation: claim_link forgets to deduct the relayer fee before
 // transferring tokens to the recipient, so the recipient receives `amount`
 // instead of `amount - fee`.
-//
-// This does NOT modify production code. It runs the real contract, then
-// uses the token admin to construct the buggy state and shows the
-// existing invariant catches it.
 // ---------------------------------------------------------------------------
 
 #[test]
 fn planted_bug_fee_not_deducted_detected() {
-    let (env, client, _verifier, sender, token) = setup_env();
-    let (secret, link_hash) = make_secret(&env, 42);
+    let (env, client, verifier, sender, token) = setup_env();
+    let link_hash = make_link_hash(&env, 42);
+    let salt = make_salt(&env, 42);
     let amount: i128 = 5000;
     let fee: i128 = 750;
     let expiry = env.ledger().timestamp() + 1000;
@@ -740,11 +730,11 @@ fn planted_bug_fee_not_deducted_detected() {
     let recipient = Address::generate(&env);
     let relayer = Address::generate(&env);
 
+    attest_claim(&env, &verifier, &link_hash, &recipient, &salt);
     client.claim_link(
         &link_hash,
         &recipient,
-        &secret,
-        &BytesN::from_array(&env, &[0u8; 32]),
+        &salt,
         &relayer,
         &fee,
     );
@@ -761,8 +751,6 @@ fn planted_bug_fee_not_deducted_detected() {
     // --- Simulate planted bug ---
     // Mutation: claim_link forgot to deduct the fee before transferring to
     // recipient.  Recipient would receive `amount` instead of `amount - fee`.
-    // We simulate this by minting the fee difference to the recipient using
-    // the token admin (same entity that funded the escrow in setup_env).
     let admin = StellarAssetClient::new(&env, &token);
     admin.mint(&recipient, &fee);
     assert_eq!(tc.balance(&recipient), amount);

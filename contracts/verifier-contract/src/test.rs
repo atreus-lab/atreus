@@ -2,8 +2,8 @@
 
 use super::*;
 use soroban_sdk::{
-    testutils::{Address as _, Events},
-    Symbol, TryFromVal,
+    testutils::Address as _,
+    vec, IntoVal, Symbol,
 };
 
 fn setup(env: &Env) -> (VerifierContractClient<'_>, Address) {
@@ -13,20 +13,22 @@ fn setup(env: &Env) -> (VerifierContractClient<'_>, Address) {
     (client, attester)
 }
 
-/// Events the contract emitted during the most recent invocation, as (name, data).
-/// The test host resets the buffer on every top-level call, so read it immediately
-/// after the call under inspection.
-fn events_of(env: &Env, contract: &Address) -> soroban_sdk::Vec<(Symbol, soroban_sdk::Val)> {
-    let mut out = soroban_sdk::Vec::new(env);
-    for (emitter, topics, data) in env.events().all().iter() {
-        if &emitter != contract {
-            continue;
-        }
-        assert_eq!(topics.len(), 1, "event must carry no topic beyond its name");
-        let name = Symbol::try_from_val(env, &topics.get(0).unwrap()).unwrap();
-        out.push_back((name, data));
-    }
-    out
+/// Assert exactly one event with the given name and void data was emitted
+/// by `contract` during the most recent invocation.
+fn assert_single_void_event(env: &Env, contract: &Address, expected_name: Symbol) {
+    use soroban_sdk::testutils::Events as _;
+    let events = env.events().all().filter_by_contract(contract);
+    assert_eq!(
+        events,
+        vec![
+            env,
+            (
+                contract.clone(),
+                vec![env, expected_name].into_val(env),
+                ().into_val(env),
+            ),
+        ]
+    );
 }
 
 #[test]
@@ -66,11 +68,7 @@ fn test_attested_event_carries_no_data() {
     let claim_key = BytesN::from_array(&env, &[5u8; 32]);
     client.attest(&attester, &claim_key);
 
-    let events = events_of(&env, &client.address);
-    assert_eq!(events.len(), 1);
-    let (name, data) = events.get(0).unwrap();
-    assert_eq!(name, symbol_short!("attested"));
-    assert!(data.is_void(), "attested event must carry no key material");
+    assert_single_void_event(&env, &client.address, symbol_short!("attested"));
 }
 
 #[test]
@@ -85,11 +83,7 @@ fn test_attest_email_and_is_email_attested() {
     assert!(!client.is_email_attested(&email_key));
 
     client.attest_email(&attester, &email_key);
-    let events = events_of(&env, &client.address);
-    assert_eq!(events.len(), 1);
-    let (name, data) = events.get(0).unwrap();
-    assert_eq!(name, symbol_short!("eml_att"));
-    assert!(data.is_void());
+    assert_single_void_event(&env, &client.address, symbol_short!("eml_att"));
 
     assert!(client.is_email_attested(&email_key));
     assert!(!client.is_email_attested(&other_key));
