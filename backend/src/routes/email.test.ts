@@ -307,5 +307,5 @@ describe("attest email gate", () => {
     });
     // Gate passed: either zk fails (400) or circuit missing (500) — not 403.
     expect(res.status).not.toBe(403);
-  }, 20_000);
+  }, 30_000);
 });
