@@ -39,7 +39,7 @@ export const DEFAULT_LATENCY_BUDGET_MS = 10_000;
  * care more about isolation than transaction count should lower this via
  * ATTESTATION_BATCH_SIZE_CAP.
  */
-export const DEFAULT_SIZE_CAP = 100;
+export const DEFAULT_SIZE_CAP = 50;
 
 /**
  * One queued attestation, already blinded (issue #118).

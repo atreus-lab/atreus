@@ -25,7 +25,7 @@ pub const ULTRA_HONK_PROOF_LEN: u32 = 14_656;
 /// This bound exists so an oversized batch fails fast with a clear error
 /// instead of burning fees to hit a resource-limit trap. The value that
 /// actually fits must be confirmed on testnet.
-pub const MAX_BATCH_CLAIMS: u32 = 100;
+pub const MAX_BATCH_CLAIMS: u32 = 50;
 
 #[contracttype]
 pub enum DataKey {
@@ -336,4 +336,6 @@ impl VerifierContract {
     }
 }
 
+#[cfg(test)]
+mod proptests;
 mod test;

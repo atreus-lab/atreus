@@ -263,4 +263,6 @@ impl AtreusContract {
     }
 }
 
+#[cfg(test)]
+mod proptests;
 mod test;
