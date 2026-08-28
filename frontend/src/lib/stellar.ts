@@ -66,11 +66,14 @@ export const createEscrowTx = async (creator: string, amount: string, hash: Uint
   const contractId = process.env.NEXT_PUBLIC_CONTRACT_ID || DEFAULT_CONTRACT_ID;
   const tokenId = process.env.NEXT_PUBLIC_TOKEN_ID || DEFAULT_TOKEN_ID;
 
-  const balance = await getNativeBalance(creator);
-  const availableBalance = parseFloat(balance);
+  let balance = await getNativeBalance(creator);
   const requestedAmount = parseFloat(amount);
   const estimatedFee = 0.01; // 100,000 stroops
-  if (availableBalance < requestedAmount + estimatedFee) {
+  if (parseFloat(balance) < requestedAmount + estimatedFee) {
+    await fundWallet(creator);
+    balance = await getNativeBalance(creator);
+  }
+  if (parseFloat(balance) < requestedAmount + estimatedFee) {
     throw new Error(
       `Insufficient balance: you have ${balance} XLM but need at least ${(requestedAmount + estimatedFee).toFixed(7)} XLM (${amount} + fees)`
     );
@@ -99,7 +102,12 @@ export const createEscrowTx = async (creator: string, amount: string, hash: Uint
   try {
     account = await rpcServer.getAccount(creator);
   } catch {
-    throw new Error("Could not load your account. Make sure it's funded on testnet.");
+    await fundWallet(creator);
+    try {
+      account = await rpcServer.getAccount(creator);
+    } catch {
+      throw new Error("Could not load your account. Make sure it's funded on testnet.");
+    }
   }
 
   const tx = new TransactionBuilder(account, {
@@ -175,6 +183,7 @@ export const claimLinkTx = async (
 
 export const getAccountBalances = async (address: string): Promise<Balance[]> => {
   try {
+<<<<<<< HEAD
     const entry = await rpcServer.getAccountEntry(address);
     const stroops = entry.balance().toString();
     const whole = (BigInt(stroops) / BigInt(10000000)).toString();
@@ -187,6 +196,20 @@ export const getAccountBalances = async (address: string): Promise<Balance[]> =>
     ];
   } catch {
     return [];
+=======
+    const account = await server.loadAccount(address);
+    return account.balances as Balance[];
+  } catch (err: any) {
+    if (
+      err?.response?.status === 404 ||
+      err?.status === 404 ||
+      err?.name === "NotFoundError" ||
+      err?.message === "Not Found"
+    ) {
+      return [];
+    }
+    throw err;
+>>>>>>> 8e73cf3 (fix(contracts): revert insecure mock BN254 verification & document CAP-0074 migration plan (#115))
   }
 };
 

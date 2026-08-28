@@ -507,6 +507,7 @@ sequenceDiagram
 * **Risk**: Loss of Google OAuth access or third-party service downtime.
 * **Mitigation**: Full self-custody via 24-word BIP-39 mnemonic phrase generated at wallet setup. Users retain total control over private keys and funds at all times.
 
+<<<<<<< HEAD
 ### Threat: Forged Email-Ownership Attestations
 * **Risk**: Email-restricted links (policy_type=1) bind funds to an address. A forged DKIM attestation lets an attacker claim a link bound to someone else's inbox — a direct theft vector.
 * **Mitigation — email-verification trust model** (backend/src/lib/dkim.ts, backend/src/lib/emailVerificationStore.ts):
@@ -517,6 +518,33 @@ sequenceDiagram
   * **Abuse resistance**: sliding-window rate limits on both email endpoints (per-IP and per-email-hash), plus rejection of disposable email providers (`EMAIL_BLOCKED_DOMAINS` extends the default blocklist) on both `/api/email/verify` and `/api/email/confirm`.
   * **On-chain binding guarantee (backend)**: `attest_email` on `VerifierContract` is only invoked by `POST /api/links/:hash/attest` after the recipient email hash is marked verified — which is only reachable by fully validating a fresh, non-replayed, domain-aligned DKIM-signed challenge message. There is no code path that marks a hash verified without passing `verifyEmailOwnership`, and the verification record itself expires (`EMAIL_VERIFIED_TTL_MS`, default 1h).
   * **Privacy**: only `sha256(normalized email)` is stored server-side; raw emails and raw messages are never persisted.
+
+### 10.1 Trust Model Analysis: Attester Oracle vs. Direct On-Chain BN254 Verification (CAP-0074)
+=======
+### 10.1 Trust Model Analysis & CAP-0074 Migration Plan: Attester Oracle vs. Direct On-Chain BN254 Verification
+>>>>>>> 8e73cf3 (fix(contracts): revert insecure mock BN254 verification & document CAP-0074 migration plan (#115))
+
+#### Readiness Assessment & Current Architecture: Trusted Attester Oracle
+- **Status Assessment**: Soroban SDK `26.1.0` introduces base crypto module host structures, but native host precompiles for full UltraHonk BN254 pairing verification are not yet active/available in the target Soroban runtime. Per Issue #115 acceptance criteria, attempting to force direct on-chain verification before CAP-0074 host pairing functions ship introduces security risks. The trusted attester oracle design remains active.
+- **Mechanism**: UltraHonk proof verification is performed off-chain by the backend service using `bb.js`. Once verified, the trusted attester account signs and submits a transaction calling `VerifierContract.attest(attester, link_hash, recipient)`. `AtreusContract.claim_link` checks `VerifierContract.is_attested(link_hash, recipient)` before disbursing escrowed funds.
+- **Trust Assumptions & Risk Profile**:
+  - **Attester Compromise**: If the attester key or backend server is compromised, an attacker can generate arbitrary attestations to drain escrowed payment links without valid ZK proofs.
+  - **Liveness & Centralization**: Escrow claims depend on backend oracle availability. If the backend goes down, legitimate users cannot finalize claims even with valid proofs.
+  - **Mitigations Preserved**: Recipient binding (`recipient` in public inputs and attestation key) and nullifier replay protection (`nullifier_key` in storage) prevent cross-user proof theft and double-claims, but do not prevent malicious attestation by a compromised oracle operator.
+
+#### Migration Plan: Direct On-Chain BN254 Proof Verification (CAP-0074)
+Once CAP-0074 host pairing functions (`pairing_check`) land natively in the Soroban protocol runtime, the system will execute the following migration plan:
+
+1. **Smart Contracts (`VerifierContract` & `AtreusContract`)**:
+   - Update `VerifierContract.verify_proof(public_inputs, proof)` to invoke host BN254 pairing precompiles (`env.crypto().bn254().pairing_check(...)`).
+   - Update `AtreusContract.claim_link` signature to accept `proof: Bytes` and `public_inputs: Bytes`, invoking `verify_proof` directly on-chain and deprecating `is_attested`.
+2. **Circuits (`circuits/src/main.nr`)**:
+   - Verify and test that public input field byte serializations (`recipient`, `link_hash`, `nullifier`) match the exact BN254 field element format expected by CAP-0074 host precompiles.
+3. **Backend & Relayer Service**:
+   - Refactor `/api/links/:linkHash/attest` into a transaction relayer that forwards `(proof, public_inputs)` directly into `claim_link`.
+   - Remove the `ATTESTER_SECRET_KEY` env var and decommission the privileged attester account.
+4. **Testing & Testnet Deployment**:
+   - Deploy contracts to Stellar Testnet and run end-to-end claim flows verifying proofs strictly on-chain.
 
 ---
 

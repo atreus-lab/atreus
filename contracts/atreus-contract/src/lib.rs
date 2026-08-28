@@ -1,4 +1,5 @@
 #![no_std]
+#![allow(deprecated)]
 #![allow(clippy::too_many_arguments)]
 use soroban_sdk::{
     contract, contractimpl, contracttype, symbol_short, token, vec, Address, Bytes, BytesN, Env,
@@ -178,9 +179,9 @@ impl AtreusContract {
         }
 
         // Require a real ZK attestation for this claim before releasing funds. The
-        // attestation is only recorded by VerifierContract::attest() after a trusted
-        // attester has verified a real UltraHonk proof off-chain — see the doc comment
-        // on VerifierContract::verify_proof for why this indirection exists.
+        // attestation is recorded by VerifierContract::attest() after a trusted
+        // attester has verified a real UltraHonk proof off-chain. Direct on-chain
+        // BN254 proof verification is deferred pending native CAP-0074 host function availability.
         let args: soroban_sdk::Vec<Val> = vec![&env, claim_key.into_val(&env)];
         let attested: bool =
             env.invoke_contract(&verifier, &Symbol::new(&env, "is_attested"), args);
