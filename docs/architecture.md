@@ -507,7 +507,6 @@ sequenceDiagram
 * **Risk**: Loss of Google OAuth access or third-party service downtime.
 * **Mitigation**: Full self-custody via 24-word BIP-39 mnemonic phrase generated at wallet setup. Users retain total control over private keys and funds at all times.
 
-<<<<<<< HEAD
 ### Threat: Forged Email-Ownership Attestations
 * **Risk**: Email-restricted links (policy_type=1) bind funds to an address. A forged DKIM attestation lets an attacker claim a link bound to someone else's inbox — a direct theft vector.
 * **Mitigation — email-verification trust model** (backend/src/lib/dkim.ts, backend/src/lib/emailVerificationStore.ts):
@@ -519,10 +518,7 @@ sequenceDiagram
   * **On-chain binding guarantee (backend)**: `attest_email` on `VerifierContract` is only invoked by `POST /api/links/:hash/attest` after the recipient email hash is marked verified — which is only reachable by fully validating a fresh, non-replayed, domain-aligned DKIM-signed challenge message. There is no code path that marks a hash verified without passing `verifyEmailOwnership`, and the verification record itself expires (`EMAIL_VERIFIED_TTL_MS`, default 1h).
   * **Privacy**: only `sha256(normalized email)` is stored server-side; raw emails and raw messages are never persisted.
 
-### 10.1 Trust Model Analysis: Attester Oracle vs. Direct On-Chain BN254 Verification (CAP-0074)
-=======
 ### 10.1 Trust Model Analysis & CAP-0074 Migration Plan: Attester Oracle vs. Direct On-Chain BN254 Verification
->>>>>>> 8e73cf3 (fix(contracts): revert insecure mock BN254 verification & document CAP-0074 migration plan (#115))
 
 #### Readiness Assessment & Current Architecture: Trusted Attester Oracle
 - **Status Assessment**: Soroban SDK `26.1.0` introduces base crypto module host structures, but native host precompiles for full UltraHonk BN254 pairing verification are not yet active/available in the target Soroban runtime. Per Issue #115 acceptance criteria, attempting to force direct on-chain verification before CAP-0074 host pairing functions ship introduces security risks. The trusted attester oracle design remains active.
