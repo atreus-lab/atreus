@@ -87,7 +87,7 @@ cargo test --all    # 51 passed, 0 failed
 |-------|--------|
 | Blockchain | Stellar (Soroban) |
 | Language | Rust |
-| SDK | `soroban-sdk` 22.0.0 |
+| SDK | `soroban-sdk` 27.0.6 |
 | Build target | `wasm32-unknown-unknown` |
 
 ## Getting Started
@@ -101,7 +101,7 @@ cargo test -p atreus-contract
 
 # Deploy (requires Stellar CLI + funded account)
 stellar contract deploy \
-  --wasm target/wasm32-unknown-unknown/release/atreus_contract.wasm \
+  --wasm target/wasm32v1-none/release/atreus_contract.wasm \
   --source-account <YOUR_KEY> \
   --network testnet
 ```
@@ -127,8 +127,8 @@ contracts/
 
 | Contract | ID |
 |----------|-----|
-| VerifierContract | `CD2WRLVL4LRRQTCNC5BB2Q4PAJKVHHGB7GNPM6DFF4QNBC3M3E2XHOMI` |
-| AtreusContract | `CA4MP4JAPWRJO7XX3UFDN3L2IIJBAOCBLGO6Y34EDDNZTIKGXGTFZ5NR` |
+| VerifierContract | `CASEKUKRPHLBXPCHUWCQ47UAN4EDM4EDHTGNWDNKRRIGWZRPR7GTCDY6` |
+| AtreusContract | `CB4HZODVUBQXAMZYL5KEKOEYTNNMS7HCHWBWMDVBSJVWGIETOGFRCOBZ` |
 
 ## License
 

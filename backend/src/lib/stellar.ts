@@ -1,12 +1,10 @@
-import { Horizon, Networks, Asset, rpc, Contract, TransactionBuilder, Address, Keypair, xdr, nativeToScVal, Account, scValToNative } from "@stellar/stellar-sdk";
+import { Networks, Asset, rpc, Contract, TransactionBuilder, Address, Keypair, xdr, nativeToScVal, Account, scValToNative } from "@stellar/stellar-sdk";
 import { Durability } from "@stellar/stellar-sdk/rpc";
 import { randomBytes } from "crypto";
 import { emailHash, type BatchInputRow } from "./batch.js";
 import { computeClaimKey, computeEmailKey, SALT_BYTES } from "./claimKey.js";
 
-export const HORIZON_URL = process.env.HORIZON_URL || "https://horizon-testnet.stellar.org";
 export const SOROBAN_RPC_URL = process.env.SOROBAN_RPC_URL || "https://soroban-testnet.stellar.org";
-export const server = new Horizon.Server(HORIZON_URL);
 export const rpcServer = new rpc.Server(SOROBAN_RPC_URL);
 export const networkPassphrase = Networks.TESTNET;
 export const nativeAsset = Asset.native();
@@ -42,9 +40,12 @@ function extractI128(v: any): bigint | null {
  * `create_link` writes (BytesN<32> → ScVal.scvBytes). Returns null when the
  * entry does not exist or the RPC errors out.
  */
+export const DEFAULT_CONTRACT_ID = "CB4HZODVUBQXAMZYL5KEKOEYTNNMS7HCHWBWMDVBSJVWGIETOGFRCOBZ";
+export const DEFAULT_VERIFIER_CONTRACT_ID = "CASEKUKRPHLBXPCHUWCQ47UAN4EDM4EDHTGNWDNKRRIGWZRPR7GTCDY6";
+export const DEFAULT_TOKEN_ID = "CDLZFC3SYJYDZT7K67VZ75HPJVIEUVNIXF47ZG2FB2RMQQVU2HHGCYSC";
+
 export const getLinkInfo = async (linkHashHex: string): Promise<LinkInfo | null> => {
-  const contractId = process.env.NEXT_PUBLIC_CONTRACT_ID;
-  if (!contractId) throw new Error("NEXT_PUBLIC_CONTRACT_ID is not configured");
+  const contractId = process.env.NEXT_PUBLIC_CONTRACT_ID || DEFAULT_CONTRACT_ID;
   if (!/^[0-9a-fA-F]{64}$/.test(linkHashHex)) throw new Error("linkHash must be 64 hex chars");
 
   const key = xdr.ScVal.scvBytes(Buffer.from(linkHashHex, "hex"));
@@ -52,7 +53,7 @@ export const getLinkInfo = async (linkHashHex: string): Promise<LinkInfo | null>
   try {
     entry = await rpcServer.getContractData(contractId, key, Durability.Persistent);
   } catch (err: any) {
-    if (err?.status === 404 || err?.response?.status === 404) return null;
+    if (err?.code === 404 || err?.status === 404 || err?.response?.status === 404 || err?.message?.includes("not found")) return null;
     throw err;
   }
   if (!entry) return null;
@@ -280,8 +281,7 @@ export const submitAttestation = async (
   recipient: string,
   emailHash?: Uint8Array
 ): Promise<AttestationResult> => {
-  const verifierContractId = process.env.NEXT_PUBLIC_VERIFIER_CONTRACT_ID;
-  if (!verifierContractId) throw new Error("NEXT_PUBLIC_VERIFIER_CONTRACT_ID is not configured");
+  const verifierContractId = process.env.NEXT_PUBLIC_VERIFIER_CONTRACT_ID || DEFAULT_VERIFIER_CONTRACT_ID;
 
   const attesterSecret = process.env.ATTESTER_SECRET_KEY;
   if (!attesterSecret) throw new Error("ATTESTER_SECRET_KEY is not configured");
@@ -413,17 +413,17 @@ export const submitEmailOnlyAttestation = async (
  * (e.g. right after a backend restart).
  */
 export const checkNullifierOnChain = async (nullifier: Uint8Array): Promise<boolean> => {
-  const verifierContractId = process.env.NEXT_PUBLIC_VERIFIER_CONTRACT_ID;
-  if (!verifierContractId) throw new Error("NEXT_PUBLIC_VERIFIER_CONTRACT_ID is not configured");
+  const verifierContractId = process.env.NEXT_PUBLIC_VERIFIER_CONTRACT_ID || DEFAULT_VERIFIER_CONTRACT_ID;
 
   const attesterSecret = process.env.ATTESTER_SECRET_KEY;
-  if (!attesterSecret) throw new Error("ATTESTER_SECRET_KEY is not configured");
-  const attesterKp = Keypair.fromSecret(attesterSecret);
+  const sourcePubKey = attesterSecret
+    ? Keypair.fromSecret(attesterSecret).publicKey()
+    : "GAU5GUPNCTZH6INJDMUTER3YKB6PWB5COVPBHVNSTUMA6424JQW5RD6Z";
 
   const contract = new Contract(verifierContractId);
   // A read-only simulation never touches the source account's actual sequence
   // number, so a throwaway Account avoids an extra getAccount RPC round trip.
-  const account = new Account(attesterKp.publicKey(), "0");
+  const account = new Account(sourcePubKey, "0");
   const tx = new TransactionBuilder(account, { fee: "100", networkPassphrase })
     .addOperation(contract.call("is_nullifier_used", xdr.ScVal.scvBytes(Buffer.from(nullifier))))
     .setTimeout(30)
@@ -433,7 +433,8 @@ export const checkNullifierOnChain = async (nullifier: Uint8Array): Promise<bool
   if (rpc.Api.isSimulationError(sim)) {
     if (
       sim.error?.includes("trying to invoke non-existent contract function") ||
-      sim.error?.includes("MissingValue")
+      sim.error?.includes("MissingValue") ||
+      sim.error?.includes("HostError")
     ) {
       return false;
     }

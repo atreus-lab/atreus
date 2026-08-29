@@ -5,7 +5,7 @@ use soroban_sdk::{
     contract, contractimpl, contracttype,
     testutils::{Address as _, Events, Ledger, MockAuth, MockAuthInvoke},
     token::{Client as TokenClient, StellarAssetClient},
-    Address, Bytes, BytesN, Env, IntoVal, Symbol, TryFromVal,
+    Address, Bytes, BytesN, Env, IntoVal, Symbol,
 };
 
 #[contracttype]
@@ -56,7 +56,7 @@ impl MockVerifier {
     }
 }
 
-fn setup_test(env: &Env) -> (AtreusContractClient<'_>, Address, Address, Address) {
+pub(crate) fn setup_test(env: &Env) -> (AtreusContractClient<'_>, Address, Address, Address) {
     let verifier: Address = env.register(MockVerifier, (Bytes::new(env), Address::generate(env)));
     let contract_id = env.register(AtreusContract, (&verifier,));
     let client = AtreusContractClient::new(env, &contract_id);
@@ -71,20 +71,20 @@ fn setup_test(env: &Env) -> (AtreusContractClient<'_>, Address, Address, Address
 }
 
 // The link hash is still sha256(secret), but the secret never reaches the chain.
-fn make_link_hash(env: &Env, val: u8) -> BytesN<32> {
+pub(crate) fn make_link_hash(env: &Env, val: u8) -> BytesN<32> {
     let secret = Bytes::from_array(env, &[val; 32]);
     BytesN::from_array(env, &env.crypto().sha256(&secret).to_array())
 }
 
-fn make_salt(env: &Env, val: u8) -> BytesN<32> {
+pub(crate) fn make_salt(env: &Env, val: u8) -> BytesN<32> {
     BytesN::from_array(env, &[val; 32])
 }
 
-fn no_relayer(env: &Env) -> (Address, i128) {
+pub(crate) fn no_relayer(env: &Env) -> (Address, i128) {
     (Address::generate(env), 0)
 }
 
-fn email_hash(env: &Env, email: &str) -> BytesN<32> {
+pub(crate) fn email_hash(env: &Env, email: &str) -> BytesN<32> {
     let email_bytes = Bytes::from_slice(env, email.as_bytes());
     let hash = env.crypto().sha256(&email_bytes);
     BytesN::from_array(env, &hash.to_array())
@@ -92,7 +92,7 @@ fn email_hash(env: &Env, email: &str) -> BytesN<32> {
 
 // Spec v1: claim_key = sha256("ATREUS_CLAIM_V1" || link_hash || recipient strkey || salt).
 // Spelled out here so the test checks the contract rather than reusing its code.
-fn expected_claim_key(
+pub(crate) fn expected_claim_key(
     env: &Env,
     link_hash: &BytesN<32>,
     recipient: &Address,
@@ -107,7 +107,7 @@ fn expected_claim_key(
 
 // Spec v1: email_key = sha256("ATREUS_EMAIL_V1" || link_hash || recipient strkey
 // || email_hash || salt).
-fn expected_email_key(
+pub(crate) fn expected_email_key(
     env: &Env,
     link_hash: &BytesN<32>,
     recipient: &Address,
@@ -122,7 +122,7 @@ fn expected_email_key(
     BytesN::from_array(env, &env.crypto().sha256(&preimage).to_array())
 }
 
-fn strkey_ascii(address: &Address) -> [u8; 56] {
+pub(crate) fn strkey_ascii(address: &Address) -> [u8; 56] {
     let s = address.to_string();
     assert_eq!(s.len(), 56);
     let mut out = [0u8; 56];
@@ -130,7 +130,7 @@ fn strkey_ascii(address: &Address) -> [u8; 56] {
     out
 }
 
-fn attest_claim(
+pub(crate) fn attest_claim(
     env: &Env,
     verifier: &Address,
     link_hash: &BytesN<32>,
@@ -333,18 +333,23 @@ fn test_claimed_event_carries_no_link_or_recipient() {
     // The test host resets the event buffer per top-level call, so read it here.
     client.claim_link(&link_hash, &recipient, &salt, &relayer, &50i128);
 
-    let mut seen = 0u32;
-    for (emitter, topics, data) in env.events().all().iter() {
-        if emitter != client.address {
-            continue;
-        }
-        seen += 1;
-        assert_eq!(topics.len(), 1, "claimed event must carry only its name");
-        let name = Symbol::try_from_val(&env, &topics.get(0).unwrap()).unwrap();
-        assert_eq!(name, symbol_short!("claimed"));
-        assert!(data.is_void(), "claimed event must carry no data");
-    }
-    assert_eq!(seen, 1, "exactly one claimed event expected");
+    // ContractEvents from env.events().all() supports filter_by_contract
+    // and direct comparison with Vec<(Address, Vec<Val>, Val)>.
+    let contract_events = env
+        .events()
+        .all()
+        .filter_by_contract(&client.address);
+    // () converts to void Val via IntoVal.
+    assert_eq!(
+        contract_events,
+        vec![&env,
+            (
+                client.address.clone(),
+                vec![&env, symbol_short!("claimed")].into_val(&env),
+                ().into_val(&env),
+            )
+        ]
+    );
 }
 
 #[test]

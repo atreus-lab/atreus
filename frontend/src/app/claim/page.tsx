@@ -132,22 +132,39 @@ function getFriendlyErrorMessage(err: any): { title: string; description: string
     msg.includes('invalidaction') ||
     msg.includes('unreachablecodereached') ||
     msg.includes('vm call trapped') ||
-    msg.includes('hosterror') && msg.includes('claim_link')
+    (msg.includes('hosterror') && msg.includes('claim_link'))
   ) {
     // Check the event log for telltale signs of "already claimed" or "expired"
     if (msg.includes('fn_return') && msg.includes('is_attested') && msg.includes('true')) {
       // is_attested returned true, then claim_link trapped → almost certainly "already claimed"
       return { title: 'Funds already claimed', description: 'This payment link has already been claimed. The funds are no longer available.' };
     }
+    // If the error mentions the attestation check specifically, guide the user.
+    if (msg.includes('is_attested') || msg.includes('attestation')) {
+      return { title: 'Attestation error', description: 'The on-chain attestation could not be verified. This may be a temporary network issue — please try again in a few seconds.' };
+    }
     return { title: 'Contract error', description: 'The transaction could not be completed. This link may have already been claimed or is invalid. Please check the link and try again.' };
+  }
+
+  // Broader HostError catch — covers cases where the function name isn't in the message.
+  // The specific panic checks above already handle the common contract errors;
+  // this catches unexpected HostErrors from cross-contract calls (e.g. verifier unreachable).
+  if (msg.includes('hosterror')) {
+    if (msg.includes('is_attested') || msg.includes('attestation')) {
+      return { title: 'Attestation error', description: 'The on-chain attestation could not be verified. The verifier contract may be temporarily unavailable — please try again.' };
+    }
+    return { title: 'Contract error', description: 'A contract error occurred during the claim. Please try again or contact support if the issue persists.' };
   }
 
   if (msg.includes('insufficient balance'))
     return { title: 'Insufficient funds', description: rawMsg };
   if (msg.includes('recipient account') || msg.includes('funded'))
     return { title: 'Wallet not funded', description: 'Your account needs testnet XLM. Get free funds via the Stellar friendbot.' };
-  if (msg.includes('failed to simulate'))
-    return { title: 'Contract simulation failed', description: 'The transaction simulation failed. The link may be invalid or the contract is unavailable.' };
+  if (msg.includes('failed to simulate') || msg.includes('simulation failed') || msg.includes('simulation error')) {
+    // Surface the underlying error when available for better diagnostics.
+    const simDetail = rawMsg.length > 120 ? rawMsg.slice(0, 120) + '…' : rawMsg;
+    return { title: 'Contract simulation failed', description: `The transaction simulation failed. ${simDetail}` };
+  }
   if (msg.includes('attestation tx failed') || msg.includes('attestation tx rejected'))
     return { title: 'Attestation transaction failed', description: 'The attestation could not be recorded on-chain. The link may already be claimed, or the network is unavailable. Please try again.' };
   if (msg.includes('attestation request failed') || msg.includes('attestation failed'))
@@ -213,6 +230,13 @@ function getFriendlyErrorMessage(err: any): { title: string; description: string
         setStatus('error');
         return;
       }
+      if (alreadyClaimed === null) {
+        // Link not found on-chain — either it was never created or was created on a different contract.
+        setErrorKind('error');
+        setErrorMsg('Link not found: This payment link does not exist on the current contract. Make sure you are using a link that was created on this network.');
+        setStatus('error');
+        return;
+      }
 
       // Email-restricted links require DKIM ownership proof before attestation.
       if (intendedEmail) {
@@ -253,9 +277,9 @@ function getFriendlyErrorMessage(err: any): { title: string; description: string
       setStatus('claiming');
       const linkHash = new Uint8Array(await crypto.subtle.digest('SHA-256', secretBytes));
 
-      const contractId = process.env.NEXT_PUBLIC_CONTRACT_ID;
-      const relayerAddress = process.env.NEXT_PUBLIC_RELAYER_ADDRESS;
-      const relayerFee = process.env.NEXT_PUBLIC_RELAYER_FEE_STROOPS;
+      const contractId = process.env.NEXT_PUBLIC_CONTRACT_ID || "CCTDH7A7F5SCJ2WA6I5ZC6MDJDR6D7R52PDYRRTHBMNWOSZREVV2HY2N";
+      const relayerAddress = process.env.NEXT_PUBLIC_RELAYER_ADDRESS || "GD3VH7TE4GEVL3KOYNISOAQ5K5IUHIYC422QLPPWVYKTWNKOWDLLPXPX";
+      const relayerFee = process.env.NEXT_PUBLIC_RELAYER_FEE_STROOPS || "0";
       if (!contractId || !relayerAddress || !relayerFee) {
         throw new Error('Gasless claim configuration is incomplete.');
       }
@@ -285,15 +309,22 @@ function getFriendlyErrorMessage(err: any): { title: string; description: string
 
       const provider = getActiveWalletProvider();
       const signedXdr = await provider.signTransaction(transaction.toXDR());
-      const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:3001';
-      const relayResponse = await fetch(`${backendUrl}/api/relay`, {
+      const relayResponse = await fetch('/api/relay', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ transactionXdr: signedXdr }),
       });
       const relayResult = await relayResponse.json().catch(() => null);
       if (!relayResponse.ok || typeof relayResult?.hash !== 'string') {
-        throw new Error(relayResult?.error || 'Relayer request failed.');
+        // simulationError may be a Soroban error string or an object — normalise it.
+        const simErr = relayResult?.simulationError;
+        const simDetail = typeof simErr === 'string'
+          ? simErr
+          : simErr && typeof simErr === 'object'
+            ? JSON.stringify(simErr)
+            : undefined;
+        const detail = simDetail || relayResult?.error || 'Relayer request failed.';
+        throw new Error(detail);
       }
 
       const hash = relayResult.hash;

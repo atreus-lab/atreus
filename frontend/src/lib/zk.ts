@@ -3,7 +3,8 @@
  *
  * Generates a real UltraHonk proof (Noir circuit + Barretenberg) binding a link secret
  * to a specific Stellar recipient. The proof is verified off-chain by the backend attester,
- * which then submits an on-chain attestation. See contracts/README.md for architecture.
+ * which then submits an on-chain attestation. The private secret is used only to build the
+ * proof here — it must never be passed to `claim_link` (Soroban args are public).
  *
  * Field encoding matches backend/src/lib/zk.ts — do not change one without the other.
  */
@@ -152,8 +153,8 @@ export async function generateClaimProof(
   } catch (clientErr: any) {
     console.warn("Client ZK proof generation failed, falling back to local backend prover:", clientErr);
     const fallbackUrls = [
+      "/api/links/prove",
       "http://localhost:3001/api/links/prove",
-      (process.env.NEXT_PUBLIC_BACKEND_URL || "https://atreus-backend.vercel.app") + "/api/links/prove"
     ];
     for (const url of fallbackUrls) {
       try {
@@ -194,7 +195,13 @@ export async function requestAttestation(
   nullifierFieldHex: string,
   recipientEmailHash?: string
 ): Promise<{ attestationTx: string; claimSalt: string }> {
-  const url = `/api/links/${linkHashHex}/attest`;
+  // Call backend directly — ZK verify + on-chain attestation can take minutes and
+  // Next.js dev rewrites time out (ECONNRESET). Backend enables CORS for localhost.
+  const backendOrigin = (process.env.NEXT_PUBLIC_BACKEND_URL || "http://localhost:3001").replace(
+    /\/$/,
+    ""
+  );
+  const url = `${backendOrigin}/api/links/${linkHashHex}/attest`;
 
   const body: Record<string, string> = {
     recipient: recipientAddress,
@@ -212,9 +219,22 @@ export async function requestAttestation(
     body: JSON.stringify(body),
   });
 
-  const data = await resp.json();
+  const text = await resp.text();
+  let data: any = null;
+  try {
+    data = text ? JSON.parse(text) : null;
+  } catch {
+    if (!resp.ok) {
+      throw new Error(
+        text
+          ? `Attestation request failed (${resp.status}): ${text.slice(0, 160)}`
+          : `Backend service unavailable (${resp.status}). Please ensure the backend server is running on port 3001 (run 'pnpm dev' or 'pnpm dev:backend').`
+      );
+    }
+    throw new Error("Invalid response from attestation service");
+  }
   if (!resp.ok) {
-    throw new Error(data.error || "Attestation request failed");
+    throw new Error(data?.error || `Attestation request failed (${resp.status})`);
   }
 
   return { attestationTx: data.attestationTx, claimSalt: data.claimSalt };

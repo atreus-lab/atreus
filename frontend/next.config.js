@@ -1,10 +1,14 @@
 /** @type {import('next').NextConfig} */
+const backendOrigin = (
+  process.env.NEXT_PUBLIC_BACKEND_URL || "http://localhost:3001"
+).replace(/\/$/, "");
+
 const nextConfig = {
   async rewrites() {
     return [
       {
         source: "/api/:path*",
-        destination: "http://localhost:3001/api/:path*",
+        destination: `${backendOrigin}/api/:path*`,
       },
     ];
   },

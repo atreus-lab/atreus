@@ -32,8 +32,8 @@ function generateWalk(balance: number, steps: number): number[] {
   return points;
 }
 
-const BalanceCard = memo(function BalanceCard({ balance, showBalance, onToggleBalance, onClaimClick, onCreateLinkClick }: BalanceCardProps) {
-  const numericBalance = parseFloat(balance);
+const BalanceCard = memo(function BalanceCard({ balance, showBalance, onToggleBalance, onClaimClick, onCreateLinkClick }: Readonly<BalanceCardProps>) {
+  const numericBalance = Number.parseFloat(balance);
 
   const chartData = useMemo(() => generateWalk(numericBalance, 24), [numericBalance]);
 
@@ -55,7 +55,7 @@ const BalanceCard = memo(function BalanceCard({ balance, showBalance, onToggleBa
           <span className="live-dot" />
           Total Balance
         </span>
-        <button onClick={onToggleBalance} className="p-1.5 rounded-lg hover:bg-[rgba(255,255,255,0.05)] transition-colors">
+        <button type="button" onClick={onToggleBalance} className="p-1.5 rounded-lg hover:bg-[rgba(255,255,255,0.05)] transition-colors relative z-20">
           {showBalance ? <Eye className="w-4 h-4 text-secondary" /> : <EyeOff className="w-4 h-4 text-secondary" />}
         </button>
       </div>
@@ -120,6 +120,7 @@ const BalanceCard = memo(function BalanceCard({ balance, showBalance, onToggleBa
           <ArrowDownLeft className="w-4 h-4 text-accent" /> Receive
         </Link>
         <motion.button
+          type="button"
           whileTap={{ scale: 0.97 }}
           transition={SPRING_PRESS}
           onClick={onCreateLinkClick}
@@ -128,6 +129,7 @@ const BalanceCard = memo(function BalanceCard({ balance, showBalance, onToggleBa
           <Link2 className="w-4 h-4 text-accent" /> Create Link
         </motion.button>
         <motion.button
+          type="button"
           whileTap={{ scale: 0.97 }}
           transition={SPRING_PRESS}
           onClick={onClaimClick}
