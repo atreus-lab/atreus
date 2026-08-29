@@ -12,6 +12,7 @@ import { updateLinkStatus, checkLinkOnChain, saveClaimedLink, readLinkInfo } fro
 import {
   fetchOptimalSwapPath,
   buildPathScVal,
+  buildDeadlineScVal,
   getSoroswapRouterAddress,
   resolveTokenSymbol,
   TESTNET_TOKENS,
@@ -278,6 +279,12 @@ function getFriendlyErrorMessage(err: any): { title: string; description: string
     };
   }
 
+  return {
+    title: 'Claim failed',
+    description: err?.message || 'An unexpected error occurred. Please try again.',
+  };
+}
+
   const parseLinkInput = () => {
     let hash = '';
     const trimmed = linkInput.trim();
@@ -404,14 +411,27 @@ function getFriendlyErrorMessage(err: any): { title: string; description: string
       }
 
       const contract = new Contract(contractId);
-      const claimOperation = contract.call(
-        'claim_link',
-        xdr.ScVal.scvBytes(Buffer.from(linkHash)),
-        new Address(recipient).toScVal(),
-        xdr.ScVal.scvBytes(claimSaltBytes),
-        new Address(relayerAddress).toScVal(),
-        nativeToScVal(BigInt(relayerFee), { type: 'i128' }),
-      );
+      const claimOperation = isSwapping && swapQuote
+        ? contract.call(
+            'claim_and_swap_link',
+            xdr.ScVal.scvBytes(Buffer.from(linkHash)),
+            new Address(recipient).toScVal(),
+            xdr.ScVal.scvBytes(claimSaltBytes),
+            new Address(getSoroswapRouterAddress()).toScVal(),
+            buildPathScVal(swapQuote.path),
+            nativeToScVal(swapQuote.minAmountOutStroops, { type: 'i128' }),
+            buildDeadlineScVal(5),
+            new Address(relayerAddress).toScVal(),
+            nativeToScVal(BigInt(relayerFee), { type: 'i128' }),
+          )
+        : contract.call(
+            'claim_link',
+            xdr.ScVal.scvBytes(Buffer.from(linkHash)),
+            new Address(recipient).toScVal(),
+            xdr.ScVal.scvBytes(claimSaltBytes),
+            new Address(relayerAddress).toScVal(),
+            nativeToScVal(BigInt(relayerFee), { type: 'i128' }),
+          );
 
       const account = await rpcServer.getAccount(recipient);
       let transaction = new TransactionBuilder(account, {

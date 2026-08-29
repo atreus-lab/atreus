@@ -114,6 +114,38 @@ fn setup_test(env: &Env) -> (AtreusContractClient<'_>, Address, Address, Address
     (client, verifier, sender, token_addr)
 }
 
+fn setup_swap_test(
+    env: &Env,
+) -> (
+    AtreusContractClient<'_>,
+    Address,
+    Address,
+    Address,
+    Address,
+    Address,
+) {
+    let (client, verifier, sender, token_in) = setup_test(env);
+
+    let token_out_admin = Address::generate(env);
+    let token_out = env.register_stellar_asset_contract_v2(token_out_admin.clone());
+    let token_out_addr = token_out.address();
+
+    let router = env.register(MockSoroswapRouter, ());
+
+    // Mint token_out to router so it can transfer output tokens on swap
+    let token_out_admin_client = StellarAssetClient::new(env, &token_out_addr);
+    token_out_admin_client.mint(&router, &100_000i128);
+
+    (client, verifier, sender, token_in, token_out_addr, router)
+}
+
+#[allow(dead_code)]
+pub(crate) fn make_secret(env: &Env, val: u8) -> (BytesN<32>, BytesN<32>) {
+    let secret_bytes = BytesN::from_array(env, &[val; 32]);
+    let link_hash = make_link_hash(env, val);
+    (secret_bytes, link_hash)
+}
+
 // The link hash is still sha256(secret), but the secret never reaches the chain.
 pub(crate) fn make_link_hash(env: &Env, val: u8) -> BytesN<32> {
     let secret = Bytes::from_array(env, &[val; 32]);
@@ -379,14 +411,12 @@ fn test_claimed_event_carries_no_link_or_recipient() {
 
     // ContractEvents from env.events().all() supports filter_by_contract
     // and direct comparison with Vec<(Address, Vec<Val>, Val)>.
-    let contract_events = env
-        .events()
-        .all()
-        .filter_by_contract(&client.address);
+    let contract_events = env.events().all().filter_by_contract(&client.address);
     // () converts to void Val via IntoVal.
     assert_eq!(
         contract_events,
-        vec![&env,
+        vec![
+            &env,
             (
                 client.address.clone(),
                 vec![&env, symbol_short!("claimed")].into_val(&env),
@@ -719,8 +749,9 @@ fn test_claim_and_swap_success() {
     let env = Env::default();
     env.mock_all_auths();
 
-    let (client, _verifier, sender, token_in, token_out, router) = setup_swap_test(&env);
-    let (secret, link_hash) = make_secret(&env, 10);
+    let (client, verifier, sender, token_in, token_out, router) = setup_swap_test(&env);
+    let link_hash = make_link_hash(&env, 10);
+    let salt = make_salt(&env, 0xA1);
     let amount = 1000i128;
     let expiry = env.ledger().timestamp() + 1000;
     let policy_params = Bytes::new(&env);
@@ -736,20 +767,23 @@ fn test_claim_and_swap_success() {
     );
 
     let recipient = Address::generate(&env);
+    let (relayer, fee) = no_relayer(&env);
+    attest_claim(&env, &verifier, &link_hash, &recipient, &salt);
+
     let path = vec![&env, token_in.clone(), token_out.clone()];
     let min_amount_out = 950i128;
     let deadline = env.ledger().timestamp() + 500;
 
     let amounts = client.claim_and_swap_link(
         &link_hash,
-        &secret,
         &recipient,
+        &salt,
         &router,
         &path,
         &min_amount_out,
         &deadline,
-        &0i128,
-        &None,
+        &relayer,
+        &fee,
     );
 
     assert_eq!(amounts.len(), 2);
@@ -767,14 +801,14 @@ fn test_claim_and_swap_success() {
     assert!(client
         .try_claim_and_swap_link(
             &link_hash,
-            &secret,
             &recipient,
+            &salt,
             &router,
             &path,
             &min_amount_out,
             &deadline,
-            &0i128,
-            &None,
+            &relayer,
+            &fee,
         )
         .is_err());
 }
@@ -784,13 +818,14 @@ fn test_claim_and_swap_multi_hop_success() {
     let env = Env::default();
     env.mock_all_auths();
 
-    let (client, _verifier, sender, token_in, token_out, router) = setup_swap_test(&env);
+    let (client, verifier, sender, token_in, token_out, router) = setup_swap_test(&env);
 
     let token_mid_admin = Address::generate(&env);
     let token_mid = env.register_stellar_asset_contract_v2(token_mid_admin.clone());
     let token_mid_addr = token_mid.address();
 
-    let (secret, link_hash) = make_secret(&env, 11);
+    let link_hash = make_link_hash(&env, 11);
+    let salt = make_salt(&env, 0xA2);
     let amount = 2500i128;
     let expiry = env.ledger().timestamp() + 1000;
     let policy_params = Bytes::new(&env);
@@ -806,6 +841,9 @@ fn test_claim_and_swap_multi_hop_success() {
     );
 
     let recipient = Address::generate(&env);
+    let (relayer, fee) = no_relayer(&env);
+    attest_claim(&env, &verifier, &link_hash, &recipient, &salt);
+
     let path = vec![
         &env,
         token_in.clone(),
@@ -817,14 +855,14 @@ fn test_claim_and_swap_multi_hop_success() {
 
     let amounts = client.claim_and_swap_link(
         &link_hash,
-        &secret,
         &recipient,
+        &salt,
         &router,
         &path,
         &min_amount_out,
         &deadline,
-        &0i128,
-        &None,
+        &relayer,
+        &fee,
     );
 
     assert_eq!(amounts.len(), 3);
@@ -839,8 +877,9 @@ fn test_claim_and_swap_slippage_revert() {
     let env = Env::default();
     env.mock_all_auths();
 
-    let (client, _verifier, sender, token_in, token_out, router) = setup_swap_test(&env);
-    let (secret, link_hash) = make_secret(&env, 12);
+    let (client, verifier, sender, token_in, token_out, router) = setup_swap_test(&env);
+    let link_hash = make_link_hash(&env, 12);
+    let salt = make_salt(&env, 0xA3);
     let amount = 1000i128;
     let expiry = env.ledger().timestamp() + 1000;
     let policy_params = Bytes::new(&env);
@@ -856,6 +895,9 @@ fn test_claim_and_swap_slippage_revert() {
     );
 
     let recipient = Address::generate(&env);
+    let (relayer, fee) = no_relayer(&env);
+    attest_claim(&env, &verifier, &link_hash, &recipient, &salt);
+
     let path = vec![&env, token_in.clone(), token_out.clone()];
     // Slippage expectation is higher than simulated output (1500 > 1000)
     let min_amount_out = 1500i128;
@@ -863,14 +905,14 @@ fn test_claim_and_swap_slippage_revert() {
 
     let result = client.try_claim_and_swap_link(
         &link_hash,
-        &secret,
         &recipient,
+        &salt,
         &router,
         &path,
         &min_amount_out,
         &deadline,
-        &0i128,
-        &None,
+        &relayer,
+        &fee,
     );
 
     assert!(result.is_err());
@@ -886,7 +928,7 @@ fn test_claim_and_swap_slippage_revert() {
 
     // Verify link remains claimable with acceptable slippage
     let success_amounts = client.claim_and_swap_link(
-        &link_hash, &secret, &recipient, &router, &path, &1000i128, &deadline, &0i128, &None,
+        &link_hash, &recipient, &salt, &router, &path, &1000i128, &deadline, &relayer, &fee,
     );
     assert_eq!(success_amounts.get(1).unwrap(), 1000i128);
     assert_eq!(token_out_client.balance(&recipient), 1000i128);
@@ -898,8 +940,9 @@ fn test_claim_and_swap_expired_deadline_revert() {
     env.mock_all_auths();
     env.ledger().set_timestamp(100);
 
-    let (client, _verifier, sender, token_in, token_out, router) = setup_swap_test(&env);
-    let (secret, link_hash) = make_secret(&env, 13);
+    let (client, verifier, sender, token_in, token_out, router) = setup_swap_test(&env);
+    let link_hash = make_link_hash(&env, 13);
+    let salt = make_salt(&env, 0xA4);
     let amount = 1000i128;
     let expiry = env.ledger().timestamp() + 1000;
     let policy_params = Bytes::new(&env);
@@ -915,6 +958,9 @@ fn test_claim_and_swap_expired_deadline_revert() {
     );
 
     let recipient = Address::generate(&env);
+    let (relayer, fee) = no_relayer(&env);
+    attest_claim(&env, &verifier, &link_hash, &recipient, &salt);
+
     let path = vec![&env, token_in.clone(), token_out.clone()];
     let min_amount_out = 900i128;
     // Deadline is set in the past relative to current ledger timestamp (100)
@@ -922,14 +968,14 @@ fn test_claim_and_swap_expired_deadline_revert() {
 
     let result = client.try_claim_and_swap_link(
         &link_hash,
-        &secret,
         &recipient,
+        &salt,
         &router,
         &path,
         &min_amount_out,
         &expired_deadline,
-        &0i128,
-        &None,
+        &relayer,
+        &fee,
     );
 
     assert!(result.is_err());
@@ -940,8 +986,9 @@ fn test_claim_and_swap_invalid_path_revert() {
     let env = Env::default();
     env.mock_all_auths();
 
-    let (client, _verifier, sender, token_in, token_out, router) = setup_swap_test(&env);
-    let (secret, link_hash) = make_secret(&env, 14);
+    let (client, verifier, sender, token_in, token_out, router) = setup_swap_test(&env);
+    let link_hash = make_link_hash(&env, 14);
+    let salt = make_salt(&env, 0xA5);
     let amount = 1000i128;
     let expiry = env.ledger().timestamp() + 1000;
     let policy_params = Bytes::new(&env);
@@ -957,6 +1004,9 @@ fn test_claim_and_swap_invalid_path_revert() {
     );
 
     let recipient = Address::generate(&env);
+    let (relayer, fee) = no_relayer(&env);
+    attest_claim(&env, &verifier, &link_hash, &recipient, &salt);
+
     let deadline = env.ledger().timestamp() + 500;
 
     // 1. Path not starting with escrowed token (starts with token_out)
@@ -964,14 +1014,14 @@ fn test_claim_and_swap_invalid_path_revert() {
     assert!(client
         .try_claim_and_swap_link(
             &link_hash,
-            &secret,
             &recipient,
+            &salt,
             &router,
             &wrong_start_path,
             &900i128,
             &deadline,
-            &0i128,
-            &None,
+            &relayer,
+            &fee,
         )
         .is_err());
 
@@ -980,14 +1030,14 @@ fn test_claim_and_swap_invalid_path_revert() {
     assert!(client
         .try_claim_and_swap_link(
             &link_hash,
-            &secret,
             &recipient,
+            &salt,
             &router,
             &same_target_path,
             &900i128,
             &deadline,
-            &0i128,
-            &None,
+            &relayer,
+            &fee,
         )
         .is_err());
 
@@ -996,14 +1046,14 @@ fn test_claim_and_swap_invalid_path_revert() {
     assert!(client
         .try_claim_and_swap_link(
             &link_hash,
-            &secret,
             &recipient,
+            &salt,
             &router,
             &short_path,
             &900i128,
             &deadline,
-            &0i128,
-            &None,
+            &relayer,
+            &fee,
         )
         .is_err());
 }
@@ -1013,8 +1063,9 @@ fn test_claim_and_swap_with_relayer_fee() {
     let env = Env::default();
     env.mock_all_auths();
 
-    let (client, _verifier, sender, token_in, token_out, router) = setup_swap_test(&env);
-    let (secret, link_hash) = make_secret(&env, 15);
+    let (client, verifier, sender, token_in, token_out, router) = setup_swap_test(&env);
+    let link_hash = make_link_hash(&env, 15);
+    let salt = make_salt(&env, 0xA6);
     let amount = 1000i128;
     let relayer_fee = 150i128;
     let expiry = env.ledger().timestamp() + 1000;
@@ -1032,20 +1083,22 @@ fn test_claim_and_swap_with_relayer_fee() {
 
     let recipient = Address::generate(&env);
     let relayer = Address::generate(&env);
+    attest_claim(&env, &verifier, &link_hash, &recipient, &salt);
+
     let path = vec![&env, token_in.clone(), token_out.clone()];
     let min_amount_out = 800i128;
     let deadline = env.ledger().timestamp() + 500;
 
     let amounts = client.claim_and_swap_link(
         &link_hash,
-        &secret,
         &recipient,
+        &salt,
         &router,
         &path,
         &min_amount_out,
         &deadline,
+        &relayer,
         &relayer_fee,
-        &Some(relayer.clone()),
     );
 
     let expected_swap_amount = amount - relayer_fee; // 850
@@ -1070,8 +1123,9 @@ fn test_claim_and_swap_rejects_invalid_relayer_fee() {
     let env = Env::default();
     env.mock_all_auths();
 
-    let (client, _verifier, sender, token_in, token_out, router) = setup_swap_test(&env);
-    let (secret, link_hash) = make_secret(&env, 16);
+    let (client, verifier, sender, token_in, token_out, router) = setup_swap_test(&env);
+    let link_hash = make_link_hash(&env, 16);
+    let salt = make_salt(&env, 0xA7);
     let amount = 1000i128;
     let expiry = env.ledger().timestamp() + 1000;
     let policy_params = Bytes::new(&env);
@@ -1088,6 +1142,8 @@ fn test_claim_and_swap_rejects_invalid_relayer_fee() {
 
     let recipient = Address::generate(&env);
     let relayer = Address::generate(&env);
+    attest_claim(&env, &verifier, &link_hash, &recipient, &salt);
+
     let path = vec![&env, token_in.clone(), token_out.clone()];
     let deadline = env.ledger().timestamp() + 500;
 
@@ -1095,36 +1151,28 @@ fn test_claim_and_swap_rejects_invalid_relayer_fee() {
     assert!(client
         .try_claim_and_swap_link(
             &link_hash,
-            &secret,
             &recipient,
+            &salt,
             &router,
             &path,
             &100i128,
             &deadline,
+            &relayer,
             &(amount + 1),
-            &Some(relayer.clone()),
         )
         .is_err());
 
     // 2. Fee equals total amount (leaves 0 for swap)
     assert!(client
         .try_claim_and_swap_link(
-            &link_hash,
-            &secret,
-            &recipient,
-            &router,
-            &path,
-            &100i128,
-            &deadline,
-            &amount,
-            &Some(relayer.clone()),
+            &link_hash, &recipient, &salt, &router, &path, &100i128, &deadline, &relayer, &amount,
         )
         .is_err());
 
-    // 3. Positive fee with None for relayer_address
+    // 3. Negative relayer fee
     assert!(client
         .try_claim_and_swap_link(
-            &link_hash, &secret, &recipient, &router, &path, &100i128, &deadline, &100i128, &None,
+            &link_hash, &recipient, &salt, &router, &path, &100i128, &deadline, &relayer, &-1i128,
         )
         .is_err());
 }
@@ -1135,7 +1183,8 @@ fn test_claim_and_swap_email_restricted() {
     env.mock_all_auths();
 
     let (client, verifier, sender, token_in, token_out, router) = setup_swap_test(&env);
-    let (secret, link_hash) = make_secret(&env, 17);
+    let link_hash = make_link_hash(&env, 17);
+    let salt = make_salt(&env, 0xA8);
     let amount = 1000i128;
     let expiry = env.ledger().timestamp() + 1000;
     let intended_email = "swapuser@example.com";
@@ -1153,26 +1202,141 @@ fn test_claim_and_swap_email_restricted() {
     );
 
     let recipient = Address::generate(&env);
+    let (relayer, fee) = no_relayer(&env);
+    attest_claim(&env, &verifier, &link_hash, &recipient, &salt);
+
     let path = vec![&env, token_in.clone(), token_out.clone()];
     let deadline = env.ledger().timestamp() + 500;
 
     // Without email attestation, claim-and-swap must fail
     assert!(client
         .try_claim_and_swap_link(
-            &link_hash, &secret, &recipient, &router, &path, &900i128, &deadline, &0i128, &None,
+            &link_hash, &recipient, &salt, &router, &path, &900i128, &deadline, &relayer, &fee,
         )
         .is_err());
 
     // Record email attestation
     let mock_verifier = MockVerifierClient::new(&env, &verifier);
-    mock_verifier.attest_email(&link_hash, &recipient, &intended_hash);
+    mock_verifier.attest_email(&expected_email_key(
+        &env,
+        &link_hash,
+        &recipient,
+        &intended_hash,
+        &salt,
+    ));
 
     // Now claim-and-swap must succeed
     let amounts = client.claim_and_swap_link(
-        &link_hash, &secret, &recipient, &router, &path, &900i128, &deadline, &0i128, &None,
+        &link_hash, &recipient, &salt, &router, &path, &900i128, &deadline, &relayer, &fee,
     );
     assert_eq!(amounts.get(1).unwrap(), 1000i128);
 
     let token_out_client = TokenClient::new(&env, &token_out);
     assert_eq!(token_out_client.balance(&recipient), 1000i128);
+}
+
+#[test]
+fn test_claim_and_swap_event_carries_no_link_or_recipient() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let (client, verifier, sender, token_in, token_out, router) = setup_swap_test(&env);
+    let link_hash = make_link_hash(&env, 18);
+    let salt = make_salt(&env, 0xA9);
+    let amount = 1000i128;
+    let expiry = env.ledger().timestamp() + 1000;
+    let policy_params = Bytes::new(&env);
+
+    client.create_link(
+        &link_hash,
+        &0u32,
+        &policy_params,
+        &amount,
+        &token_in,
+        &expiry,
+        &sender,
+    );
+
+    let recipient = Address::generate(&env);
+    let relayer = Address::generate(&env);
+    attest_claim(&env, &verifier, &link_hash, &recipient, &salt);
+
+    let path = vec![&env, token_in.clone(), token_out.clone()];
+    let deadline = env.ledger().timestamp() + 500;
+
+    client.claim_and_swap_link(
+        &link_hash, &recipient, &salt, &router, &path, &950i128, &deadline, &relayer, &50i128,
+    );
+
+    let contract_events = env.events().all().filter_by_contract(&client.address);
+    assert_eq!(
+        contract_events,
+        vec![
+            &env,
+            (
+                client.address.clone(),
+                vec![&env, symbol_short!("clm_swap")].into_val(&env),
+                ().into_val(&env),
+            )
+        ]
+    );
+}
+
+#[test]
+fn test_claim_and_swap_rejects_invalid_router() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let (client, verifier, sender, token_in, token_out, _router) = setup_swap_test(&env);
+    let link_hash = make_link_hash(&env, 19);
+    let salt = make_salt(&env, 0xAA);
+    let amount = 1000i128;
+    let expiry = env.ledger().timestamp() + 1000;
+    let policy_params = Bytes::new(&env);
+
+    client.create_link(
+        &link_hash,
+        &0u32,
+        &policy_params,
+        &amount,
+        &token_in,
+        &expiry,
+        &sender,
+    );
+
+    let recipient = Address::generate(&env);
+    let (relayer, fee) = no_relayer(&env);
+    attest_claim(&env, &verifier, &link_hash, &recipient, &salt);
+
+    let path = vec![&env, token_in.clone(), token_out.clone()];
+    let deadline = env.ledger().timestamp() + 500;
+
+    // 1. Router is recipient
+    assert!(client
+        .try_claim_and_swap_link(
+            &link_hash, &recipient, &salt, &recipient, &path, &900i128, &deadline, &relayer, &fee,
+        )
+        .is_err());
+
+    // 2. Router is contract itself
+    assert!(client
+        .try_claim_and_swap_link(
+            &link_hash,
+            &recipient,
+            &salt,
+            &client.address,
+            &path,
+            &900i128,
+            &deadline,
+            &relayer,
+            &fee,
+        )
+        .is_err());
+
+    // 3. Router is token_in
+    assert!(client
+        .try_claim_and_swap_link(
+            &link_hash, &recipient, &salt, &token_in, &path, &900i128, &deadline, &relayer, &fee,
+        )
+        .is_err());
 }

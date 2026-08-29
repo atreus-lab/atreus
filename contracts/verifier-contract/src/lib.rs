@@ -295,7 +295,11 @@ impl VerifierContract {
             // Replay check first, and mark immediately — this is what makes a
             // duplicate nullifier *within* one batch fail on its second occurrence.
             let nullifier_key = DataKey::Nullifier(claim.nullifier.clone());
-            let used: bool = env.storage().persistent().get(&nullifier_key).unwrap_or(false);
+            let used: bool = env
+                .storage()
+                .persistent()
+                .get(&nullifier_key)
+                .unwrap_or(false);
             if used {
                 panic!("nullifier already used");
             }
@@ -316,7 +320,9 @@ impl VerifierContract {
 
             if let Some(email_key) = claim.email_key.clone() {
                 let email_attestation_key = DataKey::EmailAttestation(email_key);
-                env.storage().persistent().set(&email_attestation_key, &true);
+                env.storage()
+                    .persistent()
+                    .set(&email_attestation_key, &true);
                 env.storage().persistent().extend_ttl(
                     &email_attestation_key,
                     STORAGE_TTL_THRESHOLD,
@@ -329,8 +335,7 @@ impl VerifierContract {
         // alone still tells an observer a batch happened and how large it was;
         // that is unavoidable from the transaction itself and reveals nothing
         // about which links or recipients it covered.
-        env.events()
-            .publish((symbol_short!("att_batch"),), count);
+        env.events().publish((symbol_short!("att_batch"),), count);
 
         count
     }

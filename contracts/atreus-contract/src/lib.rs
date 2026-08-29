@@ -1,6 +1,7 @@
 #![no_std]
 #![allow(deprecated)]
 #![allow(clippy::too_many_arguments)]
+#![allow(clippy::needless_borrows_for_generic_args)]
 use soroban_sdk::{
     contract, contractclient, contractimpl, contracttype, symbol_short, token, vec, Address, Bytes,
     BytesN, Env, IntoVal, Symbol, Val, Vec,
@@ -83,11 +84,8 @@ fn check_email_policy(
         claim_salt,
     );
     let email_args: soroban_sdk::Vec<Val> = vec![env, email_key.into_val(env)];
-    let email_attested: bool = env.invoke_contract(
-        verifier,
-        &Symbol::new(env, "is_email_attested"),
-        email_args,
-    );
+    let email_attested: bool =
+        env.invoke_contract(verifier, &Symbol::new(env, "is_email_attested"), email_args);
     if !email_attested {
         panic!("email not attested for this recipient");
     }
@@ -165,6 +163,18 @@ pub struct SplitLinkInfo {
 #[contracttype]
 pub enum SplitDataKey {
     SplitLink(BytesN<32>),
+}
+
+#[contractclient(name = "SoroswapRouterClient")]
+pub trait SoroswapRouterInterface {
+    fn swap_exact_tokens_for_tokens(
+        env: Env,
+        amount_in: i128,
+        amount_out_min: i128,
+        path: Vec<Address>,
+        to: Address,
+        deadline: u64,
+    ) -> Vec<i128>;
 }
 
 #[contract]
@@ -316,29 +326,43 @@ impl AtreusContract {
     pub fn claim_and_swap_link(
         env: Env,
         link_hash: BytesN<32>,
-        secret: BytesN<32>,
         recipient: Address,
+        claim_salt: BytesN<32>,
         router: Address,
         path: Vec<Address>,
         min_amount_out: i128,
         deadline: u64,
+        relayer_address: Address,
         relayer_fee: i128,
-        relayer_address: Option<Address>,
     ) -> Vec<i128> {
         recipient.require_auth();
 
-        // Verify secret: sha256(secret) must equal the stored link_hash.
-        let secret_bytes = Bytes::from_array(&env, &secret.to_array());
-        let computed = env.crypto().sha256(&secret_bytes);
-        if BytesN::from_array(&env, &computed.to_array()) != link_hash {
-            panic!("invalid secret");
-        }
+        let strkey = recipient_strkey(&recipient);
+        let claim_key = blinded_key(&env, CLAIM_DOMAIN, &link_hash, &strkey, None, &claim_salt);
 
         let mut link_info: LinkInfo = env
             .storage()
             .persistent()
             .get(&link_hash)
             .expect("Link not found");
+
+        let verifier: Address = env
+            .storage()
+            .instance()
+            .get(&DataKey::VerifierAddress)
+            .expect("verifier not set");
+
+        check_email_policy(
+            &env,
+            &verifier,
+            link_info.policy_type,
+            &link_info.policy_params,
+            &link_hash,
+            &strkey,
+            &claim_salt,
+        );
+
+        require_attested(&env, &verifier, &claim_key);
 
         if link_info.claimed {
             panic!("already claimed");
@@ -369,54 +393,17 @@ impl AtreusContract {
             panic!("path target cannot be escrowed asset");
         }
 
-        // Retrieve verifier for ZK and email policy checks
-        let verifier: Address = env
-            .storage()
-            .instance()
-            .get(&DataKey::VerifierAddress)
-            .expect("verifier not set");
-
-        if link_info.policy_type == 1 {
-            if link_info.policy_params.len() != 32 {
-                panic!("invalid policy params length");
-            }
-            let mut policy_arr = [0u8; 32];
-            link_info.policy_params.copy_into_slice(&mut policy_arr);
-            let expected_email_hash = BytesN::from_array(&env, &policy_arr);
-            let email_args: soroban_sdk::Vec<Val> = vec![
-                &env,
-                link_hash.into_val(&env),
-                recipient.into_val(&env),
-                expected_email_hash.into_val(&env),
-            ];
-            let email_attested: bool = env.invoke_contract(
-                &verifier,
-                &Symbol::new(&env, "is_email_attested"),
-                email_args,
-            );
-            if !email_attested {
-                panic!("email not attested for this recipient");
-            }
-        }
-
-        let args: soroban_sdk::Vec<Val> =
-            vec![&env, link_hash.into_val(&env), recipient.into_val(&env)];
-        let attested: bool =
-            env.invoke_contract(&verifier, &Symbol::new(&env, "is_attested"), args);
-        if !attested {
-            panic!("no valid ZK attestation for this claim");
-        }
-
-        // Double-claim prevention via nullifier
-        let link_hash_bytes = Bytes::from_array(&env, &link_hash.to_array());
-        let nullifier_key =
-            BytesN::from_array(&env, &env.crypto().sha256(&link_hash_bytes).to_array());
-        if env.storage().persistent().has(&nullifier_key) {
-            panic!("nullifier already used");
+        // Validate router address
+        if router == recipient
+            || router == env.current_contract_address()
+            || router == first_asset
+            || router == last_asset
+        {
+            panic!("invalid router address");
         }
 
         // Fee validation and deduction
-        if relayer_fee < 0 || relayer_fee > link_info.amount {
+        if relayer_fee < 0 || relayer_fee >= link_info.amount {
             panic!("invalid relayer fee");
         }
 
@@ -427,10 +414,11 @@ impl AtreusContract {
 
         let token_client = token::Client::new(&env, &link_info.asset);
         if relayer_fee > 0 {
-            let relayer = relayer_address
-                .as_ref()
-                .expect("relayer address required when fee is non-zero");
-            token_client.transfer(&env.current_contract_address(), relayer, &relayer_fee);
+            token_client.transfer(
+                &env.current_contract_address(),
+                &relayer_address,
+                &relayer_fee,
+            );
         }
 
         // Transfer swap amount to router and execute swap to recipient
@@ -447,19 +435,8 @@ impl AtreusContract {
 
         link_info.claimed = true;
         env.storage().persistent().set(&link_hash, &link_info);
-        env.storage().persistent().set(&nullifier_key, &true);
 
-        env.events().publish(
-            (symbol_short!("clm_swap"), link_hash),
-            (
-                recipient,
-                router,
-                swap_amount,
-                min_amount_out,
-                relayer_address,
-                relayer_fee,
-            ),
-        );
+        env.events().publish((symbol_short!("clm_swap"),), ());
 
         amounts
     }
@@ -574,10 +551,8 @@ impl AtreusContract {
             .persistent()
             .extend_ttl(&key, STORAGE_TTL_THRESHOLD, STORAGE_TTL_EXTEND_TO);
 
-        env.events().publish(
-            (symbol_short!("splitnew"), id),
-            (sender, total, asset, n),
-        );
+        env.events()
+            .publish((symbol_short!("splitnew"), id), (sender, total, asset, n));
     }
 
     /// Claims up to `claim_amount` stroops from `recipient`'s allocation.
