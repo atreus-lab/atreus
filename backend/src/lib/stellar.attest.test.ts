@@ -18,7 +18,6 @@ vi.mock("@stellar/stellar-sdk/rpc", () => ({ Durability: { Persistent: "persiste
 // implementation, and skipping it keeps this suite off the SDK's parse cost.
 vi.mock("@stellar/stellar-sdk", () => {
   return {
-    Horizon: { Server: class {} },
     Networks: { TESTNET: "Test SDF Network ; September 2015" },
     Asset: { native: () => ({}) },
     Account: class { constructor(_id: string, _seq: string) {} },

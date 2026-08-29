@@ -21,7 +21,8 @@ export function useWallet() {
   return context;
 }
 
-export function Providers({ children, clientId }: { children: React.ReactNode; clientId: string }) {
+export function Providers({ children, clientId }: { children: React.ReactNode; clientId?: string }) {
+  const effectiveClientId = clientId || process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID || "demo-client-id.apps.googleusercontent.com";
   const [activeWalletType, setActiveWalletTypeState] = useState<WalletType>("local");
   const [publicKey, setPublicKey] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
@@ -90,7 +91,7 @@ export function Providers({ children, clientId }: { children: React.ReactNode; c
   };
 
   return (
-    <GoogleOAuthProvider clientId={clientId}>
+    <GoogleOAuthProvider clientId={effectiveClientId}>
       <WalletContext.Provider value={{ activeWalletType, publicKey, isLoading, connectWallet, disconnectWallet, refresh }}>
         {children}
       </WalletContext.Provider>

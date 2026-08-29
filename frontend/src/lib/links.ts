@@ -1,7 +1,6 @@
 import { loadWallet, getKeypair } from "./wallet";
-import { rpcServer, networkPassphrase, waitForTransaction } from "./stellar";
-import { xdr, TransactionBuilder, Contract } from "@stellar/stellar-sdk";
-import { Durability } from "@stellar/stellar-sdk/rpc";
+import { rpcServer, networkPassphrase, waitForTransaction, DEFAULT_CONTRACT_ID } from "./stellar";
+import { Address, xdr, TransactionBuilder, Contract } from "@stellar/stellar-sdk";
 
 export interface StoredLink {
   id: string;
@@ -145,12 +144,18 @@ function extractI128(v: any): bigint | null {
  */
 export async function readLinkInfo(linkHashHex: string): Promise<{ claimed: boolean | null; amount: string | null }> {
   const result: { claimed: boolean | null; amount: string | null } = { claimed: null, amount: null };
-  const contractId = process.env.NEXT_PUBLIC_CONTRACT_ID;
-  if (!contractId || !linkHashHex) return result;
+  const contractId = process.env.NEXT_PUBLIC_CONTRACT_ID || DEFAULT_CONTRACT_ID;
+  if (!contractId || !/^[0-9a-fA-F]{64}$/.test(linkHashHex)) return result;
   try {
-    const key = xdr.ScVal.scvBytes(Buffer.from(linkHashHex, "hex"));
-    const entry = await rpcServer.getContractData(contractId, key, Durability.Persistent);
-    if (!entry) return result;
+    const contractScAddress = new Address(contractId).toScAddress();
+    const lk = xdr.LedgerKey.contractData(new xdr.LedgerKeyContractData({
+      contract: contractScAddress,
+      key: xdr.ScVal.scvBytes(Buffer.from(linkHashHex, "hex")),
+      durability: xdr.ContractDataDurability.persistent(),
+    }));
+    const res = await rpcServer.getLedgerEntries(lk);
+    if (!res.entries || res.entries.length === 0) return result;
+    const entry = res.entries[0];
     const val = entry.val.contractData().val();
 
     // Try Map format — Soroban stores #[contracttype] structs as ScMap with Symbol keys
@@ -158,8 +163,8 @@ export async function readLinkInfo(linkHashHex: string): Promise<{ claimed: bool
       const map: any = val.map();
       if (map) {
         for (let i = 0; i < map.length; i++) {
-          const entry: any = map[i];
-          const attrs = entry._attributes || entry;
+          const entryItem: any = map[i];
+          const attrs = entryItem._attributes || entryItem;
           const k: any = attrs.key;
           const v: any = attrs.val;
           if (k && k._arm === 'sym') {
@@ -183,8 +188,8 @@ export async function readLinkInfo(linkHashHex: string): Promise<{ claimed: bool
 
     return result;
   } catch (err: any) {
-    if (err?.status === 404) return result;
-    console.error("Failed to read link info:", err);
+    if (err?.status === 404 || err?.code === 404 || err?.message?.includes("not found")) return result;
+    console.warn("Could not read link info from chain:", err?.message || err);
     return result;
   }
 }
@@ -216,8 +221,7 @@ export async function refreshLinkStatuses(): Promise<void> {
 }
 
 export async function refundLink(linkHashHex: string): Promise<string> {
-  const contractId = process.env.NEXT_PUBLIC_CONTRACT_ID;
-  if (!contractId) throw new Error("NEXT_PUBLIC_CONTRACT_ID is not configured");
+  const contractId = process.env.NEXT_PUBLIC_CONTRACT_ID || DEFAULT_CONTRACT_ID;
 
   const wallet = loadWallet();
   if (!wallet) throw new Error("No wallet found");

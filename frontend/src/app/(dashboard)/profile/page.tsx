@@ -73,7 +73,7 @@ export default function ProfilePage() {
         if (tx.created_at > counterparties[counterparty].lastSeen) counterparties[counterparty].lastSeen = tx.created_at;
       }
       // Include senders of payment links this wallet has claimed — these funds move
-      // via the claim contract, not a Horizon payment, so they're invisible above.
+      // via the claim contract, not a direct payment, so they're invisible above.
       const claimedLinks = getClaimedLinks();
       const claimedLinksCount = claimedLinks.length;
       let claimedLinksTotal = 0;

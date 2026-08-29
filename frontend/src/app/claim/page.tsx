@@ -240,7 +240,7 @@ function getFriendlyErrorMessage(err: any): { title: string; description: string
     msg.includes('invalidaction') ||
     msg.includes('unreachablecodereached') ||
     msg.includes('vm call trapped') ||
-    msg.includes('hosterror') && msg.includes('claim_link')
+    (msg.includes('hosterror') && msg.includes('claim_link'))
   ) {
     // Check the event log for telltale signs of "already claimed" or "expired"
     if (msg.includes('fn_return') && msg.includes('is_attested') && msg.includes('true')) {
@@ -338,6 +338,13 @@ function getFriendlyErrorMessage(err: any): { title: string; description: string
         setStatus('error');
         return;
       }
+      if (alreadyClaimed === null) {
+        // Link not found on-chain — either it was never created or was created on a different contract.
+        setErrorKind('error');
+        setErrorMsg('Link not found: This payment link does not exist on the current contract. Make sure you are using a link that was created on this network.');
+        setStatus('error');
+        return;
+      }
 
       // Email-restricted links require DKIM ownership proof before attestation
       if (intendedEmail) {
@@ -386,9 +393,9 @@ function getFriendlyErrorMessage(err: any): { title: string; description: string
       setStatus('claiming');
       const linkHash = new Uint8Array(await crypto.subtle.digest('SHA-256', secretBytes));
 
-      const contractId = process.env.NEXT_PUBLIC_CONTRACT_ID;
-      const relayerAddress = process.env.NEXT_PUBLIC_RELAYER_ADDRESS;
-      const relayerFee = process.env.NEXT_PUBLIC_RELAYER_FEE_STROOPS;
+      const contractId = process.env.NEXT_PUBLIC_CONTRACT_ID || "CCTDH7A7F5SCJ2WA6I5ZC6MDJDR6D7R52PDYRRTHBMNWOSZREVV2HY2N";
+      const relayerAddress = process.env.NEXT_PUBLIC_RELAYER_ADDRESS || "GD3VH7TE4GEVL3KOYNISOAQ5K5IUHIYC422QLPPWVYKTWNKOWDLLPXPX";
+      const relayerFee = process.env.NEXT_PUBLIC_RELAYER_FEE_STROOPS || "0";
       if (!contractId || !relayerAddress || !relayerFee) {
         throw new Error('Gasless claim configuration is incomplete.');
       }
@@ -418,15 +425,22 @@ function getFriendlyErrorMessage(err: any): { title: string; description: string
 
       const provider = getActiveWalletProvider();
       const signedXdr = await provider.signTransaction(transaction.toXDR());
-      const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:3001';
-      const relayResponse = await fetch(`${backendUrl}/api/relay`, {
+      const relayResponse = await fetch('/api/relay', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ transactionXdr: signedXdr }),
       });
       const relayResult = await relayResponse.json().catch(() => null);
       if (!relayResponse.ok || typeof relayResult?.hash !== 'string') {
-        throw new Error(relayResult?.error || 'Relayer request failed.');
+        // simulationError may be a Soroban error string or an object — normalise it.
+        const simErr = relayResult?.simulationError;
+        const simDetail = typeof simErr === 'string'
+          ? simErr
+          : simErr && typeof simErr === 'object'
+            ? JSON.stringify(simErr)
+            : undefined;
+        const detail = simDetail || relayResult?.error || 'Relayer request failed.';
+        throw new Error(detail);
       }
 
       const hash = relayResult.hash;
