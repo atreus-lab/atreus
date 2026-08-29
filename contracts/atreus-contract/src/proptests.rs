@@ -1,4 +1,7 @@
 #![cfg(test)]
+#![allow(clippy::unused_enumerate_index)]
+#![allow(clippy::needless_range_loop)]
+#![allow(clippy::enum_variant_names)]
 
 extern crate std;
 
@@ -10,9 +13,7 @@ use soroban_sdk::{
     Address, Bytes, BytesN, Env, IntoVal,
 };
 
-use crate::test::{
-    attest_claim, make_link_hash, make_salt, MockVerifier,
-};
+use crate::test::{attest_claim, make_link_hash, make_salt, MockVerifier};
 
 // ---------------------------------------------------------------------------
 // Reusable helpers
@@ -495,13 +496,7 @@ impl EscrowModel {
 
                 attest_claim(env, verifier, &link_hash, &recipient, &salt);
 
-                let result = client.try_claim_link(
-                    &link_hash,
-                    &recipient,
-                    &salt,
-                    &relayer,
-                    &0i128,
-                );
+                let result = client.try_claim_link(&link_hash, &recipient, &salt, &relayer, &0i128);
 
                 if result.is_ok() {
                     link.claimed = true;
@@ -731,13 +726,7 @@ fn planted_bug_fee_not_deducted_detected() {
     let relayer = Address::generate(&env);
 
     attest_claim(&env, &verifier, &link_hash, &recipient, &salt);
-    client.claim_link(
-        &link_hash,
-        &recipient,
-        &salt,
-        &relayer,
-        &fee,
-    );
+    client.claim_link(&link_hash, &recipient, &salt, &relayer, &fee);
 
     let tc = TokenClient::new(&env, &token);
 

@@ -142,8 +142,8 @@ function extractI128(v: any): bigint | null {
  * Returns { claimed, amount } where amount is in XLM as a string, or null for any
  * field that couldn't be read.
  */
-export async function readLinkInfo(linkHashHex: string): Promise<{ claimed: boolean | null; amount: string | null }> {
-  const result: { claimed: boolean | null; amount: string | null } = { claimed: null, amount: null };
+export async function readLinkInfo(linkHashHex: string): Promise<{ claimed: boolean | null; amount: string | null; asset?: string | null }> {
+  const result: { claimed: boolean | null; amount: string | null; asset?: string | null } = { claimed: null, amount: null, asset: null };
   const contractId = process.env.NEXT_PUBLIC_CONTRACT_ID || DEFAULT_CONTRACT_ID;
   if (!contractId || !/^[0-9a-fA-F]{64}$/.test(linkHashHex)) return result;
   try {
@@ -178,6 +178,10 @@ export async function readLinkInfo(linkHashHex: string): Promise<{ claimed: bool
                 const xlm = Number(i128) / 10_000_000;
                 result.amount = xlm.toFixed(7).replace(/\.?0+$/, '');
               }
+            } else if (fieldName === 'asset' && v) {
+              try {
+                result.asset = Address.fromScVal(v).toString();
+              } catch {}
             }
           }
         }

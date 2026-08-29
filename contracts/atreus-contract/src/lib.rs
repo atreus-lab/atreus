@@ -1,9 +1,10 @@
 #![no_std]
 #![allow(deprecated)]
 #![allow(clippy::too_many_arguments)]
+#![allow(clippy::needless_borrows_for_generic_args)]
 use soroban_sdk::{
-    contract, contractimpl, contracttype, symbol_short, token, vec, Address, Bytes, BytesN, Env,
-    IntoVal, Symbol, Val, Vec,
+    contract, contractclient, contractimpl, contracttype, symbol_short, token, vec, Address, Bytes,
+    BytesN, Env, IntoVal, Symbol, Val, Vec,
 };
 
 const STORAGE_TTL_THRESHOLD: u32 = 535_679;
@@ -83,11 +84,8 @@ fn check_email_policy(
         claim_salt,
     );
     let email_args: soroban_sdk::Vec<Val> = vec![env, email_key.into_val(env)];
-    let email_attested: bool = env.invoke_contract(
-        verifier,
-        &Symbol::new(env, "is_email_attested"),
-        email_args,
-    );
+    let email_attested: bool =
+        env.invoke_contract(verifier, &Symbol::new(env, "is_email_attested"), email_args);
     if !email_attested {
         panic!("email not attested for this recipient");
     }
@@ -165,6 +163,18 @@ pub struct SplitLinkInfo {
 #[contracttype]
 pub enum SplitDataKey {
     SplitLink(BytesN<32>),
+}
+
+#[contractclient(name = "SoroswapRouterClient")]
+pub trait SoroswapRouterInterface {
+    fn swap_exact_tokens_for_tokens(
+        env: Env,
+        amount_in: i128,
+        amount_out_min: i128,
+        path: Vec<Address>,
+        to: Address,
+        deadline: u64,
+    ) -> Vec<i128>;
 }
 
 #[contract]
@@ -313,6 +323,124 @@ impl AtreusContract {
         env.events().publish((symbol_short!("claimed"),), ());
     }
 
+    pub fn claim_and_swap_link(
+        env: Env,
+        link_hash: BytesN<32>,
+        recipient: Address,
+        claim_salt: BytesN<32>,
+        router: Address,
+        path: Vec<Address>,
+        min_amount_out: i128,
+        deadline: u64,
+        relayer_address: Address,
+        relayer_fee: i128,
+    ) -> Vec<i128> {
+        recipient.require_auth();
+
+        let strkey = recipient_strkey(&recipient);
+        let claim_key = blinded_key(&env, CLAIM_DOMAIN, &link_hash, &strkey, None, &claim_salt);
+
+        let mut link_info: LinkInfo = env
+            .storage()
+            .persistent()
+            .get(&link_hash)
+            .expect("Link not found");
+
+        let verifier: Address = env
+            .storage()
+            .instance()
+            .get(&DataKey::VerifierAddress)
+            .expect("verifier not set");
+
+        check_email_policy(
+            &env,
+            &verifier,
+            link_info.policy_type,
+            &link_info.policy_params,
+            &link_hash,
+            &strkey,
+            &claim_salt,
+        );
+
+        require_attested(&env, &verifier, &claim_key);
+
+        if link_info.claimed {
+            panic!("already claimed");
+        }
+
+        if env.ledger().timestamp() > link_info.expires_at {
+            panic!("link expired");
+        }
+
+        if min_amount_out <= 0 {
+            panic!("min_amount_out must be greater than zero");
+        }
+
+        if deadline < env.ledger().timestamp() {
+            panic!("deadline expired");
+        }
+
+        // Validate path: must have at least 2 hops, start with escrowed token, end with different token
+        if path.len() < 2 {
+            panic!("invalid path length");
+        }
+        let first_asset = path.get(0).unwrap();
+        let last_asset = path.get(path.len() - 1).unwrap();
+        if first_asset != link_info.asset {
+            panic!("path must start with escrowed asset");
+        }
+        if last_asset == link_info.asset {
+            panic!("path target cannot be escrowed asset");
+        }
+
+        // Validate router address
+        if router == recipient
+            || router == env.current_contract_address()
+            || router == first_asset
+            || router == last_asset
+        {
+            panic!("invalid router address");
+        }
+
+        // Fee validation and deduction
+        if relayer_fee < 0 || relayer_fee >= link_info.amount {
+            panic!("invalid relayer fee");
+        }
+
+        let swap_amount = link_info.amount - relayer_fee;
+        if swap_amount <= 0 {
+            panic!("invalid swap amount");
+        }
+
+        let token_client = token::Client::new(&env, &link_info.asset);
+        if relayer_fee > 0 {
+            token_client.transfer(
+                &env.current_contract_address(),
+                &relayer_address,
+                &relayer_fee,
+            );
+        }
+
+        // Transfer swap amount to router and execute swap to recipient
+        token_client.transfer(&env.current_contract_address(), &router, &swap_amount);
+
+        let router_client = SoroswapRouterClient::new(&env, &router);
+        let amounts = router_client.swap_exact_tokens_for_tokens(
+            &swap_amount,
+            &min_amount_out,
+            &path,
+            &recipient,
+            &deadline,
+        );
+
+        link_info.claimed = true;
+        env.storage().persistent().set(&link_hash, &link_info);
+
+        env.events().publish((symbol_short!("clm_swap"),), ());
+
+        amounts
+    }
+
     pub fn refund_link(env: Env, link_hash: BytesN<32>) {
         let link_info: LinkInfo = env
             .storage()
@@ -423,10 +551,8 @@ impl AtreusContract {
             .persistent()
             .extend_ttl(&key, STORAGE_TTL_THRESHOLD, STORAGE_TTL_EXTEND_TO);
 
-        env.events().publish(
-            (symbol_short!("splitnew"), id),
-            (sender, total, asset, n),
-        );
+        env.events()
+            .publish((symbol_short!("splitnew"), id), (sender, total, asset, n));
     }
 
     /// Claims up to `claim_amount` stroops from `recipient`'s allocation.

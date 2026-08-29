@@ -181,6 +181,68 @@ export const claimLinkTx = async (
   return sendResult.hash;
 };
 
+export const claimAndSwapLinkTx = async (
+  recipient: string,
+  linkHash: Uint8Array,
+  claimSalt: Uint8Array,
+  router: string,
+  path: string[],
+  minAmountOut: bigint | string,
+  deadline?: number | bigint,
+  relayerAddress?: string,
+  relayerFee?: string,
+) => {
+  const contractId = process.env.NEXT_PUBLIC_CONTRACT_ID || DEFAULT_CONTRACT_ID;
+  if (claimSalt.length !== 32) throw new Error("Invalid claim salt: expected 32 bytes");
+
+  let account;
+  try {
+    account = await rpcServer.getAccount(recipient);
+  } catch {
+    throw new Error("Recipient account isn't funded on testnet — fund it first via friendbot.");
+  }
+
+  const contract = new Contract(contractId);
+  const pathScVals = path.map((addr) => new Address(addr).toScVal());
+  const deadlineVal = deadline ?? (Math.floor(Date.now() / 1000) + 300);
+  const minAmountOutVal = typeof minAmountOut === "string" ? BigInt(minAmountOut) : minAmountOut;
+
+  const op = contract.call(
+    "claim_and_swap_link",
+    xdr.ScVal.scvBytes(Buffer.from(linkHash)),
+    new Address(recipient).toScVal(),
+    xdr.ScVal.scvBytes(Buffer.from(claimSalt)),
+    new Address(router).toScVal(),
+    xdr.ScVal.scvVec(pathScVals),
+    nativeToScVal(minAmountOutVal, { type: "i128" }),
+    nativeToScVal(deadlineVal, { type: "u64" }),
+    new Address(relayerAddress ?? recipient).toScVal(),
+    nativeToScVal(BigInt(relayerFee ?? "0"), { type: "i128" }),
+  );
+
+  let tx = new TransactionBuilder(account, { fee: "100000", networkPassphrase })
+    .addOperation(op)
+    .setTimeout(120)
+    .build();
+
+  tx = (await rpcServer.prepareTransaction(tx)) as any;
+
+  const provider = getActiveWalletProvider();
+  const signedXdr = await provider.signTransaction(tx.toXDR());
+  const signedTx = TransactionBuilder.fromXDR(signedXdr, networkPassphrase);
+
+  const sendResult = await rpcServer.sendTransaction(signedTx as any);
+
+  if (sendResult.status === "ERROR") {
+    throw new Error(
+      `Tx submission failed: ${
+        (sendResult as any).errorResultXdr || (sendResult as any).errorResult
+      }`
+    );
+  }
+  return sendResult.hash;
+};
+
 export const getAccountBalances = async (address: string): Promise<Balance[]> => {
   try {
     const entry = await rpcServer.getAccountEntry(address);

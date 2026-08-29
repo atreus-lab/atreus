@@ -1,10 +1,7 @@
 #![cfg(test)]
 
 use super::*;
-use soroban_sdk::{
-    testutils::Address as _,
-    vec, IntoVal, Symbol,
-};
+use soroban_sdk::{testutils::Address as _, vec, IntoVal, Symbol};
 
 fn setup(env: &Env) -> (VerifierContractClient<'_>, Address) {
     let attester = Address::generate(env);
@@ -248,7 +245,12 @@ fn test_submit_proof_rejects_malformed_proofs() {
 // opaque to the contract: it stores and looks them up verbatim, and claim_link
 // recomputes the same digest from its own arguments plus the claim salt.
 
-fn batch_claim(env: &Env, claim_key: u8, nullifier: u8, email_key: Option<BytesN<32>>) -> BatchClaim {
+fn batch_claim(
+    env: &Env,
+    claim_key: u8,
+    nullifier: u8,
+    email_key: Option<BytesN<32>>,
+) -> BatchClaim {
     BatchClaim {
         claim_key: BytesN::from_array(env, &[claim_key; 32]),
         nullifier: BytesN::from_array(env, &[nullifier; 32]),
