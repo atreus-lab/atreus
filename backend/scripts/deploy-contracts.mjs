@@ -95,8 +95,8 @@ async function uploadWasm(wasmPath) {
 async function deploy() {
   const deployerAddr = new Address(deployerKp.publicKey());
 
-  const verifierWasmPath = path.resolve(__dirname, '../../contracts/target/wasm32-unknown-unknown/release/verifier_contract.wasm');
-  const atreusWasmPath = path.resolve(__dirname, '../../contracts/target/wasm32-unknown-unknown/release/atreus_contract.wasm');
+  const verifierWasmPath = path.resolve(__dirname, '../../contracts/target/wasm32v1-none/release/verifier_contract.wasm');
+  const atreusWasmPath = path.resolve(__dirname, '../../contracts/target/wasm32v1-none/release/atreus_contract.wasm');
 
   // 1. Upload WASMs
   const verifierWasmHash = await uploadWasm(verifierWasmPath);

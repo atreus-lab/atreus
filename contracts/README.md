@@ -88,13 +88,13 @@ cargo test --all    # 51 passed, 0 failed
 | Blockchain | Stellar (Soroban) |
 | Language | Rust |
 | SDK | `soroban-sdk` 27.0.6 |
-| Build target | `wasm32-unknown-unknown` |
+| Build target | `wasm32v1-none` |
 
 ## Getting Started
 
 ```bash
 # Build
-cargo build --target wasm32-unknown-unknown --release
+cargo build --target wasm32v1-none --release
 
 # Test
 cargo test -p atreus-contract

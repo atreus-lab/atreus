@@ -194,14 +194,16 @@ export default function CreatePage() {
                     className="input flex-1 text-xs font-mono"
                     disabled={isCreatingSplit}
                   />
-                  <input
-                    type="number"
-                    value={r.amount}
-                    onChange={(e) => updateSplitRecipient(i, 'amount', e.target.value)}
-                    placeholder="Amount"
-                    className="input w-28"
-                    disabled={isCreatingSplit}
-                  />
+                  <div className="w-28 shrink-0">
+                    <input
+                      type="number"
+                      value={r.amount}
+                      onChange={(e) => updateSplitRecipient(i, 'amount', e.target.value)}
+                      placeholder="Amount"
+                      className="input"
+                      disabled={isCreatingSplit}
+                    />
+                  </div>
                   <button
                     onClick={() => removeSplitRecipient(i)}
                     disabled={isCreatingSplit || splitRecipients.length === 1}
