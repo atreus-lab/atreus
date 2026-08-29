@@ -1,5 +1,5 @@
 import { Networks, TransactionBuilder, Asset, Contract, Address, nativeToScVal, xdr, rpc, BASE_FEE, Operation } from "@stellar/stellar-sdk";
-import { getActiveWalletProvider, getActivePublicKey } from "./wallet";
+import { getActiveWalletProvider, getActivePublicKey, fundWallet } from "./wallet";
 
 export const SOROBAN_RPC_URL = "https://soroban-testnet.stellar.org";
 export const rpcServer = new rpc.Server(SOROBAN_RPC_URL);
