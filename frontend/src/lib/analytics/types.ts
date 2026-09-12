@@ -1,15 +1,5 @@
 export type EventType = "view" | "initiation" | "claim";
 
-export interface LinkStats {
-  linkHash: string;
-  views: number;
-  uniqueViews: number;
-  initiations: number;
-  claims: number;
-  claimRate: number;
-  avgTimeToClaimMs: number | null;
-}
-
 export interface SummaryStats {
   totalViews: number;
   uniqueViews: number;
@@ -17,7 +7,6 @@ export interface SummaryStats {
   claims: number;
   claimRate: number;
   avgTimeToClaimMs: number | null;
-  perLink: Record<string, LinkStats>;
 }
 
 export interface TimeSeriesPoint {

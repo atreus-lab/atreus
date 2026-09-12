@@ -1,35 +1,41 @@
 services:
-  dev:
+  backend:
     build: .
-    image: atreus-dev
-    entrypoint: bash
-    stdin_open: true
-    tty: true
+    image: atreus-backend
+    ports:
+      - "3001:3001"
+    env_file:
+      - .env
     volumes:
-      - ./circuits:/app/circuits
-      - ./frontend:/app/frontend
+      - ./backend/atreus_indexer.db:/app/backend/atreus_indexer.db
+    restart: always
 
-  compile:
-    image: atreus-dev
-    entrypoint: sh -c "cd /app/circuits && nargo compile --force"
+  indexer:
+    build: .
+    image: atreus-backend
+    command: ["node", "backend/dist/indexer.js"]
+    env_file:
+      - .env
     volumes:
-      - ./circuits:/app/circuits
+      - ./backend/atreus_indexer.db:/app/backend/atreus_indexer.db
+    restart: always
+    depends_on:
+      - backend
 
-  test:
-    image: atreus-dev
-    entrypoint: sh -c "cd /app/circuits && nargo test --show-output"
+  prometheus:
+    image: prom/prometheus:latest
+    ports:
+      - "9090:9090"
     volumes:
-      - ./circuits:/app/circuits
+      - ./prometheus/prometheus.yml:/etc/prometheus/prometheus.yml
+    restart: always
 
-  execute:
-    image: atreus-dev
-    entrypoint: sh -c "cd /app/circuits && nargo execute --force"
-    volumes:
-      - ./circuits:/app/circuits
-
-  prove:
-    image: atreus-dev
-    entrypoint: sh -c "cd /app/frontend && node scripts/prove-circuit.mjs"
-    volumes:
-      - ./circuits:/app/circuits
-      - ./frontend:/app/frontend
+  grafana:
+    image: grafana/grafana:latest
+    ports:
+      - "3000:3000"
+    env_file:
+      - .env
+    restart: always
+    depends_on:
+      - prometheus

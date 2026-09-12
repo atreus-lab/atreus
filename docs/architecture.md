@@ -24,6 +24,7 @@ Atreus is a **TipLink-style wallet on Stellar** with an integrated **ZK-powered 
 - **Batch Link Generation**: High-throughput CSV batch ingestion for creating up to 100 payment links in a single workflow.
 - **Gasless Relayed Claims**: Recipient signs claim authorization while a relayer submits the transaction, covering network fees in exchange for a configurable relayer fee.
 - **Double-Claim & Front-Running Guards**: Nullifiers prevent replaying claims, while binding recipient addresses into ZK public inputs prevents MEV proof sniping.
+- **Atomic Claim-and-Swap**: One-click DEX swap during claim via Soroswap Router integration (see [Atomic Swaps Documentation](file:///workspaces/atreus/docs/atomic-swaps.md)).
 
 ---
 
@@ -34,7 +35,7 @@ Atreus is a **TipLink-style wallet on Stellar** with an integrated **ZK-powered 
 | **Frontend** | Next.js 15, React 18, Tailwind CSS | Wallet UI, link creation, claim interface |
 | **Wallet Auth** | Google OAuth + BIP-39 Mnemonic | Google sign-in yielding BIP-39 seed phrase & Ed25519 keypair |
 | **Local Storage** | Browser `localStorage` (`atreus_wallet`) | Client-side unencrypted JSON key storage |
-| **Blockchain SDK** | `@stellar/stellar-sdk`, `@stellar/freighter-api` | Transaction building, wallet adapter layer, Stellar Horizon integration |
+| **Blockchain SDK** | `@stellar/stellar-sdk`, `@stellar/freighter-api` | Transaction building, wallet adapter layer, Stellar Soroban RPC integration |
 | **Smart Contracts** | Rust, Soroban SDK 22.0.0 | Link escrow contract (`AtreusContract`) & attestation registry (`VerifierContract`) |
 | **ZK Circuits** | Noir (`circuits/src/main.nr`) | Zero-knowledge proof circuit definitions |
 | **ZK Proving** | Barretenberg (`@aztec/bb.js`, `@noir-lang/noir_js`) | Client-side UltraHonk proof generation in browser WASM |
@@ -159,8 +160,7 @@ pub fn claim_link(
     env: Env,
     link_hash: BytesN<32>,
     recipient: Address,
-    secret: BytesN<32>,
-    recipient_email_hash: BytesN<32>,
+    claim_salt: BytesN<32>,
     relayer_address: Address,
     relayer_fee: i128,
 );
@@ -172,14 +172,105 @@ pub fn refund_link(
 ```
 
 **Key Execution Logic in `claim_link`**:
-1. **Secret Hash Check**: Validates `sha256(secret) == link_hash`.
-2. **Email Policy Check**: If `policy_type == 1`, verifies `policy_params == recipient_email_hash`.
-3. **ZK Attestation Check**: Invokes `VerifierContract.is_attested(link_hash, recipient)` cross-contract. Rejects claim if `false`.
-4. **Nullifier & Expiry Check**: Ensures `expires_at` is in the future and `sha256(link_hash)` nullifier key has not been consumed.
-5. **Relayer Fee & Asset Payout**:
+1. **Email Policy Check**: If `policy_type == 1`, recomputes the blinded key `email_key = sha256("ATREUS_EMAIL_V1" || link_hash || recipient_strkey || policy_params || claim_salt)` and invokes `VerifierContract.is_email_attested(email_key)`.
+2. **ZK Attestation Check**: Recomputes `claim_key = sha256("ATREUS_CLAIM_V1" || link_hash || recipient_strkey || claim_salt)` and invokes `VerifierContract.is_attested(claim_key)` cross-contract. Rejects claim if `false`. The attestation already proves secret knowledge, so `claim_link` takes no plaintext secret argument.
+3. **Claimed & Expiry Check**: Ensures `expires_at` is in the future and the `claimed` flag is still `false`. Cross-transaction replay is handled by the VerifierContract nullifier registry (see §10); the escrow no longer writes a `sha256(link_hash)` nullifier entry.
+4. **Relayer Fee & Asset Payout**:
    - Rejects negative relayer fees or fees exceeding total link amount (`relayer_fee < 0 || relayer_fee > amount`).
    - If `relayer_fee > 0`, transfers `relayer_fee` stroops to `relayer_address`.
    - Transfers `amount - relayer_fee` stroops to `recipient`.
+5. **Unlinkable Event**: Emits a bare `("claimed",)` topic with void data — no link hash, recipient, amount, or fee. See §11.
+
+---
+
+### 5.1 Split Links — Multi-Recipient & Partial-Claim Escrow (#120)
+
+Payment links before #120 were single-shot: one creator, one recipient, one all-or-nothing claim. Payroll and business flows need a sender to fund once and disburse in pieces, to a fixed list of payees, and to claw back whatever nobody claimed. This section is the design written before implementation, per the #120 acceptance criteria.
+
+**Design choice — additive extension, not a modified ABI.** `LinkInfo`, `create_link`, `claim_link`, and `refund_link` are untouched (`claim_link`'s body was refactored to call a shared private helper, `check_email_policy`, that `claim_split` also calls, but its arguments, storage key, panic messages, and events are byte-for-byte the same, and all 14 pre-existing tests pass unmodified). The new modes live entirely in a second, parallel set of contract functions and a second storage type:
+
+**Design choice — no ZK secret-attestation on `claim_split`.** `claim_link` requires a ZK attestation because a single-shot link is a *bearer* secret: the creator shares it out of band (a URL fragment) without knowing who will redeem it, and the attestation proves the claimer knows that secret without revealing it. A split link is the opposite: the creator names every recipient's Stellar `Address` directly in `create_split_link`. There is no secret to prove knowledge of, so `claim_split` gates on `recipient.require_auth()` alone — the named address's own signature — and, when `policy_type == 1`, the same email-restriction check `claim_link` uses. This is why `claim_split` needs no interaction with `VerifierContract` at all for the default (secret/open) policy, and why creating and claiming a split link needs no attester round-trip.
+
+```rust
+pub struct SplitRecipient {
+    pub address: Address,
+    pub allocated: i128,   // this recipient's total share
+    pub claimed: i128,     // running total already paid out to them
+}
+
+pub struct SplitLinkInfo {
+    pub creator: Address,
+    pub amount: i128,           // = sum(recipients[i].allocated), computed on-chain
+    pub asset: Address,
+    pub policy_type: u32,       // same policy machinery as LinkInfo (0 = secret, 1 = email)
+    pub policy_params: Bytes,
+    pub expires_at: u64,
+    pub min_claim_bps: u32,     // floor on non-final partial claims, bps of the recipient's allocation
+    pub recipients: Vec<SplitRecipient>,
+    pub closed: bool,           // terminal: set by cancel_split_link or refund_split_link
+}
+```
+
+Split links are stored under `SplitDataKey::SplitLink(id)`, an enum-wrapped key, so they occupy a disjoint storage key space from the raw `BytesN<32>` keys `create_link` writes directly — the two link kinds cannot collide even if the same 32 bytes were reused as both an `id`.
+
+**Why one mechanism covers two modes.** A `SplitLinkInfo` with exactly one recipient *is* the "partial claims" mode from #120: that recipient draws their allocation down over several `claim_split` calls. A `SplitLinkInfo` with more than one recipient is the "split recipients" mode: a fixed payee list, each with a defined share, each independently able to claim in one or several partial claims. Modeling both as "N recipients, each with an allocation and a running claimed total" means one state machine, one set of tests, and one code path to audit — not two.
+
+**State machine.**
+
+```
+                    ┌────────────────────────┐
+   create_split_link│                        │
+   ────────────────▶│         Active         │◀────────────────┐
+                     │  closed = false        │                 │
+                     └────────────┬───────────┘                 │
+                                   │                             │
+             claim_split(recipient, amount)                     │ claim_split
+             (recipient.require_auth(), recipient               │ (another
+              in list, amount within remaining                  │  recipient,
+              allocation, clears min_claim_bps                  │  or another
+              unless it closes out the remainder,                │  partial
+              email policy satisfied if any)                    │  claim)
+                                   │                             │
+                                   ▼                             │
+                     ┌────────────────────────┐                 │
+                     │   Active, partially    │─────────────────┘
+                     │   claimed (per-        │
+                     │   recipient tally)     │
+                     └───────┬────────┬───────┘
+                              │        │
+      now <= expires_at,      │        │  now > expires_at,
+      creator-authorized      │        │  creator-authorized
+      cancel_split_link       │        │  refund_split_link
+      (any time before        │        │  (permissionless window,
+      expiry — the             │        │   but still creator-gated
+      "cancel window")         │        │   like refund_link)
+                              ▼        ▼
+                     ┌────────────────────────┐
+                     │         Closed          │  (terminal — claim_split,
+                     │  closed = true          │   cancel_split_link, and
+                     │  unclaimed remainder    │   refund_split_link on a
+                     │  swept to creator       │   closed link all panic)
+                     └────────────────────────┘
+```
+
+**Precedence rules.** Soroban has no concurrent execution — every invocation runs to completion against a consistent storage snapshot before the next one starts, so "racing a claim vs. a cancel" reduces to ledger-close ordering, not true concurrency:
+
+1. If a claim lands before a cancel/refund, it pays out normally and shrinks the unclaimed remainder the later cancel/refund can sweep.
+2. If a cancel/refund lands first, it sets `closed = true` and sweeps everything still unclaimed at that instant. Every later `claim_split` on that link reads `closed = true` as the first check after loading `SplitLinkInfo` and panics with `"link closed"` before touching any recipient's allocation or moving funds.
+3. Already-claimed amounts are never touched by a cancel or refund — clawback only reaches the unclaimed remainder, so a partial claim a recipient already received is final the moment its transaction lands.
+4. `cancel_split_link` and `refund_split_link` are both creator-gated (`creator.require_auth()`, matching `refund_link`'s existing semantics) and mutually exclusive by time window: cancellation is a sender-initiated action available any time up to `expires_at` (the "cancel window" from #120), and refund is the same sweep made available after `expires_at`, mirroring `refund_link`. This directly covers the third #120 mode ("time-locked / cancel modes") using the same `expires_at` field `LinkInfo` already has, rather than introducing a second, separate deadline.
+5. Both close paths are idempotent-safe: a second `cancel_split_link` or `refund_split_link` call reads `closed = true` and panics with `"link already closed"` rather than double-paying the creator.
+
+**Partial-claim and fee accounting.** A claim for less than a recipient's full remaining allocation must be at least `allocated * min_claim_bps / 10_000` — this stops a link from being drained one dust-sized claim at a time, which would otherwise let a claimer force many small transactions and disproportionately eat the relayer-fee overhead on each. A claim for *exactly* the remaining allocation always succeeds regardless of that floor, so the last partial claim can still close out a small remainder in one transaction. Relayer fees are bounded per-claim exactly as in `claim_link` (`0 <= relayer_fee <= claim_amount`), deducted from that specific claim, and the recipient's own `recipient.require_auth()` signature covers the exact `relayer_address`/`relayer_fee` pair for that claim — the same explicit-approval property `claim_link` already has.
+
+**Security surface, addressed:**
+- *Fee theft*: bounds identical to `claim_link` (`relayer_fee` cannot be negative or exceed the amount being paid out), and `recipient.require_auth()` authorizes the complete invocation including the fee, so a relayer cannot inflate its own cut without the recipient's signature.
+- *Cross-mode confusion*: `SplitDataKey::SplitLink(id)` is an enum-wrapped storage key, disjoint from the raw `BytesN<32>` key `create_link` writes directly, so a split link and a single-shot link can never alias each other's storage even if the same 32 bytes were reused as both an `id` and a `link_hash`. `claim_split` and `claim_link` are otherwise independent entry points with no shared mutable state beyond the `VerifierContract` address, so there is no cross-mode replay to reason about in the first place.
+- *Double-claims within a mode*: each recipient's `claimed` total is checked and updated atomically within `claim_split` before any token transfer, so no sequence of same-transaction or cross-transaction calls can push `claimed` past `allocated`.
+- *Reentrancy*: `claim_split`, `cancel_split_link`, and `refund_split_link` all write the updated `SplitLinkInfo` to persistent storage *before* invoking `token::Client::transfer`, matching the existing checks-effects-interactions ordering in `claim_link`/`refund_link`.
+- *Balance conservation*: `contracts/atreus-contract/src/test.rs::test_split_balance_conservation_across_claim_and_cancel_combinations` asserts, across a range of full-claim / partial-claim / cancel combinations, that every stroop that leaves the escrow is accounted for as exactly one of a recipient payout, a relayer fee, or a creator refund, and that the contract's token balance always reaches zero once a link is closed.
+
+**Bounds.** `MAX_SPLIT_RECIPIENTS = 50` caps the per-link recipient list so the O(n) recipient-lookup scan in `claim_split` and the cancel/refund sweep stay small and gas-predictable; `create_split_link` rejects an empty list, a `recipients`/`shares` length mismatch, a non-positive share, and a duplicate recipient address.
 
 ---
 
@@ -192,27 +283,27 @@ Stores verification parameters and attestation states issued by the trusted atte
 pub enum DataKey {
     VerificationKey,
     Attester,
-    Attestation(BytesN<32>, Address),
+    Attestation(BytesN<32>),       // blinded claim_key
+    EmailAttestation(BytesN<32>),  // blinded email_key
+    Nullifier(BytesN<32>),
 }
 
 pub fn attest(
     env: Env,
     attester: Address,
-    link_hash: BytesN<32>,
-    recipient: Address,
+    claim_key: BytesN<32>,
 );
 
 pub fn is_attested(
     env: Env,
-    link_hash: BytesN<32>,
-    recipient: Address,
+    claim_key: BytesN<32>,
 ) -> bool;
 ```
 
 **Attestation-Oracle Architecture**:
-- Because native BN254 precompiles for UltraHonk verification inside Soroban VM are not yet deployed on Stellar mainnet, Atreus uses an **attestation-oracle pattern**.
+- Atreus uses an **attestation-oracle pattern**, adopted before Soroban gained native BN254 host functions (CAP-0074, Protocol 25). It remains the verification gate today; moving UltraHonk verification on-chain is follow-up work — see §11.5.
 - The real UltraHonk proof is generated client-side and verified off-chain by the backend attester using Barretenberg.
-- Upon valid proof verification, the attester submits `attest()`, recording `Attestation(link_hash, recipient) = true` on-chain.
+- Upon valid proof verification, the attester draws a fresh 32-byte salt, computes the blinded `claim_key`, and submits `attest()`, recording `Attestation(claim_key) = true` on-chain. Neither the arguments nor the storage key join `recipient` to `link_hash` — see §11.
 
 ---
 
@@ -314,14 +405,18 @@ Recipient                        Frontend                         Soroban
   │     (bb.js in browser)         │                                │
   │───────────────────────────────►│                                │
   │                                │                                │
+  │     (attest → claimSalt)       │                                │
+  │◄───────────────────────────────│                                │
+  │                                │                                │
   │                                │  4. claim_link(                │
   │                                │     link_hash, recipient,      │
-  │                                │     proof_bytes)               │
+  │                                │     claim_salt, relayer, fee)  │
   │                                │───────────────────────────────►│
   │                                │                                │
-  │                                │  5. VerifierContract           │
-  │                                │     .verify_proof()            │
-  │                                │  6. Check nullifier not used   │
+  │                                │  5. Recompute claim_key,       │
+  │                                │     VerifierContract           │
+  │                                │     .is_attested(claim_key)    │
+  │                                │  6. Check claimed & expiry     │
   │                                │  7. Transfer funds             │
   │                                │◄───────────────────────────────│
   │◄───────────────────────────────│                                │
@@ -331,8 +426,8 @@ Recipient                        Frontend                         Soroban
 1. **Client Proving**: The browser loads the circuit bytecode (`secret.json`) and generates an UltraHonk proof using `@aztec/bb.js`.
 2. **Attest Request**: Client sends `POST /api/links/:hash/attest` with the proof, recipient address, and public Pedersen field values (`link_hash`, `nullifier`).
 3. **Off-Chain Verification**: Backend calls `verifyClaimProof(...)`, executing Barretenberg verification against the public inputs.
-4. **On-Chain Attestation**: If valid, the backend attester signs and submits `VerifierContract.attest(attester, link_hash, recipient)`.
-5. **Contract Record**: `VerifierContract` sets `Attestation(link_hash, recipient) = true` in persistent storage.
+4. **On-Chain Attestation**: If valid, the backend attester draws 32 fresh random bytes as `salt`, computes `claim_key = sha256("ATREUS_CLAIM_V1" || link_hash || recipient_strkey || salt)`, and submits `VerifierContract.attest(attester, claim_key)`.
+5. **Contract Record**: `VerifierContract` sets `Attestation(claim_key) = true` in persistent storage. The attest response returns the salt to the recipient as `claimSalt`; the recipient passes it back into `claim_link`, which is the only way to recompute the key.
 
 ---
 
@@ -456,29 +551,30 @@ sequenceDiagram
     alt Proof or Email Verification Invalid
         Backend-->>Recipient: HTTP 400 / 403 Error
     else Proof Valid & Verified
-        Backend->>Verifier: attest(attester, link_hash, recipient)
-        Verifier->>Verifier: Store Attestation(link_hash, recipient) = true
-        Verifier-->>Backend: Emit event (attested)
-        Backend-->>Recipient: HTTP 200 OK { success: true, attestationTx }
+        Backend->>Backend: Draw fresh 32-byte salt, blind claim_key = sha256("ATREUS_CLAIM_V1" || link_hash || strkey || salt)
+        Backend->>Verifier: attest(attester, claim_key)
+        Verifier->>Verifier: Store Attestation(claim_key) = true
+        Verifier-->>Backend: Emit bare event (attested), void data
+        Backend-->>Recipient: HTTP 200 OK { success: true, attestationTx, claimSalt }
     end
     end
 
     rect rgb(240, 255, 245)
     note over Recipient, Token: Step C: On-Chain Escrow Claim
-    Recipient->>Atreus: claim_link(link_hash, recipient, secret, recipient_email_hash, relayer, relayer_fee)
-    Atreus->>Atreus: Validate sha256(secret) == link_hash
-    Atreus->>Verifier: is_attested(link_hash, recipient)
+    Recipient->>Atreus: claim_link(link_hash, recipient, claim_salt, relayer, relayer_fee)
+    Atreus->>Atreus: Recompute claim_key from link_hash, recipient, claim_salt
+    Atreus->>Verifier: is_attested(claim_key)
     Verifier-->>Atreus: Returns attestation status (true/false)
     alt Attestation Missing or Link Invalid
         Atreus-->>Recipient: Panic ("no valid ZK attestation for this claim")
     else Attestation Confirmed Valid
-        Atreus->>Atreus: Check nullifier & expiration
+        Atreus->>Atreus: Check claimed flag & expiration
         Atreus->>Token: transfer(escrow -> recipient, amount - relayer_fee)
         opt Relayer Fee > 0
             Atreus->>Token: transfer(escrow -> relayer, relayer_fee)
         end
-        Atreus->>Atreus: Mark claimed & write nullifier key
-        Atreus-->>Recipient: Emit event (claimed)
+        Atreus->>Atreus: Mark claimed
+        Atreus-->>Recipient: Emit bare event (claimed), void data
     end
     end
 ```
@@ -493,7 +589,7 @@ sequenceDiagram
 
 ### Threat: Double-Claim Attack
 * **Risk**: A recipient attempts to execute `claim_link` multiple times using the same valid proof or secret.
-* **Mitigation**: Soroban contract derives a unique nullifier key `sha256(link_hash)` on first claim and writes it to persistent storage. Submitting an already-claimed link or reused nullifier immediately panics.
+* **Mitigation**: Two layers. In the escrow contract, `claim_link` sets the `claimed` flag on `LinkInfo` and panics on any later claim of the same link; the escrow no longer derives a `sha256(link_hash)` nullifier key, which was a second, creator-derivable copy of the same signal. Across transactions and backend restarts, replay is stopped by the VerifierContract nullifier registry: the attester marks the circuit's `pedersen(secret, recipient)` nullifier as used before issuing an attestation, so a reused proof never gets a second attestation to spend.
 
 ### Threat: Link Secret Exposure
 * **Risk**: Interception of link secrets over network channels or server logs.
@@ -503,9 +599,103 @@ sequenceDiagram
 * **Risk**: Loss of Google OAuth access or third-party service downtime.
 * **Mitigation**: Full self-custody via 24-word BIP-39 mnemonic phrase generated at wallet setup. Users retain total control over private keys and funds at all times.
 
+### Threat: Forged Email-Ownership Attestations
+* **Risk**: Email-restricted links (policy_type=1) bind funds to an address. A forged DKIM attestation lets an attacker claim a link bound to someone else's inbox — a direct theft vector.
+* **Mitigation — email-verification trust model** (backend/src/lib/dkim.ts, backend/src/lib/emailVerificationStore.ts):
+  * **Strict pre-crypto validation** of the DKIM-Signature header (RFC 6376 + oracle hardening) before any DNS lookup: `v=1` only, strong algorithms only (`rsa-sha256`, `ed25519-sha256`), `d=`/`s=`/`h=` required with `h=` covering `From`, `b=`/`bh=` must be well-formed base64, canonicalization (`c=`) must be declared-valid, `x=`/`t=` expiry/freshness enforced with clock-skew tolerance, signatures older than the replay window (`EMAIL_DKIM_MAX_AGE_MS`, default 7 days) rejected, and `l=` body-length truncation (the classic append-attack) rejected when it is shorter than the actual body.
+  * **Message identity**: exactly one `Message-ID` header is required — duplicates or absence reject the message.
+  * **Domain alignment**: the passing signature's `d=` must cover the `From:` domain (exact or subdomain). A cryptographically valid signature from an unrelated domain (`evil.com`) signing a spoofed `From: victim@example.com` is rejected at both the verifier and ownership-check layers.
+  * **Challenge-response**: ownership requires a server-issued 128-bit random nonce (challenge) embedded in the DKIM-signed message. Challenges are TTL-bound (`EMAIL_CHALLENGE_TTL_MS`, default 24h), **single-use** (consumed on success), capped at `EMAIL_CHALLENGE_MAX_ATTEMPTS` (default 5) failed confirmations before the challenge is burned, and starting a new challenge invalidates any prior verification for that hash.
+  * **Abuse resistance**: sliding-window rate limits on both email endpoints (per-IP and per-email-hash), plus rejection of disposable email providers (`EMAIL_BLOCKED_DOMAINS` extends the default blocklist) on both `/api/email/verify` and `/api/email/confirm`.
+  * **On-chain binding guarantee (backend)**: `attest_email` on `VerifierContract` is only invoked by `POST /api/links/:hash/attest` after the recipient email hash is marked verified — which is only reachable by fully validating a fresh, non-replayed, domain-aligned DKIM-signed challenge message. There is no code path that marks a hash verified without passing `verifyEmailOwnership`, and the verification record itself expires (`EMAIL_VERIFIED_TTL_MS`, default 1h).
+  * **Privacy**: only `sha256(normalized email)` is stored server-side; raw emails and raw messages are never persisted.
+
+### 10.1 Trust Model Analysis & CAP-0074 Migration Plan: Attester Oracle vs. Direct On-Chain BN254 Verification
+
+#### Readiness Assessment & Current Architecture: Trusted Attester Oracle
+- **Status Assessment**: Soroban SDK `26.1.0` introduces base crypto module host structures, but native host precompiles for full UltraHonk BN254 pairing verification are not yet active/available in the target Soroban runtime. Per Issue #115 acceptance criteria, attempting to force direct on-chain verification before CAP-0074 host pairing functions ship introduces security risks. The trusted attester oracle design remains active.
+- **Mechanism**: UltraHonk proof verification is performed off-chain by the backend service using `bb.js`. Once verified, the trusted attester account signs and submits a transaction calling `VerifierContract.attest(attester, link_hash, recipient)`. `AtreusContract.claim_link` checks `VerifierContract.is_attested(link_hash, recipient)` before disbursing escrowed funds.
+- **Trust Assumptions & Risk Profile**:
+  - **Attester Compromise**: If the attester key or backend server is compromised, an attacker can generate arbitrary attestations to drain escrowed payment links without valid ZK proofs.
+  - **Liveness & Centralization**: Escrow claims depend on backend oracle availability. If the backend goes down, legitimate users cannot finalize claims even with valid proofs.
+  - **Mitigations Preserved**: Recipient binding (`recipient` in public inputs and attestation key) and nullifier replay protection (`nullifier_key` in storage) prevent cross-user proof theft and double-claims, but do not prevent malicious attestation by a compromised oracle operator.
+
+#### Migration Plan: Direct On-Chain BN254 Proof Verification (CAP-0074)
+Once CAP-0074 host pairing functions (`pairing_check`) land natively in the Soroban protocol runtime, the system will execute the following migration plan:
+
+1. **Smart Contracts (`VerifierContract` & `AtreusContract`)**:
+   - Update `VerifierContract.verify_proof(public_inputs, proof)` to invoke host BN254 pairing precompiles (`env.crypto().bn254().pairing_check(...)`).
+   - Update `AtreusContract.claim_link` signature to accept `proof: Bytes` and `public_inputs: Bytes`, invoking `verify_proof` directly on-chain and deprecating `is_attested`.
+2. **Circuits (`circuits/src/main.nr`)**:
+   - Verify and test that public input field byte serializations (`recipient`, `link_hash`, `nullifier`) match the exact BN254 field element format expected by CAP-0074 host precompiles.
+3. **Backend & Relayer Service**:
+   - Refactor `/api/links/:linkHash/attest` into a transaction relayer that forwards `(proof, public_inputs)` directly into `claim_link`.
+   - Remove the `ATTESTER_SECRET_KEY` env var and decommission the privileged attester account.
+4. **Testing & Testnet Deployment**:
+   - Deploy contracts to Stellar Testnet and run end-to-end claim flows verifying proofs strictly on-chain.
+
 ---
 
-## 11. References
+## 11. Unlinkable Claiming — Threat Model (issue #118)
+
+Before #118, a successful claim published a permanent, machine-readable record joining the link, the recipient, the amount, and the time. A link creator, or any third party indexing the ledger, could reconstruct who received what. This section lists what leaked, what the fix removes, and what still leaks.
+
+### 11.1 Leak Enumeration (state before #118)
+
+| # | Leak | Location | What the creator or a third party learned |
+|---|------|----------|-------------------------------------------|
+| 1 | `("claimed", link_hash)` event, data `(recipient, amount, relayer, fee)` | `contracts/atreus-contract/src/lib.rs::claim_link` | The complete claim record: which address claimed which link, the net payout, the relayer identity, the relayer fee, and the ledger close time. Anyone can subscribe to this stream. |
+| 2 | Plaintext `secret` argument | `contracts/atreus-contract/src/lib.rs::claim_link` | The bearer secret appeared in the invocation arguments of every claim. Anyone who read the transaction envelope held the circuit's private witness and could generate a proof of their own. |
+| 3 | `("attested", recipient)` event with data `link_hash`, `("eml_att", recipient)` with `(link_hash, email_hash)`, and the `Attestation(link_hash, recipient)` / `EmailAttestation(link_hash, recipient, email_hash)` storage keys | `contracts/verifier-contract/src/lib.rs::attest`, `::attest_email` | The recipient-to-link join, published before the claim transaction even landed. The storage keys were also probeable: guess a recipient address, read the entry. A payroll creator could test a known employee list. |
+| 4 | `claimed` flag at storage key `link_hash`, and the nullifier entry at `sha256(link_hash)` | `contracts/atreus-contract/src/lib.rs::claim_link` | Both keys are derivable by anyone holding `link_hash`, and the creator always holds it. Free, unauthenticated `getLedgerEntry` polling showed whether and roughly when a link was claimed, with no transaction and no fee. |
+| 5 | `GET /api/links/:hash` returned `creator`; `GET /api/analytics/links/:hash` served per-link view, initiation, and claim counts plus a 30-day series; `GET /api/analytics/summary` returned the full list of link hashes | `backend/src/routes/links.ts`, `backend/src/routes/analytics.ts` | Anyone holding a link hash learned the funder address and the claim timing, with no authentication. The summary endpoint handed out the hash list, so an attacker did not need a hash to start. |
+
+### 11.2 Chosen Mechanism
+
+| Measure | Leak removed |
+|---------|--------------|
+| `claim_link` drops the plaintext `secret` argument. The ZK attestation already proves secret knowledge, so re-checking `sha256(secret) == link_hash` on-chain added exposure and no security. | 2 |
+| The `claimed`, `attested`, `eml_att`, `nullifier`, and `proof` events become bare topics — no link hash, recipient, amount, or fee, and void data. The one exception is `proof`, which keeps the proof length; `submit_proof` rejects anything but 2144 bytes, so that value is a constant and carries no information. `created` and `refunded` stay as they are, because both are creator-side actions the creator already knows. | 1, and the event half of 3 |
+| Blinded attestations. The attester computes `claim_key = sha256("ATREUS_CLAIM_V1" \|\| link_hash \|\| recipient_strkey \|\| salt)` and `email_key = sha256("ATREUS_EMAIL_V1" \|\| link_hash \|\| recipient_strkey \|\| email_hash \|\| salt)` off-chain. VerifierContract stores only these keys, so neither the attest arguments nor the storage join a recipient to a link. | The storage half of 3 |
+| The salt is 32 fresh random bytes per attestation, returned to the recipient as `claimSalt` and replayed into `claim_link`, which recomputes the key. Because the salt is unpredictable, a creator holding a candidate set of addresses cannot precompute keys and probe storage. | Candidate-set precomputation against 3 |
+| The per-link nullifier entry at `sha256(link_hash)` is removed from the escrow. The `claimed` flag is the same-transaction double-claim guard, and cross-transaction replay protection stays where #114 put it: the VerifierContract nullifier registry, keyed by the circuit's `pedersen(secret, recipient)`. | One of the two pollable beacons in 4 |
+| Backend: `GET /api/links/:hash` no longer returns `creator`, the per-link analytics endpoint is removed, and `GET /api/analytics/summary` is aggregate-only, with no `perLink` block and no link list. | 5 |
+
+### 11.3 Residual Leaks
+
+These remain after #118. They are stated here so nobody reads the change as full unlinkability.
+
+1. **The claim transaction still names the link.** `claim_link` arguments carry `link_hash` and `recipient` in cleartext, and the invocation reads and writes the `LinkInfo` entry keyed by `link_hash`. An observer who parses full transaction metadata, not only events, can still perform the join. The change raises the cost from subscribing to an event stream to indexing every claim transaction's storage footprint. The same limit applies to `creator`: the `LinkInfo` ledger entry is world-readable through `getContractData` (see `backend/src/lib/stellar.ts::getLinkInfo`), so removing `creator` from the API response removes a convenience, not a confidentiality boundary.
+2. **The bearer-secret limit is inherent.** The creator generated the link secret and keeps a copy. They can simulate a `claim_link` invocation at any time, for free, and a simulation that panics with `"already claimed"` tells them the link is spent. The `claimed` flag inside `LinkInfo` is also directly readable. So whether and when a link was claimed cannot be hidden from an **active** creator by any measure short of removing `link_hash` from the claim path entirely — see §11.5. What #118 removes is passive, free, push-delivered observation: the creator must now poll, and timing resolution degrades from the exact ledger to the polling interval.
+3. **Amount and timing correlation.** The escrow pays out `amount - relayer_fee` in a public token transfer from the contract address to the recipient. A distinctive amount, or a claim during a quiet period, still identifies the recipient.
+4. **The attester sees everything.** The oracle receives the recipient address, link hash, proof, and email hash off-chain, and it chooses the salt. This is already in the trust model — the oracle exists because Soroban cannot verify the BN254 proof in-contract today — but #118 does not shrink it.
+
+### 11.4 Preserved Properties
+
+- **Nullifier replay protection (#114)**: unchanged. The VerifierContract nullifier registry still records `pedersen(secret, recipient)` before an attestation is issued, with the backend cache as the fast path and the on-chain entry as the restart-safe fallback.
+- **Email-restricted claims (#69/#72)**: unchanged in effect. DKIM ownership verification still gates attestation, and `claim_link` still enforces `policy_type == 1` through the verifier — now against the blinded `email_key` instead of the `(link_hash, recipient, email_hash)` triple.
+- **Refundability**: unchanged. `refund_link` still pays the creator after expiry, and the `refunded` event keeps its payload.
+- **Relayer-fee approval semantics**: unchanged. `recipient.require_auth()` authorizes the complete invocation, so the recipient's signature is still an explicit approval of `relayer_address` and `relayer_fee`.
+
+### 11.5 Future Design: Merkle-Membership Circuit (not implemented)
+
+Residual leak 1 exists only because `claim_link` needs `link_hash` to find the escrow entry. A Merkle-membership circuit removes that need. The contract keeps a Merkle root over all link commitments, and `create_link` inserts a commitment and updates the root. The circuit takes the root and the recipient-bound nullifier `pedersen(secret, recipient)` as public inputs, and the link commitment plus its authentication path as private inputs, proving "I know the secret behind some link in this tree" without naming which one. The claim transaction then carries only the nullifier and the payout target, so there is no link hash in the arguments, no entry keyed by a creator-known value, and nothing for the creator to poll. The anonymity set is every unclaimed link in the tree, and it grows as the contract is used. Soroban now has native BN254 host functions (CAP-0074, Protocol 25), so the proof can be verified inside the contract VM, which also retires the trusted attester and with it residual leak 4 and the whole salt mechanism. The costs are a per-claim inclusion proof of about `log2(n)` hashes and a fixed-denomination scheme, because residual leak 3 is otherwise untouched.
+
+```
+create_link ─► commitment = pedersen(secret, amount, asset)
+                      │
+                      ▼
+       Merkle tree of link commitments ──► root (public, on-chain)
+                                             │
+claim_link(nullifier, recipient, proof) ─────┘
+   public  : root, nullifier = pedersen(secret, recipient), recipient
+   private : commitment, Merkle path
+   ⇒ no link_hash anywhere in the claim transaction
+```
+
+---
+
+## 12. References
 
 - [Stellar Developer Documentation](https://developers.stellar.org/docs)
 - [Soroban Smart Contracts Overview](https://developers.stellar.org/docs/build/smart-contracts/overview)

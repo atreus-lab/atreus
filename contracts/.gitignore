@@ -6,6 +6,8 @@ dist/
 
 # Rust
 target/
+proptest-regressions/
+test_snapshots/
 
 # OS
 .DS_Store

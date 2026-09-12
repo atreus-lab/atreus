@@ -1,5 +1,8 @@
 import { Router, Request, Response } from "express";
-import { ingestEvent, getLinkStats, getSummaryStats, getTimeSeries, getGlobalTimeSeries, getAllLinkHashes, type EventType } from "../lib/analytics.js";
+import { ingestEvent, getSummaryStats, getGlobalTimeSeries, type EventType } from "../lib/analytics.js";
+
+// Reporting is aggregate-only: no per-link stats and no link enumeration are
+// exposed, so analytics cannot deanonymise a link or its recipient (issue #118).
 
 export const analyticsRoutes: Router = Router();
 
@@ -33,28 +36,16 @@ analyticsRoutes.post("/event", (req: Request, res: Response) => {
   }
 });
 
-analyticsRoutes.get("/links/:hash", (req: Request, res: Response) => {
-  const correlationId = String(req.header("x-correlation-id") || crypto.randomUUID());
-  try {
-    const hash = String(req.params.hash);
-    const [stats, series] = [getLinkStats(hash), getTimeSeries(hash, 30)];
-    res.json({ stats, timeSeries: series, correlationId });
-  } catch (error) {
-    res.status(500).json({ error: error instanceof Error ? error.message : "Failed to compute stats", correlationId });
-  }
-});
-
 analyticsRoutes.get("/summary", (req: Request, res: Response) => {
   const correlationId = String(req.header("x-correlation-id") || crypto.randomUUID());
   try {
-    const [stats, series7, series30, series90, linkHashes] = [
+    const [stats, series7, series30, series90] = [
       getSummaryStats(),
       getGlobalTimeSeries(7),
       getGlobalTimeSeries(30),
       getGlobalTimeSeries(90),
-      getAllLinkHashes(),
     ];
-    res.json({ stats, timeSeries: { "7d": series7, "30d": series30, "90d": series90 }, links: linkHashes, correlationId });
+    res.json({ stats, timeSeries: { "7d": series7, "30d": series30, "90d": series90 }, correlationId });
   } catch (error) {
     res.status(500).json({ error: error instanceof Error ? error.message : "Failed to compute summary", correlationId });
   }

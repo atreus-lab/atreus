@@ -6,7 +6,11 @@ import type { BatchRecord } from './batch';
 const logger = pino({ name: 'batchStore' });
 
 function getStoreDir(): string {
-  return process.env.BATCH_STORE_DIR ?? './.batch-store/';
+  // Vercel serverless functions have a read-only filesystem except /tmp, so
+  // default to /tmp there. Locally /tmp is also writable, so this is safe in
+  // both environments; BATCH_STORE_DIR always wins if explicitly set.
+  const tmp = process.env.VERCEL ? '/tmp/.batch-store/' : './.batch-store/';
+  return process.env.BATCH_STORE_DIR ?? tmp;
 }
 
 function ensureStoreDir(dir: string): void {
@@ -45,15 +49,15 @@ export function loadBatch(id: string): BatchRecord | undefined {
 
 export function listBatches(): BatchRecord[] {
   const dir = getStoreDir();
-  ensureStoreDir(dir);
-  const records: BatchRecord[] = [];
   let files: string[];
   try {
+    ensureStoreDir(dir);
     files = readdirSync(dir).filter((f) => f.endsWith('.json'));
   } catch (err) {
-    logger.error({ err }, 'Failed to read batch store directory');
-    return records;
+    logger.error({ err, dir }, 'Failed to open batch store directory');
+    return [];
   }
+  const records: BatchRecord[] = [];
   for (const file of files) {
     try {
       records.push(JSON.parse(readFileSync(join(dir, file), 'utf-8')) as BatchRecord);

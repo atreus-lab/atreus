@@ -3,13 +3,15 @@ import { readFileSync, existsSync } from "fs";
 import { resolve, dirname } from "path";
 import { fileURLToPath } from "url";
 import { sha256Hex, verifyClaimProof } from "../lib/zk.js";
-import { createBatchEscrowTransaction, submitAttestation, getLinkInfo, checkNullifierOnChain, markNullifierOnChain } from "../lib/stellar.js";
+import { createBatchEscrowTransaction, submitAttestation, submitEmailOnlyAttestation, getLinkInfo, getSplitLinkInfo, checkNullifierOnChain, markNullifierOnChain } from "../lib/stellar.js";
 import { batchResultsCsv, createBatchRecord, parseBatchCsv, processBatch, type BatchRecord } from "../lib/batch.js";
 import { saveBatch, listBatches } from "../lib/batchStore.js";
 import { isEmailHashHex } from "../lib/emailHash.js";
 import { isEmailHashVerified } from "../lib/emailVerificationStore.js";
 import { isNullifierUsedLocally, markNullifierUsedLocally, normalizeNullifierHex } from "../lib/nullifierStore.js";
 import { validateWebhookUrl } from "../lib/ssrf.js";
+import { proofLatency, attestationCounter, attestationRequestCounter, attestationTxCounter, attestationFeeStroops } from "./monitoring.js";
+import { enqueueAttestation, isBatchingEnabled, ATTESTER_TX_FEE_STROOPS } from "../lib/attestationBatching.js";
 import pino from "pino";
 
 let circuit: any = undefined;
@@ -186,9 +188,10 @@ linkRoutes.get("/:hash", async (req: Request, res: Response) => {
       res.status(404).json({ error: "Link not found", correlationId });
       return;
     }
+    // creator is deliberately not returned: recipients and third parties must not
+    // learn who funded a link from the API (issue #118).
     res.json({
       hash,
-      creator: info.creator,
       amount: info.amount.toString(),
       asset: info.asset,
       policyType: info.policyType,
@@ -205,6 +208,122 @@ linkRoutes.get("/:hash", async (req: Request, res: Response) => {
 
 const HEX_64 = /^[0-9a-fA-F]{64}$/;
 const FIELD_HEX = /^(0x)?[0-9a-fA-F]{64}$/;
+
+// GET /api/links/split/:id - Get split-link details from the AtreusContract (#120).
+// Multi-recipient / partial-claim escrow created via create_split_link. See
+// docs/architecture.md §5.1 for the state machine.
+linkRoutes.get("/split/:id", async (req: Request, res: Response) => {
+  const correlationId = String(req.header("x-correlation-id") || crypto.randomUUID());
+  const id = String(req.params.id);
+  if (!HEX_64.test(id)) {
+    res.status(400).json({ error: "Invalid link id format", correlationId });
+    return;
+  }
+  try {
+    const info = await getSplitLinkInfo(id);
+    if (!info) {
+      res.status(404).json({ error: "Split link not found", correlationId });
+      return;
+    }
+    // creator is deliberately not returned, consistent with GET /api/links/:hash
+    // (issue #118) — recipients and third parties must not learn who funded a
+    // link from the API. Recipient addresses ARE returned: the sender named
+    // them directly in create_split_link, so they carry no additional leak.
+    res.json({
+      id,
+      amount: info.amount.toString(),
+      asset: info.asset,
+      policyType: info.policyType,
+      policyParams: info.policyParams,
+      expiresAt: info.expiresAt.toString(),
+      minClaimBps: info.minClaimBps,
+      closed: info.closed,
+      recipients: info.recipients.map((r) => ({
+        address: r.address,
+        allocated: r.allocated.toString(),
+        claimed: r.claimed.toString(),
+      })),
+      correlationId,
+    });
+  } catch (error: any) {
+    logger.error({ correlationId, id, error: error?.message }, "split link lookup failed");
+    res.status(500).json({ error: "Failed to read split link from contract", correlationId });
+  }
+});
+
+// POST /api/links/prove - Generate a ZK UltraHonk proof for claim flow
+linkRoutes.post("/prove", async (req: Request, res: Response) => {
+  const correlationId = String(req.header("x-correlation-id") || crypto.randomUUID());
+  try {
+    const { secret, recipient } = req.body;
+    if (!secret || !recipient) {
+      res.status(400).json({ error: "Missing secret or recipient", correlationId });
+      return;
+    }
+    const cleanSecret = secret.startsWith("0x") || secret.startsWith("0X") ? secret.slice(2) : secret;
+    const secretBytes = Uint8Array.from(Buffer.from(cleanSecret, "hex"));
+    const { Barretenberg, BarretenbergSync, UltraHonkBackend } = await import("@aztec/bb.js");
+    const { Noir } = await import("@noir-lang/noir_js");
+    const { addressToField } = await import("../lib/zk.js");
+
+    const FR_ORDER = 21888242871839275222246405745257275088548364400416034343698204186575808495617n;
+    const secretField = BigInt("0x" + cleanSecret) % FR_ORDER;
+    const recipientField = addressToField(recipient);
+
+    const bbSync = await BarretenbergSync.new();
+    const frBuffer = (val: bigint) => {
+      const buf = new Uint8Array(32);
+      let v = val;
+      for (let i = 31; i >= 0; i--) {
+        buf[i] = Number(v & 0xffn);
+        v >>= 8n;
+      }
+      return buf;
+    };
+
+    const linkHashResult = (bbSync as any).pedersenHash({
+      inputs: [frBuffer(secretField)],
+      hashIndex: 0,
+    });
+    const linkHashField = BigInt("0x" + Buffer.from(linkHashResult.hash).toString("hex"));
+
+    const nullifierResult = (bbSync as any).pedersenHash({
+      inputs: [frBuffer(secretField), frBuffer(recipientField)],
+      hashIndex: 0,
+    });
+    const nullifierField = BigInt("0x" + Buffer.from(nullifierResult.hash).toString("hex"));
+
+    const circuit = await getCircuit();
+    const noir = new Noir(circuit);
+    const inputs = {
+      secret: "0x" + secretField.toString(16).padStart(64, "0"),
+      recipient: "0x" + recipientField.toString(16).padStart(64, "0"),
+      link_hash: "0x" + linkHashField.toString(16).padStart(64, "0"),
+      nullifier: "0x" + nullifierField.toString(16).padStart(64, "0"),
+    };
+
+    const { witness } = await noir.execute(inputs);
+    const api = await Barretenberg.new({ threads: 1 });
+    try {
+      const backend = new UltraHonkBackend(circuit.bytecode, api);
+      const result = await backend.generateProof(witness);
+      const hashBuffer = await crypto.subtle.digest("SHA-256", secretBytes);
+      const linkHashHex = Buffer.from(hashBuffer).toString("hex");
+
+      res.json({
+        proof: Buffer.from(result.proof).toString("hex"),
+        linkHashHex,
+        linkHashFieldHex: "0x" + linkHashField.toString(16).padStart(64, "0"),
+        nullifierFieldHex: "0x" + nullifierField.toString(16).padStart(64, "0"),
+      });
+    } finally {
+      await api.destroy();
+    }
+  } catch (err: any) {
+    logger.error({ correlationId, error: err?.message }, "prove failed");
+    res.status(500).json({ error: err?.message || "Failed to generate proof", correlationId });
+  }
+});
 
 // POST /api/links/:hash/attest - ZK attestation-oracle endpoint.
 // Verifies a real UltraHonk proof off-chain against the public inputs the client
@@ -290,23 +409,105 @@ linkRoutes.post("/:hash/attest", async (req: Request, res: Response) => {
   try {
     const proofBytes = Uint8Array.from(Buffer.from(proof, "hex"));
 
+    const endProofTimer = proofLatency.startTimer();
     const isValid = await verifyClaimProof((await getCircuit()).bytecode, proofBytes, recipient, link_hash, nullifier);
+    endProofTimer();
     if (!isValid) {
+      attestationCounter.inc({ status: "proof_failed" });
       res.status(400).json({ error: "ZK proof verification failed", correlationId });
       return;
     }
 
     const linkHashBytes = Uint8Array.from(Buffer.from(hash, "hex"));
-    const txHash = await submitAttestation(linkHashBytes, recipient, emailHashBytes);
+    attestationRequestCounter.inc();
 
-    markNullifierUsedLocally(nullifierHex);
-    markNullifierOnChain(nullifierBytes).catch((err: any) => {
-      logger.error({ correlationId, error: err?.message }, "markNullifierOnChain failed");
-    });
+    let txHash: string;
+    let claimSalt: string;
+    if (isBatchingEnabled()) {
+      // attest_batch records the attestation, the nullifier, and any email
+      // binding in ONE transaction, so markNullifierOnChain must not be called
+      // separately here — doing so would add a transaction per claim and undo
+      // the batching win. The await resolves when the batch lands on-chain.
+      ({ txHash, claimSalt } = await enqueueAttestation(
+        linkHashBytes,
+        recipient,
+        nullifierBytes,
+        emailHashBytes,
+      ));
+      markNullifierUsedLocally(nullifierHex);
+    } else {
+      ({ txHash, claimSalt } = await submitAttestation(linkHashBytes, recipient, emailHashBytes));
+      attestationTxCounter.inc({ mode: "per_link", status: "success" });
+      attestationFeeStroops.inc({ mode: "per_link" }, ATTESTER_TX_FEE_STROOPS);
 
-    res.json({ success: true, hash, recipient, attestationTx: txHash, correlationId });
+      markNullifierUsedLocally(nullifierHex);
+      markNullifierOnChain(nullifierBytes)
+        .then(() => {
+          attestationTxCounter.inc({ mode: "per_link", status: "success" });
+          attestationFeeStroops.inc({ mode: "per_link" }, ATTESTER_TX_FEE_STROOPS);
+        })
+        .catch((err: any) => {
+          attestationTxCounter.inc({ mode: "per_link", status: "failed" });
+          logger.error({ correlationId, error: err?.message }, "markNullifierOnChain failed");
+        });
+    }
+    attestationCounter.inc({ status: "success" });
+
+    // claimSalt reopens the blinded attestation key; claim_link needs it.
+    res.json({ success: true, hash, recipient, attestationTx: txHash, claimSalt, correlationId });
   } catch (err: any) {
+    attestationCounter.inc({ status: "failed" });
     logger.error({ correlationId, error: err?.message }, "attestation failed");
     res.status(500).json({ error: err?.message || "Attestation failed", correlationId });
+  }
+});
+
+// POST /api/links/split/:id/attest-email - Email-restriction attestation for a
+// split link (#120). Unlike POST /:hash/attest, this takes no ZK proof and does
+// not call VerifierContract.attest(): claim_split gates on recipient.require_auth()
+// alone for the base case, since split-link recipients are named Addresses at
+// creation rather than bearer-secret holders (see docs/architecture.md §5.1). This
+// route exists only for the policy_type == 1 case, to record the same DKIM-backed
+// email attestation claim_split's check_email_policy requires before a claim.
+linkRoutes.post("/split/:id/attest-email", async (req: Request, res: Response) => {
+  const correlationId = String(req.header("x-correlation-id") || crypto.randomUUID());
+  const id = String(req.params.id);
+  const { recipient, recipient_email_hash } = req.body;
+
+  if (!HEX_64.test(id)) {
+    res.status(400).json({ error: "Invalid link id format", correlationId });
+    return;
+  }
+  if (!recipient || typeof recipient !== "string") {
+    res.status(400).json({ error: "Missing recipient", correlationId });
+    return;
+  }
+  if (typeof recipient_email_hash !== "string" || !isEmailHashHex(recipient_email_hash.toLowerCase())) {
+    res.status(400).json({
+      error: "Invalid recipient_email_hash format (expected 64 hex chars)",
+      correlationId,
+    });
+    return;
+  }
+
+  const emailHash = recipient_email_hash.toLowerCase();
+  if (!isEmailHashVerified(emailHash)) {
+    logger.warn({ correlationId, emailHash, id }, "split attest-email rejected: email not DKIM-verified");
+    res.status(403).json({
+      error:
+        "Email ownership not verified. Complete POST /api/email/verify and /api/email/confirm with a DKIM-signed message before attesting an email-restricted split link.",
+      correlationId,
+    });
+    return;
+  }
+
+  try {
+    const linkHashBytes = Uint8Array.from(Buffer.from(id, "hex"));
+    const emailHashBytes = Uint8Array.from(Buffer.from(emailHash, "hex"));
+    const { txHash, claimSalt } = await submitEmailOnlyAttestation(linkHashBytes, recipient, emailHashBytes);
+    res.json({ success: true, id, recipient, attestationTx: txHash, claimSalt, correlationId });
+  } catch (err: any) {
+    logger.error({ correlationId, error: err?.message }, "split email attestation failed");
+    res.status(500).json({ error: err?.message || "Email attestation failed", correlationId });
   }
 });

@@ -84,8 +84,8 @@ atreus/
 │  │  claim_link(         │     ┌──────────────────────────────┐    │
 │  │    link_hash,        │     │  Token (SAC / native)        │    │
 │  │    recipient,        ├─────┤                              │    │
-│  │    secret,           │     │  transfer() on claim/refund  │    │
-│  │    email_hash        │     └──────────────────────────────┘    │
+│  │    email_hash,       │     │  transfer() on claim/refund  │    │
+│  │    relayer, fee      │     └──────────────────────────────┘    │
 │  │  )                   │                                         │
 │  │                      │                                         │
 │  │  refund_link(        │                                         │
@@ -145,7 +145,7 @@ atreus/
 | `docs/architecture.md` references Poseidon/HKDF | Misleading for new contributors | Rewrite to match actual Pedersen/BIP39 stack |
 | `.env.example` has real OAuth creds | Security leak | Regenerate credentials, remove from file |
 | Test verifier is a mock (returns `true`) | Doesn't test real verification | Deploy real verifier to testnet, test against it |
-| Swap uses Horizon (classic) not RPC | Two parallel Stellar SDK paths | Consolidate to RPC-only |
+| Swap uses Horizon (classic) not RPC | Two parallel Stellar SDK paths | Consolidate to RPC-only (Resolved: migrated to Soroban RPC-only) |
 | `pnpm-lock.yaml` may be stale | Dependency mismatch | Run `pnpm install --frozen-lockfile` and verify |
 | Frontend uses raw Tailwind not semantic classes | Design inconsistency | Refactor to `.card`, `.btn-primary` per design.md |
 

@@ -1,4 +1,4 @@
-import type { EventType, LinkStats, SummaryStats, TimeSeriesPoint } from "@/lib/analytics/types";
+import type { EventType, SummaryStats, TimeSeriesPoint } from "@/lib/analytics/types";
 
 const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL || "http://localhost:3001";
 
@@ -25,16 +25,11 @@ export async function recordEvent(linkHash: string, eventType: EventType): Promi
   }
 }
 
-export async function fetchLinkStats(linkHash: string): Promise<{ stats: LinkStats; timeSeries: TimeSeriesPoint[] }> {
-  const res = await fetch(`${backendUrl}/api/analytics/links/${encodeURIComponent(linkHash)}?t=${Date.now()}`, { cache: "no-store" });
-  if (!res.ok) throw new Error("Failed to load link stats");
-  return res.json();
-}
-
+// Analytics is aggregate-only — there is no per-link endpoint.
 export async function fetchSummary(): Promise<{
   stats: SummaryStats;
   timeSeries: { "7d": TimeSeriesPoint[]; "30d": TimeSeriesPoint[]; "90d": TimeSeriesPoint[] };
-  links: string[];
+  correlationId: string;
 }> {
   const res = await fetch(`${backendUrl}/api/analytics/summary?t=${Date.now()}`, { cache: "no-store" });
   if (!res.ok) throw new Error("Failed to load analytics summary");

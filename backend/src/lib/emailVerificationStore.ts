@@ -5,6 +5,7 @@ export type PendingVerification = {
   challenge: string;
   createdAt: number;
   expiresAt: number;
+  attempts: number;
 };
 
 export type VerifiedEmail = {
@@ -14,6 +15,8 @@ export type VerifiedEmail = {
 
 const CHALLENGE_TTL_MS = Number(process.env.EMAIL_CHALLENGE_TTL_MS ?? 24 * 60 * 60 * 1000);
 const VERIFIED_TTL_MS = Number(process.env.EMAIL_VERIFIED_TTL_MS ?? 60 * 60 * 1000);
+/** Max failed confirmation attempts before a challenge is burned (brute-force cap). */
+const CHALLENGE_MAX_ATTEMPTS = Number(process.env.EMAIL_CHALLENGE_MAX_ATTEMPTS ?? 5);
 
 /** emailHash (hex) → pending challenge. Never stores raw email. */
 const pending = new Map<string, PendingVerification>();
@@ -38,10 +41,33 @@ export function createChallenge(email: string, now = Date.now()): {
   const emailHash = hashEmail(email);
   const challenge = randomBytes(16).toString("hex");
   const expiresAt = now + CHALLENGE_TTL_MS;
-  pending.set(emailHash, { challenge, createdAt: now, expiresAt });
+  pending.set(emailHash, { challenge, createdAt: now, expiresAt, attempts: 0 });
   // Starting a new challenge invalidates a previous verification for this hash.
   verified.delete(emailHash);
   return { emailHash, challenge, expiresAt };
+}
+
+/**
+ * Consume one confirmation attempt for the pending challenge. Returns false
+ * when the challenge is unknown, expired, or already burned through its
+ * attempt budget — callers must reject the request in that case.
+ */
+export function registerChallengeAttempt(emailHash: string, now = Date.now()): boolean {
+  const p = getPending(emailHash, now);
+  if (!p) return false;
+  if (p.attempts >= CHALLENGE_MAX_ATTEMPTS) {
+    pending.delete(emailHash);
+    return false;
+  }
+  p.attempts += 1;
+  return true;
+}
+
+/** Remaining confirmation attempts for diagnostics/tests. */
+export function remainingChallengeAttempts(emailHash: string, now = Date.now()): number {
+  const p = getPending(emailHash, now);
+  if (!p) return 0;
+  return Math.max(0, CHALLENGE_MAX_ATTEMPTS - p.attempts);
 }
 
 export function getPending(emailHash: string, now = Date.now()): PendingVerification | undefined {

@@ -23,7 +23,7 @@ export default function RootLayout({
 }: Readonly<{
   children: React.ReactNode;
 }>) {
-  const clientId = process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID || "";
+  const clientId = process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID || "demo-client-id.apps.googleusercontent.com";
 
   return (
     <html lang="en" className={`${inter.variable} ${manrope.variable}`}>

@@ -66,38 +66,18 @@ describe("analytics routes", () => {
     expect(res.status).toBe(400);
   });
 
-  it("returns link stats after recording events", async () => {
+  it("no longer serves the per-link stats route", async () => {
     const hash = "b".repeat(64);
     await fetch(`${baseUrl}/api/analytics/event`, {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ linkHash: hash, eventType: "view", sessionId: "session-1111" }),
     });
-    await fetch(`${baseUrl}/api/analytics/event`, {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ linkHash: hash, eventType: "view", sessionId: "session-2222" }),
-    });
-    await fetch(`${baseUrl}/api/analytics/event`, {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ linkHash: hash, eventType: "claim", sessionId: "session-1111" }),
-    });
-    const res = await fetch(`${baseUrl}/api/analytics/links/${encodeURIComponent(hash)}`);
-    expect(res.status).toBe(200);
-    const body = await res.json() as { stats: { views: number; uniqueViews: number; claims: number; claimRate: number }; timeSeries: unknown[] };
-    expect(body.stats).toMatchObject({ views: 2, uniqueViews: 2, claims: 1, claimRate: 50 });
-    expect(body.timeSeries).toBeInstanceOf(Array);
+    expect((await fetch(`${baseUrl}/api/analytics/links/${encodeURIComponent(hash)}`)).status).toBe(404);
+    expect((await fetch(`${baseUrl}/api/analytics/links/unknown`)).status).toBe(404);
   });
 
-  it("returns 200 for unknown link stats with zeroed fields", async () => {
-    const res = await fetch(`${baseUrl}/api/analytics/links/unknown`);
-    expect(res.status).toBe(200);
-    const body = await res.json() as { stats: { views: number; claims: number; claimRate: number } };
-    expect(body.stats).toMatchObject({ views: 0, claims: 0, claimRate: 0 });
-  });
-
-  it("returns summary stats", async () => {
+  it("returns aggregate-only summary stats", async () => {
     const hash = "c".repeat(64);
     await fetch(`${baseUrl}/api/analytics/event`, {
       method: "POST",
@@ -111,12 +91,16 @@ describe("analytics routes", () => {
     });
     const res = await fetch(`${baseUrl}/api/analytics/summary`);
     expect(res.status).toBe(200);
-    const body = await res.json() as { stats: { totalViews: number; initiations: number }; timeSeries: { "7d": unknown[]; "30d": unknown[]; "90d": unknown[] }; links: string[] };
+    const body = await res.json() as { stats: Record<string, unknown>; timeSeries: Record<string, unknown[]>; correlationId: string };
     expect(body.stats.totalViews).toBeGreaterThanOrEqual(1);
     expect(body.stats.initiations).toBeGreaterThanOrEqual(1);
     expect(body.timeSeries).toHaveProperty("7d");
     expect(body.timeSeries).toHaveProperty("30d");
     expect(body.timeSeries).toHaveProperty("90d");
-    expect(body.links).toContain(hash);
+    expect(body.correlationId).toBeTruthy();
+    // Nothing may identify an individual link.
+    expect(body).not.toHaveProperty("links");
+    expect(body.stats).not.toHaveProperty("perLink");
+    expect(JSON.stringify(body)).not.toContain(hash);
   });
 });

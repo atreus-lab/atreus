@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useCallback } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { loadWallet, getActiveWalletProvider } from '@/lib/wallet';
@@ -9,8 +9,28 @@ import { bytesToHex } from '@/lib/proof';
 import { generateClaimProof, requestAttestation } from '@/lib/zk';
 import { startEmailVerification, confirmEmailVerification } from '@/lib/emailVerify';
 import { updateLinkStatus, checkLinkOnChain, saveClaimedLink, readLinkInfo } from '@/lib/links';
+import {
+  fetchOptimalSwapPath,
+  buildPathScVal,
+  buildDeadlineScVal,
+  getSoroswapRouterAddress,
+  resolveTokenSymbol,
+  TESTNET_TOKENS,
+  type SwapQuote,
+} from '@/lib/soroswap';
 import ProofProgress from '@/components/ProofProgress';
-import { Loader2, CheckCircle2, XCircle, ArrowLeft, Link2, Mail, Shield } from 'lucide-react';
+import {
+  Loader2,
+  CheckCircle2,
+  XCircle,
+  ArrowLeft,
+  Link2,
+  Mail,
+  Shield,
+  ArrowRightLeft,
+  RefreshCw,
+  Coins,
+} from 'lucide-react';
 import { Address, Contract, TransactionBuilder, nativeToScVal, xdr } from '@stellar/stellar-sdk';
 import { Buffer } from 'buffer';
 
@@ -41,6 +61,13 @@ export default function ClaimPage() {
   const [emailError, setEmailError] = useState('');
   const [claimedAmount, setClaimedAmount] = useState<string | null>(null);
 
+  // ── Soroswap Claim & Swap State ──
+  const [escrowInfo, setEscrowInfo] = useState<{ amount: string; asset: string } | null>(null);
+  const [targetAsset, setTargetAsset] = useState<string>('ORIGINAL');
+  const [swapQuote, setSwapQuote] = useState<SwapQuote | null>(null);
+  const [isQuoting, setIsQuoting] = useState(false);
+  const [quoteError, setQuoteError] = useState('');
+
   const isGeneratingProof = status === 'generating_proof';
 
   useEffect(() => {
@@ -56,6 +83,88 @@ export default function ClaimPage() {
       setWalletEmail(wallet.email);
     }
   }, []);
+
+  // Fetch escrow info from chain whenever secretHex changes
+  useEffect(() => {
+    if (!secretHex || secretHex.length !== 64) return;
+    let isCancelled = false;
+
+    async function loadEscrowDetails() {
+      try {
+        const secretBytes = new Uint8Array(
+          secretHex.match(/.{1,2}/g)!.map((b) => parseInt(b, 16))
+        );
+        const linkHashBuf = await crypto.subtle.digest('SHA-256', secretBytes);
+        const linkHashHex = Array.from(new Uint8Array(linkHashBuf))
+          .map((b) => b.toString(16).padStart(2, '0'))
+          .join('');
+
+        const info = await readLinkInfo(linkHashHex);
+        if (!isCancelled && info.amount) {
+          const defaultAsset =
+            process.env.NEXT_PUBLIC_TOKEN_ID ||
+            'CDLZFC3SYJYDZT7K67VZ75HPJVIEUVNIXF47ZG2FB2RMQQVU2HHGCYSC';
+          setEscrowInfo({
+            amount: info.amount,
+            asset: info.asset || defaultAsset,
+          });
+        }
+      } catch (err) {
+        console.warn('Failed to load escrow details for swap:', err);
+      }
+    }
+
+    loadEscrowDetails();
+    return () => {
+      isCancelled = true;
+    };
+  }, [secretHex]);
+
+  // Recalculate Soroswap quote when target asset changes
+  const updateQuote = useCallback(
+    async (target: string, currentEscrow: { amount: string; asset: string } | null) => {
+      if (!currentEscrow || !currentEscrow.amount || target === 'ORIGINAL') {
+        setSwapQuote(null);
+        setQuoteError('');
+        return;
+      }
+
+      const escrowSymbol = resolveTokenSymbol(currentEscrow.asset);
+      if (target.toUpperCase() === escrowSymbol.toUpperCase()) {
+        setSwapQuote(null);
+        setQuoteError('');
+        return;
+      }
+
+      const targetToken = TESTNET_TOKENS[target.toUpperCase()];
+      if (!targetToken) {
+        setSwapQuote(null);
+        return;
+      }
+
+      setIsQuoting(true);
+      setQuoteError('');
+      try {
+        const quote = await fetchOptimalSwapPath(
+          currentEscrow.asset,
+          targetToken.contractId,
+          currentEscrow.amount,
+          1.0 // 1% default slippage
+        );
+        setSwapQuote(quote);
+      } catch (err: any) {
+        setQuoteError(err?.message || 'Failed to fetch swap quote from Soroswap');
+        setSwapQuote(null);
+      } finally {
+        setIsQuoting(false);
+      }
+    },
+    []
+  );
+
+  useEffect(() => {
+    updateQuote(targetAsset, escrowInfo);
+  }, [targetAsset, escrowInfo, updateQuote]);
 
   async function handleStartEmailVerify() {
     if (!intendedEmail) return;
@@ -111,6 +220,8 @@ function getFriendlyErrorMessage(err: any): { title: string; description: string
     return { title: 'Link expired', description: 'This payment link has expired and can no longer be claimed.' };
   if (msg.includes('no valid zk attestation'))
     return { title: 'Proof verification pending', description: 'The ZK proof attestation has not been recorded yet. Please complete the full claim flow.' };
+  if (msg.includes('invalid claim salt'))
+    return { title: 'Attestation service error', description: 'The attester returned an invalid claim salt. Please try again.' };
   if (msg.includes('link not found'))
     return { title: 'Link not found', description: 'This payment link does not exist in the contract. It may have been refunded or never created.' };
   if (msg.includes('nullifier already used'))
@@ -131,40 +242,78 @@ function getFriendlyErrorMessage(err: any): { title: string; description: string
     msg.includes('invalidaction') ||
     msg.includes('unreachablecodereached') ||
     msg.includes('vm call trapped') ||
-    msg.includes('hosterror') && msg.includes('claim_link')
+    (msg.includes('hosterror') && msg.includes('claim_link'))
   ) {
     // Check the event log for telltale signs of "already claimed" or "expired"
     if (msg.includes('fn_return') && msg.includes('is_attested') && msg.includes('true')) {
       // is_attested returned true, then claim_link trapped → almost certainly "already claimed"
       return { title: 'Funds already claimed', description: 'This payment link has already been claimed. The funds are no longer available.' };
     }
-    return { title: 'Contract error', description: 'The transaction could not be completed. This link may have already been claimed or is invalid. Please check the link and try again.' };
+
+    if (msg.includes('insufficient balance'))
+      return { title: 'Insufficient funds', description: rawMsg };
+    if (msg.includes('recipient account') || msg.includes('funded'))
+      return {
+        title: 'Wallet not funded',
+        description: 'Your account needs testnet XLM. Get free funds via the Stellar friendbot.',
+      };
+    if (msg.includes('failed to simulate'))
+      return {
+        title: 'Contract simulation failed',
+        description: 'The transaction simulation failed. The link may be invalid or the contract is unavailable.',
+      };
+    if (msg.includes('attestation tx failed') || msg.includes('attestation tx rejected'))
+      return {
+        title: 'Attestation transaction failed',
+        description:
+          'The attestation could not be recorded on-chain. The link may already be claimed, or the network is unavailable. Please try again.',
+      };
+    if (msg.includes('attestation request failed') || msg.includes('attestation failed'))
+      return {
+        title: 'Attestation service error',
+        description: 'The backend attestation service encountered an error. Please try again later.',
+      };
+
+    return {
+      title: 'Claim failed',
+      description: err?.message || 'An unexpected error occurred. Please try again.',
+    };
   }
 
-  if (msg.includes('insufficient balance'))
-    return { title: 'Insufficient funds', description: rawMsg };
-  if (msg.includes('recipient account') || msg.includes('funded'))
-    return { title: 'Wallet not funded', description: 'Your account needs testnet XLM. Get free funds via the Stellar friendbot.' };
-  if (msg.includes('failed to simulate'))
-    return { title: 'Contract simulation failed', description: 'The transaction simulation failed. The link may be invalid or the contract is unavailable.' };
-  if (msg.includes('attestation tx failed') || msg.includes('attestation tx rejected'))
-    return { title: 'Attestation transaction failed', description: 'The attestation could not be recorded on-chain. The link may already be claimed, or the network is unavailable. Please try again.' };
-  if (msg.includes('attestation request failed') || msg.includes('attestation failed'))
-    return { title: 'Attestation service error', description: 'The backend attestation service encountered an error. Please try again later.' };
-
-  // Fallback: show the original error but trimmed
-  return { title: 'Claim failed', description: err?.message || 'An unexpected error occurred. Please try again.' };
+  return {
+    title: 'Claim failed',
+    description: err?.message || 'An unexpected error occurred. Please try again.',
+  };
 }
 
-const parseLinkInput = () => {
-    const hash = linkInput.split('#')[1]?.split(/[,;\s]/)[0];
+  const parseLinkInput = () => {
+    let hash = '';
+    const trimmed = linkInput.trim();
+    if (trimmed.includes('#')) {
+      hash = trimmed.split('#')[1]?.split(/[,;\s]/)[0] || '';
+    } else if (trimmed.includes('secret=')) {
+      try {
+        const u = new URL(trimmed, window.location.origin);
+        hash = u.searchParams.get('secret') || '';
+      } catch {
+        hash = trimmed.split('secret=')[1]?.split(/[,;&\s]/)[0] || '';
+      }
+    } else if (/^[0-9a-fA-F]{64}$/.test(trimmed)) {
+      hash = trimmed;
+    }
     if (hash) {
       setSecretHex(hash);
       setLinkInput('');
     }
   };
 
-  const getHashFromUrl = () => window.location.hash.substring(1).split(/[,;\s]/)[0];
+  const getHashFromUrl = () => {
+    if (typeof window === 'undefined') return '';
+    const hash = window.location.hash.substring(1).split(/[,;\s]/)[0];
+    if (hash) return hash;
+    const sp = new URLSearchParams(window.location.search);
+    return sp.get('secret') || '';
+  };
 
   useEffect(() => {
     const hash = getHashFromUrl();
@@ -178,18 +327,29 @@ const parseLinkInput = () => {
       setErrorKind('error');
 
       const recipient = await connectWallet();
-
-      const secretBytes = new Uint8Array(secretHex.match(/.{1,2}/g)!.map((b) => parseInt(b, 16)));
+      const secretBytes = new Uint8Array(
+        secretHex.match(/.{1,2}/g)!.map((b) => parseInt(b, 16))
+      );
 
       // Quick on-chain check: if the link is already claimed, short-circuit immediately
-      // instead of wasting time generating a ZK proof and attesting.
       const linkHashForCheck = Array.from(
         new Uint8Array(await crypto.subtle.digest('SHA-256', secretBytes))
-      ).map((b) => b.toString(16).padStart(2, '0')).join('');
+      )
+        .map((b) => b.toString(16).padStart(2, '0'))
+        .join('');
       const alreadyClaimed = await checkLinkOnChain(linkHashForCheck);
       if (alreadyClaimed === true) {
         setErrorKind('info');
-        setErrorMsg('Funds already claimed: This payment link has already been claimed. The funds are no longer available.');
+        setErrorMsg(
+          'Funds already claimed: This payment link has already been claimed. The funds are no longer available.'
+        );
+        setStatus('error');
+        return;
+      }
+      if (alreadyClaimed === null) {
+        // Link not found on-chain — either it was never created or was created on a different contract.
+        setErrorKind('error');
+        setErrorMsg('Link not found: This payment link does not exist on the current contract. Make sure you are using a link that was created on this network.');
         setStatus('error');
         return;
       }
@@ -201,44 +361,52 @@ const parseLinkInput = () => {
       if (intendedEmail) {
         const wallet = loadWallet();
         const authedEmail = wallet?.email;
-        if (!authedEmail || authedEmail.toLowerCase().trim() !== intendedEmail.toLowerCase().trim()) {
+        if (
+          !authedEmail ||
+          authedEmail.toLowerCase().trim() !== intendedEmail.toLowerCase().trim()
+        ) {
           setErrorKind('error');
-          setErrorMsg(`This link is intended for ${intendedEmail}. Please log in with that email to claim.`);
+          setErrorMsg(
+            `This link is intended for ${intendedEmail}. Please log in with that email to claim.`
+          );
           setStatus('error');
           return;
         }
         if (!emailVerified) {
           setErrorKind('error');
-          setErrorMsg('Prove email ownership (DKIM) before claiming. Use the verification panel above.');
+          setErrorMsg(
+            'Prove email ownership (DKIM) before claiming. Use the verification panel above.'
+          );
           setStatus('error');
           return;
         }
       }
 
       setStatus('generating_proof');
-      const { proof, linkHashHex, linkHashFieldHex, nullifierFieldHex } = await generateClaimProof(secretBytes, recipient);
+      const { proof, linkHashHex, linkHashFieldHex, nullifierFieldHex } =
+        await generateClaimProof(secretBytes, recipient);
 
       setStatus('attesting');
       const proofHex = bytesToHex(proof);
-      // Compute email hash if this is an email-restricted link
-      let recipientEmailHash: string | undefined;
-      const emailHashBytes = intendedEmail
-        ? new Uint8Array(await sha256Hash(intendedEmail))
-        : new Uint8Array(32);
-      if (intendedEmail) {
-        recipientEmailHash = Array.from(emailHashBytes)
-          .map((b) => b.toString(16).padStart(2, '0'))
-          .join('');
-      }
+      // Email hash goes to the attester only — email-restricted links
+      const recipientEmailHash = intendedEmail
+        ? bytesToHex(await sha256Hash(intendedEmail))
+        : undefined;
 
-      await requestAttestation(linkHashHex, proofHex, recipient, linkHashFieldHex, nullifierFieldHex, recipientEmailHash);
+      const { claimSalt } = await requestAttestation(linkHashHex, proofHex, recipient, linkHashFieldHex, nullifierFieldHex, recipientEmailHash);
+
+      // The attester binds the claim to this salt — the contract rejects any other value
+      const claimSaltBytes = Buffer.from(claimSalt ?? '', 'hex');
+      if (claimSaltBytes.length !== 32) {
+        throw new Error('Invalid claim salt: the attester returned a value that is not 32 bytes.');
+      }
 
       setStatus('claiming');
       const linkHash = new Uint8Array(await crypto.subtle.digest('SHA-256', secretBytes));
 
-      const contractId = process.env.NEXT_PUBLIC_CONTRACT_ID;
-      const relayerAddress = process.env.NEXT_PUBLIC_RELAYER_ADDRESS;
-      const relayerFee = process.env.NEXT_PUBLIC_RELAYER_FEE_STROOPS;
+      const contractId = process.env.NEXT_PUBLIC_CONTRACT_ID || "CCTDH7A7F5SCJ2WA6I5ZC6MDJDR6D7R52PDYRRTHBMNWOSZREVV2HY2N";
+      const relayerAddress = process.env.NEXT_PUBLIC_RELAYER_ADDRESS || "GD3VH7TE4GEVL3KOYNISOAQ5K5IUHIYC422QLPPWVYKTWNKOWDLLPXPX";
+      const relayerFee = process.env.NEXT_PUBLIC_RELAYER_FEE_STROOPS || "0";
       if (!contractId || !relayerAddress || !relayerFee) {
         throw new Error('Gasless claim configuration is incomplete.');
       }
@@ -247,15 +415,27 @@ const parseLinkInput = () => {
       }
 
       const contract = new Contract(contractId);
-      const claimOperation = contract.call(
-        'claim_link',
-        xdr.ScVal.scvBytes(Buffer.from(linkHash)),
-        new Address(recipient).toScVal(),
-        xdr.ScVal.scvBytes(Buffer.from(secretBytes)),
-        xdr.ScVal.scvBytes(Buffer.from(emailHashBytes)),
-        new Address(relayerAddress).toScVal(),
-        nativeToScVal(BigInt(relayerFee), { type: 'i128' }),
-      );
+      const claimOperation = isSwapping && swapQuote
+        ? contract.call(
+            'claim_and_swap_link',
+            xdr.ScVal.scvBytes(Buffer.from(linkHash)),
+            new Address(recipient).toScVal(),
+            xdr.ScVal.scvBytes(claimSaltBytes),
+            new Address(getSoroswapRouterAddress()).toScVal(),
+            buildPathScVal(swapQuote.path),
+            nativeToScVal(swapQuote.minAmountOutStroops, { type: 'i128' }),
+            buildDeadlineScVal(5),
+            new Address(relayerAddress).toScVal(),
+            nativeToScVal(BigInt(relayerFee), { type: 'i128' }),
+          )
+        : contract.call(
+            'claim_link',
+            xdr.ScVal.scvBytes(Buffer.from(linkHash)),
+            new Address(recipient).toScVal(),
+            xdr.ScVal.scvBytes(claimSaltBytes),
+            new Address(relayerAddress).toScVal(),
+            nativeToScVal(BigInt(relayerFee), { type: 'i128' }),
+          );
 
       const account = await rpcServer.getAccount(recipient);
       let transaction = new TransactionBuilder(account, {
@@ -269,15 +449,22 @@ const parseLinkInput = () => {
 
       const provider = getActiveWalletProvider();
       const signedXdr = await provider.signTransaction(transaction.toXDR());
-      const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:3001';
-      const relayResponse = await fetch(`${backendUrl}/api/relay`, {
+      const relayResponse = await fetch('/api/relay', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ transactionXdr: signedXdr }),
       });
       const relayResult = await relayResponse.json().catch(() => null);
       if (!relayResponse.ok || typeof relayResult?.hash !== 'string') {
-        throw new Error(relayResult?.error || 'Relayer request failed.');
+        // simulationError may be a Soroban error string or an object — normalise it.
+        const simErr = relayResult?.simulationError;
+        const simDetail = typeof simErr === 'string'
+          ? simErr
+          : simErr && typeof simErr === 'object'
+            ? JSON.stringify(simErr)
+            : undefined;
+        const detail = simDetail || relayResult?.error || 'Relayer request failed.';
+        throw new Error(detail);
       }
 
       const hash = relayResult.hash;
@@ -288,7 +475,9 @@ const parseLinkInput = () => {
       localStorage.setItem('atreus_claimed', Date.now().toString());
       updateLinkStatus(secretHex, true, hash);
       // Read the actual amount from the contract for the recipient's dashboard
-      const displayAmount = linkInfo.amount || 'Claimed';
+      const displayAmount = isSwapping && swapQuote
+        ? `${swapQuote.expectedAmountOut} ${resolveTokenSymbol(swapQuote.assetOut)}`
+        : `${linkInfo.amount || 'Claimed'} ${resolveTokenSymbol(linkInfo.asset || '')}`;
       setClaimedAmount(linkInfo.amount);
       // Save to recipient's storage so they can see their claimed links on dashboard
       saveClaimedLink({
@@ -301,13 +490,11 @@ const parseLinkInput = () => {
         expiresAt: 0,
         claimed: true,
         txHash: hash,
-        counterpartyAddress: linkInfo.creator || undefined,
       });
     } catch (err: any) {
       console.error(err);
       const friendly = getFriendlyErrorMessage(err);
       setErrorMsg(`${friendly.title}: ${friendly.description}`);
-      // Categorize the error kind for different UI styling
       if (friendly.title === 'Funds already claimed' || friendly.title === 'Already claimed') {
         setErrorKind('info');
       } else if (friendly.title === 'Link expired') {
@@ -319,13 +506,16 @@ const parseLinkInput = () => {
     }
   };
 
+  const isSwapping = Boolean(swapQuote && swapQuote.path.length >= 2);
+  const targetSymbol = isSwapping && swapQuote ? resolveTokenSymbol(swapQuote.assetOut) : 'XLM';
+
   const statusText: Record<ClaimStatus, string> = {
-    idle: 'Claim with ZK Proof',
+    idle: isSwapping ? `Claim & Swap to ${targetSymbol}` : 'Claim with ZK Proof',
     connecting: 'Connecting Wallet...',
     generating_proof: 'Generating ZK Proof...',
-    attesting: 'Please Wait…',
-    claiming: 'Claiming Funds...',
-    success: 'Claimed!',
+    attesting: 'Verifying Proof & Attesting...',
+    claiming: isSwapping ? 'Swapping & Claiming Funds...' : 'Claiming Funds...',
+    success: isSwapping ? `Claimed & Swapped to ${targetSymbol}!` : 'Claimed!',
     error: 'Try Again',
   };
 
@@ -334,6 +524,7 @@ const parseLinkInput = () => {
     status === 'generating_proof' ||
     status === 'attesting' ||
     status === 'claiming' ||
+    isQuoting ||
     (Boolean(intendedEmail) && !emailVerified);
 
   return (
@@ -360,11 +551,122 @@ const parseLinkInput = () => {
 
           <h2 className="text-lg font-bold text-grey-800 mobile:text-[26px]">Claim Link</h2>
 
-          {secretHex ? (
+            {/* ── Atomic Swap Output Asset Selector ── */}
+            <div className="p-4 rounded-2xl bg-slate-50 border border-slate-200/80 space-y-3">
+              <div className="flex items-center justify-between text-xs font-bold text-slate-700">
+                <span className="flex items-center gap-1.5">
+                  <Coins className="w-4 h-4 text-indigo-600" />
+                  Receive Token
+                </span>
+                {escrowInfo?.amount && (
+                  <span className="text-slate-500 font-mono font-medium">
+                    Escrow: {escrowInfo.amount} {resolveTokenSymbol(escrowInfo.asset)}
+                  </span>
+                )}
+              </div>
+
+              <div className="grid grid-cols-3 gap-2">
+                {[
+                  { id: 'ORIGINAL', label: 'Original', desc: 'No swap' },
+                  { id: 'USDC', label: 'USDC', desc: 'USD Coin' },
+                  { id: 'EURT', label: 'EURT', desc: 'Euro Tether' },
+                ].map((token) => {
+                  const isSelected = targetAsset === token.id;
+                  return (
+                    <button
+                      key={token.id}
+                      type="button"
+                      onClick={() => setTargetAsset(token.id)}
+                      className={`py-2 px-3 rounded-xl text-xs font-bold transition-all border text-left flex flex-col justify-between ${
+                        isSelected
+                          ? 'bg-indigo-600 text-white border-indigo-600 shadow-[0_2px_8px_rgba(79,70,229,0.25)]'
+                          : 'bg-white text-slate-700 border-slate-200 hover:border-slate-300 hover:bg-slate-50'
+                      }`}
+                    >
+                      <span>{token.label}</span>
+                      <span
+                        className={`text-[10px] font-normal ${
+                          isSelected ? 'text-indigo-100' : 'text-slate-400'
+                        }`}
+                      >
+                        {token.desc}
+                      </span>
+                    </button>
+                  );
+                })}
+              </div>
+
+              {isQuoting && (
+                <div className="flex items-center gap-2 text-xs text-indigo-600 pt-1">
+                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                  Quoting optimal Soroswap route...
+                </div>
+              )}
+
+              {quoteError && (
+                <p className="text-xs text-red-600 font-medium pt-1">{quoteError}</p>
+              )}
+
+              {swapQuote && !isQuoting && (
+                <div className="pt-2 border-t border-slate-200/60 text-xs space-y-1.5 text-slate-600">
+                  <div className="flex justify-between items-center font-bold text-slate-800">
+                    <span className="flex items-center gap-1">
+                      <ArrowRightLeft className="w-3.5 h-3.5 text-indigo-600" />
+                      Estimated Output:
+                    </span>
+                    <span className="text-indigo-600 font-mono">
+                      ≈ {swapQuote.expectedAmountOut} {resolveTokenSymbol(swapQuote.assetOut)}
+                    </span>
+                  </div>
+                  <div className="flex justify-between items-center text-[11px] text-slate-500">
+                    <span>Min. Received (1% slippage):</span>
+                    <span className="font-mono">
+                      {swapQuote.minAmountOut} {resolveTokenSymbol(swapQuote.assetOut)}
+                    </span>
+                  </div>
+                  <div className="flex justify-between items-center text-[10px] text-slate-400">
+                    <span>Route:</span>
+                    <span>
+                      {swapQuote.path.map((addr) => resolveTokenSymbol(addr)).join(' → ')}
+                    </span>
+                  </div>
+                </div>
+              )}
+            </div>
+
+                      {secretHex ? (
             <>
               <p className="mt-1.5 text-sm text-grey-700">
                 A payment has been found! Verify your identity with a ZK proof to claim it.
               </p>
+
+            {intendedEmail && (
+              <div className="space-y-3">
+                <div
+                  className={`p-4 rounded-xl text-sm font-medium border ${
+                    walletEmail &&
+                    walletEmail.toLowerCase().trim() === intendedEmail.toLowerCase().trim()
+                      ? 'bg-green-50 border-green-100 text-green-700'
+                      : 'bg-amber-50 border-amber-100 text-amber-700'
+                  }`}
+                >
+                  <p className="flex items-center gap-2">
+                    <Mail className="w-4 h-4 shrink-0" />
+                    Intended for: <strong>{intendedEmail}</strong>
+                  </p>
+                  {walletEmail &&
+                  walletEmail.toLowerCase().trim() === intendedEmail.toLowerCase().trim() ? (
+                    <p className="text-xs mt-1 text-green-600">✓ Your email matches!</p>
+                  ) : walletEmail ? (
+                    <p className="text-xs mt-1 text-amber-600">
+                      You are logged in as {walletEmail}. Only {intendedEmail} can claim this link.
+                    </p>
+                  ) : (
+                    <p className="text-xs mt-1 text-amber-600">
+                      Log in with {intendedEmail} to claim this link.
+                    </p>
+                  )}
+                </div>
 
               {intendedEmail && (
                 <div className="mt-4 space-y-3">
@@ -544,7 +846,7 @@ const parseLinkInput = () => {
                   <div>
                     <p className="text-xl font-bold text-grey-800">Payment Claimed</p>
                     <p className="mt-1 text-sm text-grey-500">
-                      {claimedAmount ? `${claimedAmount} XLM added to your wallet` : "Funds transferred to your wallet"}
+                      {isSwapping && swapQuote ? `Swapped and transferred ${swapQuote.expectedAmountOut} ${resolveTokenSymbol(swapQuote.assetOut)} to your wallet!` : claimedAmount ? `${claimedAmount} XLM added to your wallet` : "Funds transferred to your wallet"}
                     </p>
                   </div>
                   {txHash && (
@@ -615,9 +917,31 @@ const parseLinkInput = () => {
                 Go Home
               </Link>
             </div>
-          )}
-        </div>
+            <input
+              type="text"
+              value={linkInput}
+              onChange={(e) => setLinkInput(e.target.value)}
+              onKeyDown={(e) => e.key === 'Enter' && parseLinkInput()}
+              placeholder="https://localhost:3000/claim#..."
+              className="w-full p-3.5 rounded-xl border border-slate-200 text-sm font-medium focus:outline-none focus:border-indigo-500 focus:ring-4 focus:ring-indigo-500/10 text-slate-900"
+            />
+            <button
+              onClick={parseLinkInput}
+              disabled={!linkInput.trim()}
+              className="w-full py-3.5 rounded-2xl text-sm font-bold text-white bg-indigo-600 hover:bg-indigo-700 disabled:opacity-40 disabled:cursor-not-allowed transition-all shadow-[0_4px_12px_rgba(79,70,229,0.3)]"
+            >
+              Start Claim
+            </button>
+            <Link
+              href="/"
+              className="text-sm font-bold text-indigo-600 hover:text-indigo-700 block text-center"
+            >
+              Go Home
+            </Link>
+          </div>
+        )}
       </div>
     </div>
   );
 }
+

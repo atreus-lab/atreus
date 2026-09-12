@@ -61,8 +61,8 @@ pnpm --filter atreus-frontend dev    # localhost:3000
 `/claim#<secretHex>` triggers the ZK attestation flow:
 
 1. **`generateClaimProof(secretBytes, recipient)`** — loads the compiled Noir circuit, computes field-domain values, generates an UltraHonk proof
-2. **`requestAttestation(linkHashHex, secretHex, proofHex, recipient)`** — POSTs the proof to the backend attester service
-3. **`claimLinkTx(recipient, linkHash, secretBytes)`** — calls the escrow contract's `claim_link()` which checks the attestation before releasing funds
+2. **`requestAttestation(linkHashHex, proofHex, recipient, linkHashFieldHex, nullifierFieldHex)`** — POSTs the proof to the backend attester service, which returns the attestation tx and the `claimSalt`
+3. **`claimLinkTx(recipient, linkHash, claimSalt)`** — calls the escrow contract's `claim_link()` which checks the attestation before releasing funds
 
 ## Project Structure
 
