@@ -4,9 +4,10 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { loadWallet, getBalances, getTransactions, type StoredWallet } from "@/lib/wallet";
 import { getClaimedLinks } from "@/lib/links";
-import { CheckCircle2, Edit2, ShieldCheck, Lock, Fingerprint, KeyRound, Shield, ChevronRight, Copy, Bell, Palette, Globe, Download, ChevronDown, Trash2 } from "lucide-react";
+import { CheckCircle2, Edit2, ShieldCheck, Lock, Fingerprint, KeyRound, Shield, ChevronRight, Copy, Bell, Palette, Globe, Download, Trash2 } from "lucide-react";
 import AppHeader from "@/components/AppHeader";
 import SearchDialog from "@/components/SearchDialog";
+import PageHeader from "@/components/ui/PageHeader";
 
 export default function ProfilePage() {
   const router = useRouter();
@@ -151,14 +152,15 @@ export default function ProfilePage() {
 
   return (
     <>
-      <AppHeader title="Profile" subtitle="Manage your account and wallet preferences" backHref="/dashboard" onSearchOpen={() => setSearchOpen(true)} />
+      <AppHeader />
       <div className="app-content">
+        <PageHeader title="Profile" subtitle="Manage your account and wallet preferences" backHref="/dashboard" />
         {loading ? (
           <div className="flex-1 flex items-center justify-center p-8">
             <div className="animate-spin w-6 h-6 border-2 border-[var(--accent-primary)] border-t-transparent rounded-full" />
           </div>
         ) : (
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 max-w-[803px] mx-auto w-full">
           {/* Left Column */}
           <div className="flex flex-col gap-6">
             {/* Profile Card */}
@@ -212,7 +214,7 @@ export default function ProfilePage() {
               <h3 className="text-base font-bold text-primary mb-4">Security</h3>
               <div className="flex flex-col gap-1">
                 {SECURITY_ITEMS.map((item, i) => (
-                  <div key={i} className="flex items-center justify-between p-3 rounded-lg hover:bg-[rgba(255,255,255,0.03)] transition-colors cursor-pointer group">
+                  <div key={i} className="flex items-center justify-between p-3 rounded-lg hover:bg-[rgba(0,0,0,0.02)] transition-colors cursor-pointer group">
                     <div className="flex items-center gap-3">
                       <div className="w-8 h-8 rounded-lg flex items-center justify-center shrink-0" style={{ background: `${item.color}15`, color: item.color }}>
                         <item.icon className="w-4 h-4" />
@@ -258,7 +260,7 @@ export default function ProfilePage() {
               <div className="flex flex-col gap-4">
                 <div className="flex flex-col gap-1">
                   <span className="section-label">Wallet Address</span>
-                  <button className="flex items-center gap-2 p-3 rounded-lg bg-elevated border border-[var(--border-default)] cursor-pointer transition-colors hover:bg-[rgba(255,255,255,0.06)]" onClick={() => { navigator.clipboard.writeText(address); setCopied(true); setTimeout(() => setCopied(false), 2000); }}>
+                  <button className="flex items-center gap-2 p-3 rounded-lg bg-elevated border border-[var(--border-default)] cursor-pointer transition-colors hover:bg-[rgba(0,0,0,0.03)]" onClick={() => { navigator.clipboard.writeText(address); setCopied(true); setTimeout(() => setCopied(false), 2000); }}>
                     <span className="font-mono text-sm font-bold text-primary truncate">{address.slice(0, 12)}...{address.slice(-6)}</span>
                     {copied ? <CheckCircle2 className="w-4 h-4 text-success shrink-0" /> : <Copy className="w-4 h-4 text-secondary shrink-0" />}
                   </button>
@@ -283,12 +285,12 @@ export default function ProfilePage() {
               <div className="flex flex-col gap-1">
                 {[
                   { icon: <span className="font-bold text-sm">$</span>, color: 'var(--accent-primary)', title: 'Currency', desc: 'Choose your preferred currency', control: <select value={currency} onChange={e => setCurrency(e.target.value)} className="bg-elevated border border-[var(--border-default)] px-3 py-1.5 rounded-lg text-xs font-bold text-primary outline-none cursor-pointer"><option value="USD">USD ($)</option><option value="EUR">EUR (€)</option><option value="GBP">GBP (£)</option><option value="JPY">JPY (¥)</option><option value="INR">INR (₹)</option></select> },
-                  { icon: <Palette className="w-4 h-4" />, color: '#a855f7', title: 'Theme', desc: 'Choose your preferred theme', control: <span className="text-xs font-bold text-secondary">Dark</span> },
+                  {icon: <Palette className="w-4 h-4" />, color: '#a855f7', title: 'Theme', desc: 'Choose your preferred theme', control: <span className="text-xs font-bold text-secondary">Light</span> },
                   { icon: <Bell className="w-4 h-4" />, color: 'var(--accent-primary)', title: 'Notifications', desc: 'Manage notifications' },
                   { icon: <Globe className="w-4 h-4" />, color: 'var(--accent-primary)', title: 'Language', desc: 'Choose your language', control: <select value={language} onChange={e => setLanguage(e.target.value)} className="bg-elevated border border-[var(--border-default)] px-3 py-1.5 rounded-lg text-xs font-bold text-primary outline-none cursor-pointer"><option value="en">English</option><option value="es">Español</option><option value="fr">Français</option><option value="de">Deutsch</option><option value="hi">हिन्दी</option></select> },
                   { icon: <span className="font-bold text-sm">⊞</span>, color: 'var(--foreground-secondary)', title: 'Default Network', desc: 'Select network', control: <div className="flex items-center gap-2"><div className={`w-2 h-2 rounded-full ${defaultNetwork === 'testnet' ? 'bg-emerald-500' : 'bg-amber-500'}`} /><select value={defaultNetwork} onChange={e => setDefaultNetwork(e.target.value)} className="bg-elevated border border-[var(--border-default)] px-3 py-1.5 rounded-lg text-xs font-bold text-primary outline-none cursor-pointer"><option value="testnet">Testnet</option><option value="mainnet">Mainnet</option></select></div> },
                 ].map((item, i) => (
-                  <div key={i} className="flex items-center justify-between p-3 rounded-lg hover:bg-[rgba(255,255,255,0.03)] transition-colors">
+                  <div key={i} className="flex items-center justify-between p-3 rounded-lg hover:bg-[rgba(0,0,0,0.02)] transition-colors">
                     <div className="flex items-center gap-3">
                       <div className="w-8 h-8 rounded-lg flex items-center justify-center shrink-0" style={{ background: `${item.color}15`, color: item.color }}>{item.icon}</div>
                       <div className="flex flex-col">

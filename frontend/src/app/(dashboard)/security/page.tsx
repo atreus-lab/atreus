@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { loadWallet, type StoredWallet } from "@/lib/wallet";
 import AppHeader from "@/components/AppHeader";
 import SearchDialog from "@/components/SearchDialog";
+import PageHeader from "@/components/ui/PageHeader";
 import Image from "next/image";
 import { 
   Shield, ArrowRight, Laptop, Globe, ShieldAlert, 
@@ -13,7 +14,6 @@ import {
 } from "lucide-react";
 
 import shieldImg from "@/media/shield3.png";
-import progressImg from "@/media/progressbar.png";
 
 export default function SecurityPage() {
   const router = useRouter();
@@ -80,20 +80,21 @@ export default function SecurityPage() {
 
   return (
     <>
-      <AppHeader title="Security" subtitle="Protect your assets and manage wallet security" backHref="/dashboard" onSearchOpen={() => setSearchOpen(true)} />
+      <AppHeader />
       <div className="app-content flex flex-col gap-6">
+        <PageHeader title="Security" subtitle="Protect your assets and manage wallet security" backHref="/dashboard" />
         {loading ? (
           <div className="flex-1 flex items-center justify-center p-8">
             <div className="animate-spin w-6 h-6 border-2 border-[var(--accent-primary)] border-t-transparent rounded-full" />
           </div>
         ) : (
-          <div className="flex flex-col gap-4 max-w-[1200px] w-full mx-auto pb-10">
+          <div className="flex flex-col gap-4 max-w-[803px] w-full mx-auto pb-10">
             
             {/* ROW 1: Security Score + Auth Options */}
             <div className="flex flex-col lg:flex-row gap-4">
               
-              {/* Security Score (Large) */}
-              <div className="panel p-6 flex flex-col relative overflow-hidden flex-[1.4]">
+              {/* Security Score (Large, dark accent card) */}
+              <div className="p-6 flex flex-col relative overflow-hidden flex-[1.4] rounded-xl bg-[#0d1017] border border-[#1c2230]">
                 {/* Background Image right side */}
                 <div className="absolute right-[-15%] top-[-10%] bottom-[-10%] opacity-20 pointer-events-none w-[70%] z-0 flex items-center justify-center">
                   <Image src={shieldImg} alt="Shield background" layout="fill" objectFit="contain" className="object-right" />
@@ -106,20 +107,20 @@ export default function SecurityPage() {
                   </div>
 
                   <div className="flex flex-col">
-                    <div className="bg-[rgba(255,255,255,0.08)] px-2.5 py-0.5 rounded-full inline-flex items-center gap-1 w-max mb-2 border border-[rgba(255,255,255,0.1)]">
+                    <div className="bg-white/10 px-2.5 py-0.5 rounded-full inline-flex items-center gap-1 w-max mb-2 border border-white/15">
                       <span className="text-[11px] font-bold text-white">Excellent</span>
                     </div>
                     <span className="text-[54px] font-extrabold tracking-tighter text-white leading-[1] mb-2">100%</span>
                     <span className="text-[13px] text-white font-medium mb-4">Your wallet is fully protected</span>
                     
                     <ul className="flex flex-col gap-2">
-                      <li className="flex items-center gap-2 text-[12px] text-[#94a3b8]">
+                      <li className="flex items-center gap-2 text-[12px] text-slate-400">
                         <CheckCircle2 className="w-4 h-4 text-white shrink-0" /> No known security issues
                       </li>
-                      <li className="flex items-center gap-2 text-[12px] text-[#94a3b8]">
+                      <li className="flex items-center gap-2 text-[12px] text-slate-400">
                         <CheckCircle2 className="w-4 h-4 text-white shrink-0" /> All protection features active
                       </li>
-                      <li className="flex items-center gap-2 text-[12px] text-[#94a3b8]">
+                      <li className="flex items-center gap-2 text-[12px] text-slate-400">
                         <CheckCircle2 className="w-4 h-4 text-white shrink-0" /> Your recovery phrase is secure
                       </li>
                     </ul>
@@ -139,18 +140,18 @@ export default function SecurityPage() {
                 <div className="panel p-5 flex flex-col justify-between flex-1">
                   <div>
                     <div className="flex items-center gap-2 mb-2">
-                      <Key className="w-4 h-4 text-white" />
-                      <h3 className="text-[13px] font-bold text-white">Recovery Phrase</h3>
+                      <Key className="w-4 h-4 text-secondary" />
+                      <h3 className="text-[13px] font-bold text-primary">Recovery Phrase</h3>
                     </div>
-                    <p className="text-[11px] text-[#94a3b8] mb-4 leading-relaxed">Your recovery phrase is the master key to your wallet.</p>
-                    <div className="flex items-center justify-between bg-[#111] rounded-lg p-3 border border-[#1a1a1a] mb-4">
+                    <p className="text-[11px] text-secondary mb-4 leading-relaxed">Your recovery phrase is the master key to your wallet.</p>
+                    <div className="flex items-center justify-between bg-elevated rounded-lg p-3 border border-[var(--border-default)] mb-4">
                       <div className="flex gap-[3px]">
-                        {[...Array(12)].map((_, i) => <span key={i} className="w-[3px] h-[3px] bg-white rounded-full opacity-60"></span>)}
+                        {[...Array(12)].map((_, i) => <span key={i} className="w-[3px] h-[3px] bg-primary rounded-full opacity-40"></span>)}
                       </div>
-                      <Eye className="w-3.5 h-3.5 text-gray-400" />
+                      <Eye className="w-3.5 h-3.5 text-secondary" />
                     </div>
                   </div>
-                  <button onClick={() => router.push('/wallet')} className="w-full py-2.5 rounded-lg bg-[rgba(255,255,255,0.05)] hover:bg-[rgba(255,255,255,0.08)] border border-[rgba(255,255,255,0.1)] text-white text-[12px] font-bold transition-colors">
+                  <button onClick={() => router.push('/wallet')} className="btn-outline w-full">
                     Manage Phrase
                   </button>
                 </div>
@@ -159,23 +160,23 @@ export default function SecurityPage() {
                 <div className="panel p-5 flex flex-col justify-between flex-1">
                   <div>
                     <div className="flex items-center gap-2 mb-2">
-                      <Fingerprint className="w-4 h-4 text-white" />
-                      <h3 className="text-[13px] font-bold text-white">Passkeys</h3>
+                      <Fingerprint className="w-4 h-4 text-secondary" />
+                      <h3 className="text-[13px] font-bold text-primary">Passkeys</h3>
                     </div>
-                    <p className="text-[11px] text-[#94a3b8] mb-4 leading-relaxed">Use passkeys for secure, passwordless authentication.</p>
-                    <div onClick={() => router.push('/profile')} className="flex items-center justify-between bg-[rgba(255,255,255,0.03)] rounded-lg p-3 border border-[rgba(255,255,255,0.06)] mb-4 cursor-pointer hover:bg-[rgba(255,255,255,0.06)] transition-colors">
+                    <p className="text-[11px] text-secondary mb-4 leading-relaxed">Use passkeys for secure, passwordless authentication.</p>
+                    <div onClick={() => router.push('/profile')} className="flex items-center justify-between bg-elevated rounded-lg p-3 border border-[var(--border-default)] mb-4 cursor-pointer hover:bg-[rgba(0,0,0,0.03)] transition-colors">
                       <div className="flex items-center gap-2">
                         {passkeyRegistered ? (
-                          <CheckCircle2 className="w-3.5 h-3.5 text-green-400" />
+                          <CheckCircle2 className="w-3.5 h-3.5 text-success" />
                         ) : (
-                          <Fingerprint className="w-3.5 h-3.5 text-gray-400" />
+                          <Fingerprint className="w-3.5 h-3.5 text-secondary" />
                         )}
-                        <span className="text-[11px] font-semibold text-white">{passkeyRegistered ? '1 Passkey Active' : 'No passkeys registered'}</span>
+                        <span className="text-[11px] font-semibold text-primary">{passkeyRegistered ? '1 Passkey Active' : 'No passkeys registered'}</span>
                       </div>
-                      <ArrowRight className="w-3.5 h-3.5 text-gray-400" />
+                      <ArrowRight className="w-3.5 h-3.5 text-secondary" />
                     </div>
                   </div>
-                  <button onClick={handleRegisterPasskey} disabled={passkeyLoading} className="w-full py-2.5 rounded-lg bg-[rgba(255,255,255,0.05)] hover:bg-[rgba(255,255,255,0.08)] border border-[rgba(255,255,255,0.1)] text-white text-[12px] font-bold transition-colors disabled:opacity-50 flex items-center justify-center gap-2">
+                  <button onClick={handleRegisterPasskey} disabled={passkeyLoading} className="btn-outline w-full disabled:opacity-50 flex items-center justify-center gap-2">
                     {passkeyLoading ? <><Loader2 className="w-3.5 h-3.5 animate-spin" /> Registering...</> : 'Manage Passkeys'}
                   </button>
                 </div>
@@ -184,16 +185,16 @@ export default function SecurityPage() {
                 <div className="panel p-5 flex flex-col justify-between flex-1">
                   <div>
                     <div className="flex items-center gap-2 mb-2">
-                      <Smartphone className="w-4 h-4 text-white" />
-                      <h3 className="text-[13px] font-bold text-white">Google Authentication</h3>
+                      <Smartphone className="w-4 h-4 text-secondary" />
+                      <h3 className="text-[13px] font-bold text-primary">Google Authentication</h3>
                     </div>
-                    <p className="text-[11px] text-[#94a3b8] mb-4 leading-relaxed">Add an extra layer of security to your account.</p>
-                    <div className="flex items-center gap-2 bg-[rgba(255,255,255,0.03)] rounded-lg p-3 border border-[rgba(255,255,255,0.06)] mb-4">
-                      <CheckCircle2 className="w-3.5 h-3.5 text-white" />
-                      <span className="text-[11px] font-semibold text-white">Enabled</span>
+                    <p className="text-[11px] text-secondary mb-4 leading-relaxed">Add an extra layer of security to your account.</p>
+                    <div className="flex items-center gap-2 bg-elevated rounded-lg p-3 border border-[var(--border-default)] mb-4">
+                      <CheckCircle2 className="w-3.5 h-3.5 text-success" />
+                      <span className="text-[11px] font-semibold text-primary">Enabled</span>
                     </div>
                   </div>
-                  <button onClick={() => router.push('/profile')} className="w-full py-2.5 rounded-lg bg-[rgba(255,255,255,0.05)] hover:bg-[rgba(255,255,255,0.08)] border border-[rgba(255,255,255,0.1)] text-white text-[12px] font-bold transition-colors">
+                  <button onClick={() => router.push('/profile')} className="btn-outline w-full">
                     Manage 2FA
                   </button>
                 </div>
@@ -207,22 +208,22 @@ export default function SecurityPage() {
               <div className="panel p-5 flex flex-col justify-between">
                 <div>
                   <div className="flex items-center gap-2 mb-2">
-                    <Laptop className="w-4 h-4 text-white" />
-                    <h3 className="text-[13px] font-bold text-white">Trusted Devices</h3>
+                    <Laptop className="w-4 h-4 text-secondary" />
+                    <h3 className="text-[13px] font-bold text-primary">Trusted Devices</h3>
                   </div>
-                  <p className="text-[11px] text-[#94a3b8] mb-4 leading-relaxed">Manage devices that have access to your wallet.</p>
-                  <div className="flex items-center justify-between bg-[#111] rounded-lg p-3 border border-[#1a1a1a] mb-4">
+                  <p className="text-[11px] text-secondary mb-4 leading-relaxed">Manage devices that have access to your wallet.</p>
+                  <div className="flex items-center justify-between bg-elevated rounded-lg p-3 border border-[var(--border-default)] mb-4">
                     <div className="flex items-center gap-3">
-                      <Laptop className="w-4 h-4 text-gray-400" />
+                      <Laptop className="w-4 h-4 text-secondary" />
                       <div className="flex flex-col">
-                        <span className="text-[11px] font-semibold text-white">MacBook Pro</span>
-                        <span className="text-[9px] text-gray-500">macOS 14.5 • Chrome • Now</span>
+                        <span className="text-[11px] font-semibold text-primary">MacBook Pro</span>
+                        <span className="text-[9px] text-secondary">macOS 14.5 • Chrome • Now</span>
                       </div>
                     </div>
-                    <span className="text-[9px] font-medium text-gray-400 bg-[#1a1a1a] px-2 py-0.5 rounded">Current</span>
+                    <span className="text-[9px] font-medium text-accent bg-blue-50 px-2 py-0.5 rounded">Current</span>
                   </div>
                 </div>
-                <button onClick={() => router.push('/profile')} className="w-full py-2.5 rounded-lg bg-[rgba(255,255,255,0.03)] hover:bg-[rgba(255,255,255,0.06)] border border-[rgba(255,255,255,0.05)] text-white text-[12px] font-bold transition-colors">
+                <button onClick={() => router.push('/profile')} className="btn-outline w-full">
                   Manage Devices
                 </button>
               </div>
@@ -231,22 +232,22 @@ export default function SecurityPage() {
               <div className="panel p-5 flex flex-col justify-between">
                 <div>
                   <div className="flex items-center gap-2 mb-2">
-                    <Globe className="w-4 h-4 text-white" />
-                    <h3 className="text-[13px] font-bold text-white">Active Sessions</h3>
+                    <Globe className="w-4 h-4 text-secondary" />
+                    <h3 className="text-[13px] font-bold text-primary">Active Sessions</h3>
                   </div>
-                  <p className="text-[11px] text-[#94a3b8] mb-4 leading-relaxed">Monitor and sign out of active sessions.</p>
-                  <div className="flex items-center justify-between bg-[#111] rounded-lg p-3 border border-[#1a1a1a] mb-4">
+                  <p className="text-[11px] text-secondary mb-4 leading-relaxed">Monitor and sign out of active sessions.</p>
+                  <div className="flex items-center justify-between bg-elevated rounded-lg p-3 border border-[var(--border-default)] mb-4">
                     <div className="flex items-center gap-3">
-                      <Globe className="w-4 h-4 text-gray-400" />
+                      <Globe className="w-4 h-4 text-secondary" />
                       <div className="flex flex-col">
-                        <span className="text-[11px] font-semibold text-white">Mumbai, India</span>
-                        <span className="text-[9px] text-gray-500">192.168.1.1 • Now</span>
+                        <span className="text-[11px] font-semibold text-primary">Mumbai, India</span>
+                        <span className="text-[9px] text-secondary">192.168.1.1 • Now</span>
                       </div>
                     </div>
-                    <span className="text-[9px] font-medium text-gray-400 bg-[#1a1a1a] px-2 py-0.5 rounded">Current</span>
+                    <span className="text-[9px] font-medium text-accent bg-blue-50 px-2 py-0.5 rounded">Current</span>
                   </div>
                 </div>
-                <button onClick={() => router.push('/activity')} className="w-full py-2.5 rounded-lg bg-[rgba(255,255,255,0.03)] hover:bg-[rgba(255,255,255,0.06)] border border-[rgba(255,255,255,0.05)] text-white text-[12px] font-bold transition-colors">
+                <button onClick={() => router.push('/activity')} className="btn-outline w-full">
                   View All Sessions
                 </button>
               </div>
@@ -255,15 +256,15 @@ export default function SecurityPage() {
               <div className="panel p-5 flex flex-col">
                 <div className="flex flex-col flex-1">
                   <div className="flex items-center gap-2 mb-2">
-                    <Bell className="w-4 h-4 text-white" />
-                    <h3 className="text-[13px] font-bold text-white">Security Alerts</h3>
+                    <Bell className="w-4 h-4 text-secondary" />
+                    <h3 className="text-[13px] font-bold text-primary">Security Alerts</h3>
                   </div>
-                  <p className="text-[11px] text-[#94a3b8] mb-4 leading-relaxed">Important security notifications and alerts.</p>
-                  <div className="flex items-center gap-3 bg-[rgba(255,255,255,0.02)] rounded-lg p-4 border border-[rgba(255,255,255,0.04)] h-full">
-                    <ShieldAlert className="w-5 h-5 text-gray-500" />
+                  <p className="text-[11px] text-secondary mb-4 leading-relaxed">Important security notifications and alerts.</p>
+                  <div className="flex items-center gap-3 bg-elevated rounded-lg p-4 border border-[var(--border-default)] h-full">
+                    <ShieldAlert className="w-5 h-5 text-secondary" />
                     <div className="flex flex-col">
-                      <span className="text-[11px] font-semibold text-white">No security alerts</span>
-                      <span className="text-[10px] text-gray-500 leading-snug mt-0.5">You're all set! We'll notify you if anything changes.</span>
+                      <span className="text-[11px] font-semibold text-primary">No security alerts</span>
+                      <span className="text-[10px] text-secondary leading-snug mt-0.5">You're all set! We'll notify you if anything changes.</span>
                     </div>
                   </div>
                 </div>
@@ -273,22 +274,22 @@ export default function SecurityPage() {
               <div className="panel p-5 flex flex-col justify-between">
                 <div>
                   <div className="flex items-center gap-2 mb-2">
-                    <CheckCircle2 className="w-4 h-4 text-white" />
-                    <h3 className="text-[13px] font-bold text-white">Transaction Approval</h3>
+                    <CheckCircle2 className="w-4 h-4 text-secondary" />
+                    <h3 className="text-[13px] font-bold text-primary">Transaction Approval</h3>
                   </div>
-                  <p className="text-[11px] text-[#94a3b8] mb-4 leading-relaxed">Configure how transaction approvals are handled.</p>
-                  <div className="flex items-center justify-between bg-[#111] rounded-lg p-3 border border-[#1a1a1a] mb-4 cursor-pointer hover:bg-[#1a1a1a] transition-colors">
+                  <p className="text-[11px] text-secondary mb-4 leading-relaxed">Configure how transaction approvals are handled.</p>
+                  <div className="flex items-center justify-between bg-elevated rounded-lg p-3 border border-[var(--border-default)] mb-4 cursor-pointer hover:bg-[rgba(0,0,0,0.03)] transition-colors">
                     <div className="flex items-center gap-3">
-                      <Lock className="w-4 h-4 text-gray-400" />
+                      <Lock className="w-4 h-4 text-secondary" />
                       <div className="flex flex-col">
-                        <span className="text-[11px] font-semibold text-white">Manual Review</span>
-                        <span className="text-[9px] text-gray-500">Require review for all transactions</span>
+                        <span className="text-[11px] font-semibold text-primary">Manual Review</span>
+                        <span className="text-[9px] text-secondary">Require review for all transactions</span>
                       </div>
                     </div>
-                    <ArrowRight className="w-3.5 h-3.5 text-gray-500" />
+                    <ArrowRight className="w-3.5 h-3.5 text-secondary" />
                   </div>
                 </div>
-                <button onClick={() => router.push('/settings')} className="w-full py-2.5 rounded-lg bg-[rgba(255,255,255,0.03)] hover:bg-[rgba(255,255,255,0.06)] border border-[rgba(255,255,255,0.05)] text-white text-[12px] font-bold transition-colors">
+                <button onClick={() => router.push('/settings')} className="btn-outline w-full">
                   Configure Settings
                 </button>
               </div>
@@ -302,22 +303,22 @@ export default function SecurityPage() {
               <div className="panel p-5 flex flex-col justify-between lg:col-span-3">
                 <div>
                   <div className="flex items-center gap-2 mb-2">
-                    <Eye className="w-4 h-4 text-white" />
-                    <h3 className="text-[13px] font-bold text-white">Privacy Controls</h3>
+                    <Eye className="w-4 h-4 text-secondary" />
+                    <h3 className="text-[13px] font-bold text-primary">Privacy Controls</h3>
                   </div>
-                  <p className="text-[11px] text-[#94a3b8] mb-4 leading-relaxed">Manage your privacy and data visibility.</p>
+                  <p className="text-[11px] text-secondary mb-4 leading-relaxed">Manage your privacy and data visibility.</p>
                 </div>
-                <div onClick={togglePrivacy} className="flex items-center justify-between bg-[#111] rounded-lg p-3 border border-[#1a1a1a] cursor-pointer hover:bg-[#1a1a1a] transition-colors">
+                <div onClick={togglePrivacy} className="flex items-center justify-between bg-elevated rounded-lg p-3 border border-[var(--border-default)] cursor-pointer hover:bg-[rgba(0,0,0,0.03)] transition-colors">
                   <div className="flex items-center gap-3">
-                    <Shield className="w-4 h-4 text-gray-400" />
+                    <Shield className="w-4 h-4 text-secondary" />
                     <div className="flex flex-col">
-                      <span className="text-[11px] font-semibold text-white">Enhanced Privacy</span>
-                      <span className="text-[9px] text-gray-500">Hide balance on lock</span>
+                      <span className="text-[11px] font-semibold text-primary">Enhanced Privacy</span>
+                      <span className="text-[9px] text-secondary">Hide balance on lock</span>
                     </div>
                   </div>
                   <div className="flex items-center gap-2">
-                    <span className="text-[11px] font-medium text-gray-300">{privacyEnabled ? 'On' : 'Off'}</span>
-                    <ArrowRight className="w-3.5 h-3.5 text-gray-500" />
+                    <span className="text-[11px] font-medium text-primary">{privacyEnabled ? 'On' : 'Off'}</span>
+                    <ArrowRight className="w-3.5 h-3.5 text-secondary" />
                   </div>
                 </div>
               </div>
@@ -326,12 +327,12 @@ export default function SecurityPage() {
               <div className="panel p-5 flex flex-col justify-between lg:col-span-3">
                 <div>
                   <div className="flex items-center gap-2 mb-2">
-                    <Lock className="w-4 h-4 text-white" />
-                    <h3 className="text-[13px] font-bold text-white">Emergency Lock</h3>
+                    <Lock className="w-4 h-4 text-secondary" />
+                    <h3 className="text-[13px] font-bold text-primary">Emergency Lock</h3>
                   </div>
-                  <p className="text-[11px] text-[#94a3b8] mb-4 leading-relaxed">Temporarily lock your wallet in case of suspicious activity.</p>
+                  <p className="text-[11px] text-secondary mb-4 leading-relaxed">Temporarily lock your wallet in case of suspicious activity.</p>
                 </div>
-                <button onClick={handleLockWallet} className="w-full py-[14px] rounded-lg bg-[rgba(255,255,255,0.05)] hover:bg-[rgba(255,255,255,0.1)] border border-[rgba(255,255,255,0.15)] text-white text-[12px] font-bold transition-colors flex items-center justify-center gap-2">
+                <button onClick={handleLockWallet} className="btn-outline w-full flex items-center justify-center gap-2">
                   <Lock className="w-3.5 h-3.5" /> {walletLocked ? 'Unlock Wallet' : 'Lock Wallet Now'}
                 </button>
               </div>
@@ -339,57 +340,57 @@ export default function SecurityPage() {
               {/* Security Activity */}
               <div className="panel p-5 flex flex-col justify-between lg:col-span-6">
                 <div className="flex items-center justify-between mb-4">
-                  <h3 className="text-[13px] font-bold text-white">Security Activity</h3>
-                  <button onClick={() => router.push('/activity')} className="text-[11px] text-gray-400 hover:text-white transition-colors flex items-center gap-1">
+                  <h3 className="text-[13px] font-bold text-primary">Security Activity</h3>
+                  <button onClick={() => router.push('/activity')} className="text-[11px] text-secondary hover:text-primary transition-colors flex items-center gap-1">
                     View all <ArrowRight className="w-3 h-3" />
                   </button>
                 </div>
                 
                 <div className="flex flex-col gap-0 relative">
-                  <div className="absolute left-[9px] top-4 bottom-4 w-px bg-[#2a2a2a] z-0"></div>
+                  <div className="absolute left-[9px] top-4 bottom-4 w-px bg-[var(--border-default)] z-0"></div>
                   
                   <div className="flex items-start gap-4 py-1.5 relative z-10">
-                    <div className="w-[19px] h-[19px] rounded-full bg-white flex items-center justify-center shrink-0 outline outline-[4px] outline-[#0a0a0a]">
-                      <CheckCircle2 className="w-3 h-3 text-black" />
+                    <div className="w-[19px] h-[19px] rounded-full bg-white border border-[var(--border-default)] flex items-center justify-center shrink-0 outline outline-[4px] outline-[var(--background-primary)]">
+                      <CheckCircle2 className="w-3 h-3 text-success" />
                     </div>
                     <div className="flex flex-col flex-1 pb-1">
                       <div className="flex items-center justify-between w-full">
-                        <span className="text-[11px] font-semibold text-white">Login Successful</span>
-                        <span className="text-[9px] text-gray-500">Now</span>
+                        <span className="text-[11px] font-semibold text-primary">Login Successful</span>
+                        <span className="text-[9px] text-secondary">Now</span>
                       </div>
-                      <span className="text-[10px] text-gray-500">Mumbai, India • 192.168.1.1</span>
+                      <span className="text-[10px] text-secondary">Mumbai, India • 192.168.1.1</span>
                     </div>
                   </div>
                   
                   <div className="flex items-start gap-4 py-1.5 relative z-10">
-                    <div className="w-[19px] h-[19px] rounded-full bg-[#1a1a1a] flex items-center justify-center shrink-0 border border-[#333] outline outline-[4px] outline-[#0a0a0a]">
-                      <Smartphone className="w-3 h-3 text-gray-400" />
+                    <div className="w-[19px] h-[19px] rounded-full bg-elevated flex items-center justify-center shrink-0 border border-[var(--border-default)] outline outline-[4px] outline-[var(--background-primary)]">
+                      <Smartphone className="w-3 h-3 text-secondary" />
                     </div>
                     <div className="flex flex-col flex-1 pb-1">
                       <div className="flex items-center justify-between w-full">
-                        <span className="text-[11px] font-semibold text-white">2FA Enabled</span>
-                        <span className="text-[9px] text-gray-500">2d ago</span>
+                        <span className="text-[11px] font-semibold text-primary">2FA Enabled</span>
+                        <span className="text-[9px] text-secondary">2d ago</span>
                       </div>
-                      <span className="text-[10px] text-gray-500">Google Authentication enabled</span>
+                      <span className="text-[10px] text-secondary">Google Authentication enabled</span>
                     </div>
                   </div>
                   
                   <div className="flex items-start gap-4 py-1.5 relative z-10">
-                    <div className="w-[19px] h-[19px] rounded-full bg-[#1a1a1a] flex items-center justify-center shrink-0 border border-[#333] outline outline-[4px] outline-[#0a0a0a]">
-                      <Key className="w-3 h-3 text-gray-400" />
+                    <div className="w-[19px] h-[19px] rounded-full bg-elevated flex items-center justify-center shrink-0 border border-[var(--border-default)] outline outline-[4px] outline-[var(--background-primary)]">
+                      <Key className="w-3 h-3 text-secondary" />
                     </div>
                     <div className="flex flex-col flex-1 pb-1">
                       <div className="flex items-center justify-between w-full">
-                        <span className="text-[11px] font-semibold text-white">Passkey Added</span>
-                        <span className="text-[9px] text-gray-500">5d ago</span>
+                        <span className="text-[11px] font-semibold text-primary">Passkey Added</span>
+                        <span className="text-[9px] text-secondary">5d ago</span>
                       </div>
-                      <span className="text-[10px] text-gray-500">New passkey registered</span>
+                      <span className="text-[10px] text-secondary">New passkey registered</span>
                     </div>
                   </div>
                 </div>
 
-                <div className="mt-2 pt-3 border-t border-[rgba(255,255,255,0.05)]">
-                  <button onClick={() => router.push('/activity')} className="flex items-center gap-1.5 text-[11px] font-bold text-gray-400 hover:text-white transition-colors w-max">
+                <div className="mt-2 pt-3 border-t border-[var(--border-default)]">
+                  <button onClick={() => router.push('/activity')} className="flex items-center gap-1.5 text-[11px] font-bold text-secondary hover:text-primary transition-colors w-max">
                     View full security history <ArrowRight className="w-3 h-3" />
                   </button>
                 </div>

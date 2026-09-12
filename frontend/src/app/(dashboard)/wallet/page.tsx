@@ -7,6 +7,7 @@ import { useWallet } from "@/components/providers";
 import WalletSelector from "@/components/WalletSelector";
 import { Copy, Check, Eye, EyeOff, LogOut, Wallet } from "lucide-react";
 import AppHeader from "@/components/AppHeader";
+import PageHeader from "@/components/ui/PageHeader";
 import EmptyState from "@/components/ui/EmptyState";
 import BalanceCard from "@/components/BalanceCard";
 
@@ -50,12 +51,9 @@ export default function WalletPage() {
 
   return (
     <>
-      <AppHeader 
-        title="Wallet" 
-        subtitle={publicKey ? `Manage your connected wallet (${activeWalletType})` : "Connect your wallet"} 
-        backHref="/dashboard" 
-      />
+      <AppHeader />
       <div className="app-content">
+        <PageHeader title="Wallet" subtitle={publicKey ? `Manage your connected wallet (${activeWalletType})` : "Connect your wallet"} backHref="/dashboard" />
         {loading ? (
           <div className="flex-1 flex items-center justify-center p-8">
             <div className="animate-spin w-6 h-6 border-2 border-[var(--accent-primary)] border-t-transparent rounded-full" />
@@ -68,7 +66,7 @@ export default function WalletPage() {
                 title="No Wallet Connected"
                 description="Connect an existing wallet or set up an Atreus local wallet."
                 action={
-                  <Link href="/onboard" className="btn-primary inline-flex items-center justify-center px-6 py-2.5 text-sm font-bold rounded-lg">
+                  <Link href="/onboard" className="btn-soft-blue w-fit">
                     Set Up Wallet
                   </Link>
                 }
@@ -83,20 +81,20 @@ export default function WalletPage() {
             </div>
           </div>
         ) : (
-          <div className="max-w-4xl mx-auto space-y-6">
+          <div className="max-w-[803px] mx-auto space-y-6">
             {/* Balance Panel */}
             <BalanceCard
               balance={balance}
               showBalance={showBalance}
               onToggleBalance={() => setShowBalance(!showBalance)}
-              onClaimClick={() => router.push("/claim")}
-              onCreateLinkClick={() => router.push("/create")}
+              emailName={localWallet?.email ? localWallet.email.split('@')[0] : 'User'}
+              publicKey={publicKey}
             />
 
             {activeWalletType === "local" && localWallet?.email && (
               <div className="flex justify-end -mt-4 px-2">
-                <p className="text-xs font-semibold text-slate-500">
-                  Connected as <span className="text-slate-300 font-bold">{localWallet.email}</span>
+                <p className="text-xs font-semibold text-secondary">
+                  Connected as <span className="text-primary font-bold">{localWallet.email}</span>
                 </p>
               </div>
             )}

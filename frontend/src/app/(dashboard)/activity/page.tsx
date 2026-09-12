@@ -7,6 +7,7 @@ import { getStoredLinks, getClaimedLinks, type StoredLink } from "@/lib/links";
 import { Activity as ActivityIcon, Link2, ArrowDownToLine, ArrowUpRight, ArrowDownLeft, CheckCircle2 } from "lucide-react";
 import AppHeader from "@/components/AppHeader";
 import SearchDialog from "@/components/SearchDialog";
+import PageHeader from "@/components/ui/PageHeader";
 
 interface ActivityItem {
   id: string;
@@ -73,14 +74,15 @@ export default function ActivityPage() {
 
   return (
     <>
-      <AppHeader title="Activity" subtitle="Your complete transaction history" backHref="/dashboard" onSearchOpen={() => setSearchOpen(true)} />
+      <AppHeader />
       <div className="app-content flex flex-col gap-6">
+        <PageHeader title="Activity" subtitle="Your complete transaction history" backHref="/dashboard" />
         {loading ? (
           <div className="flex-1 flex items-center justify-center p-8">
             <div className="animate-spin w-6 h-6 border-2 border-[var(--accent-primary)] border-t-transparent rounded-full" />
           </div>
         ) : (
-          <div className="panel flex flex-col">
+          <div className="panel flex flex-col max-w-[803px] mx-auto w-full">
             <div className="panel-header">
               <h3 className="section-title">All Activity</h3>
               <span className="text-xs font-semibold text-secondary">{activities.length} total</span>

@@ -55,7 +55,7 @@ export default function MobileDrawer({ open, onClose, navItems, emailName, displ
             <nav className="flex-1 min-h-0 overflow-y-auto px-4 flex flex-col gap-1 py-2">
               {navItems.map((item, i) => {
                 const cls = `flex items-center gap-3 px-3 py-2.5 rounded-lg transition-colors text-sm font-medium ${
-                  item.active ? 'bg-elevated text-primary font-semibold' : 'text-secondary hover:text-primary hover:bg-[rgba(255,255,255,0.03)]'
+                  item.active ? 'bg-elevated text-primary font-semibold' : 'text-secondary hover:text-primary hover:bg-[rgba(0,0,0,0.02)]'
                 }`;
                 if (item.href) {
                   return (

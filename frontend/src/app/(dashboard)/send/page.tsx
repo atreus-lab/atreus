@@ -8,8 +8,8 @@ import {
   Send, ArrowUpRight, User, Shield, ShieldCheck,
   CheckCircle2, ExternalLink, Loader2
 } from "lucide-react";
-import Link from "next/link";
 import AppHeader from "@/components/AppHeader";
+import PageHeader from "@/components/ui/PageHeader";
 import SearchDialog from "@/components/SearchDialog";
 
 export default function SendPage() {
@@ -75,9 +75,10 @@ export default function SendPage() {
 
   return (
     <>
-      <AppHeader title="Send XLM" subtitle="Transfer assets securely on the Stellar network" backHref="/dashboard" onSearchOpen={() => setSearchOpen(true)} />
+      <AppHeader />
 
       <div className="app-content flex flex-col gap-6">
+        <PageHeader title="Send XLM" subtitle="Transfer assets securely on the Stellar network" backHref="/dashboard" />
         {!mounted ? (
           <div className="flex-1 flex items-center justify-center p-8">
             <div className="animate-spin w-6 h-6 border-2 border-[var(--accent-primary)] border-t-transparent rounded-full" />
@@ -97,13 +98,13 @@ export default function SendPage() {
               <button onClick={() => router.push("/dashboard")} className="btn btn-lg btn-ghost">
                 Back to Wallet
               </button>
-              <a href={getExplorerUrl("tx", txHash)} target="_blank" rel="noopener noreferrer" className="btn btn-lg bg-[var(--accent-primary)] text-white rounded-lg">
+              <a href={getExplorerUrl("tx", txHash)} target="_blank" rel="noopener noreferrer" className="btn-soft-blue">
                 View Explorer <ExternalLink className="w-4 h-4" />
               </a>
             </div>
           </div>
         ) : (
-          <div className="grid grid-cols-1 lg:grid-cols-5 gap-8">
+          <div className="grid grid-cols-1 lg:grid-cols-5 gap-8 max-w-[803px] mx-auto w-full">
             
             {/* Send Form */}
             <div className="panel flex flex-col lg:col-span-3 p-8">
@@ -157,7 +158,7 @@ export default function SendPage() {
                 <button 
                   onClick={handleSend} 
                   disabled={status === "sending" || !destination || !amount} 
-                  className="btn-primary w-full mt-2 py-3.5 rounded-lg font-bold text-base flex items-center justify-center gap-2"
+                  className="btn-soft-blue w-full mt-2"
                 >
                   {status === "sending" ? (
                     <><Loader2 className="w-5 h-5 animate-spin" /> Processing...</>

@@ -2,25 +2,32 @@
 
 import { useEffect, useState, useCallback, useRef } from "react";
 import { useRouter } from "next/navigation";
+import { Link2, Wand2 } from "lucide-react";
 import { loadWallet, getBalance, getBalances, getTransactions, type StoredWallet } from "@/lib/wallet";
 import { useWallet } from "@/components/providers";
+import { useSidebar } from "@/components/sidebar-context";
 import { getStoredLinks, refreshLinkStatuses, getClaimedLinks, refundLink, refundStoredLink, type StoredLink } from "@/lib/links";
-import { Search, Bell, Menu } from "lucide-react";
 import BalanceCard from "@/components/BalanceCard";
-import PrivacyScoreCard from "@/components/PrivacyScoreCard";
 import AssetsList from "@/components/AssetsList";
 import RecentActivity from "@/components/RecentActivity";
 import PaymentLinks from "@/components/PaymentLinks";
-import QuickActions from "@/components/QuickActions";
 import ClaimLinkModal from "@/components/ClaimLinkModal";
-import NotificationDropdown from "@/components/NotificationDropdown";
 import SearchDialog from "@/components/SearchDialog";
-import { useCreateLink } from "@/components/sidebar-context";
+import AppHeader from "@/components/AppHeader";
+import SwapCard from "@/components/SwapCard";
+import SendCard from "@/components/SendCard";
+import AddFundsCard from "@/components/AddFundsCard";
+import WithdrawCard from "@/components/WithdrawCard";
+import CreateLinkCard from "@/components/CreateLinkCard";
+import ManageAssetsCard from "@/components/ManageAssetsCard";
+import SettingsCard from "@/components/SettingsCard";
+import SecurityCard from "@/components/SecurityCard";
+import ActivityCard from "@/components/ActivityCard";
 
 export default function DashboardPage() {
   const router = useRouter();
-  const { setCreateLinkOpen } = useCreateLink();
-  const { activeWalletType, publicKey, isLoading: walletLoading } = useWallet();
+  const { publicKey, isLoading: walletLoading } = useWallet();
+  const { settingsRequested, clearSettingsRequest, securityRequested, clearSecurityRequest, activityRequested, clearActivityRequest } = useSidebar();
   const [storedWallet, setStoredWallet] = useState<StoredWallet | null>(null);
   const [address, setAddress] = useState("");
   const [balance, setBalance] = useState("0");
@@ -33,12 +40,12 @@ export default function DashboardPage() {
   const [receivedLinks, setReceivedLinks] = useState<StoredLink[]>([]);
   const [copiedLinkId, setCopiedLinkId] = useState("");
   const [showBalance, setShowBalance] = useState(true);
-  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
-  const [notifications, setNotifications] = useState<{ id: string; title: string; description: string; time: number; read: boolean; kind: string }[]>([]);
-  const [showNotifications, setShowNotifications] = useState(false);
+  const [tab, setTab] = useState<"assets" | "links" | "activity">("assets");
+  const [view, setView] = useState<"default" | "swap" | "send" | "addfunds" | "withdraw" | "createlink" | "manageassets" | "settings" | "security" | "activity">("default");
+  const [sendDestination, setSendDestination] = useState("");
   const [searchOpen, setSearchOpen] = useState(false);
   const notifiedRef = useRef<Set<string>>(new Set());
-  const notifRef = useRef<HTMLDivElement>(null);
+  const { pushNotification } = useSidebar();
 
   const loadData = useCallback(async (addr: string) => {
     try {
@@ -101,7 +108,7 @@ export default function DashboardPage() {
       const nid = `link-claimed-${link.secretHex}`;
       if (link.claimed && !notified.has(nid)) {
         notified.add(nid);
-        setNotifications(prev => [{ id: nid, title: "Payment Link Claimed 🎉", description: `${link.amount} XLM has been claimed via your payment link.`, time: Date.now(), read: false, kind: 'link_claimed' }, ...prev].slice(0, 50));
+        pushNotification({ id: nid, title: "Payment Link Claimed 🎉", description: `${link.amount} XLM has been claimed via your payment link.`, time: Date.now(), read: false, kind: 'link_claimed' });
       }
     }
 
@@ -109,7 +116,7 @@ export default function DashboardPage() {
       const nid = `you-claimed-${link.secretHex}`;
       if (!notified.has(nid)) {
         notified.add(nid);
-        setNotifications(prev => [{ id: nid, title: "Link Claimed Successfully ✅", description: `You claimed ${link.amount} XLM via a payment link.`, time: Date.now(), read: false, kind: 'you_claimed' }, ...prev].slice(0, 50));
+        pushNotification({ id: nid, title: "Link Claimed Successfully ✅", description: `You claimed ${link.amount} XLM via a payment link.`, time: Date.now(), read: false, kind: 'you_claimed' });
       }
     }
 
@@ -123,7 +130,7 @@ export default function DashboardPage() {
           const nid = `asset-${code}`;
           if (!notified.has(nid)) {
             notified.add(nid);
-            setNotifications(prev => [{ id: nid, title: `Asset Activated 💎`, description: `${code} has been activated in your wallet.`, time: Date.now(), read: false, kind: 'asset_added' }, ...prev].slice(0, 50));
+            pushNotification({ id: nid, title: `Asset Activated 💎`, description: `${code} has been activated in your wallet.`, time: Date.now(), read: false, kind: 'asset_added' });
           }
         }
       }).catch(() => {});
@@ -131,6 +138,17 @@ export default function DashboardPage() {
 
     if (pk) {
       getTransactions(pk, 10).then(txs => {
+        setTransactions(prev => {
+          const seen = new Set(prev.map(t => t.id));
+          const merged = [...prev];
+          for (const tx of txs) {
+            if (!seen.has(tx.id)) {
+              merged.push(tx);
+              seen.add(tx.id);
+            }
+          }
+          return merged.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()).slice(0, 50);
+        });
         for (const tx of txs) {
           const nid = `tx-${tx.id}`;
           if (!notified.has(nid)) {
@@ -138,7 +156,7 @@ export default function DashboardPage() {
             const isSend = tx.from === pk;
             const amount = parseFloat(tx.amount).toFixed(2);
             const asset = tx.asset_code || 'XLM';
-            setNotifications(prev => [{ id: nid, title: isSend ? `XLM Sent →` : `XLM Received ←`, description: isSend ? `${amount} ${asset} sent to ${tx.to?.slice(0, 8)}...` : `${amount} ${asset} received from ${tx.from?.slice(0, 8)}...`, time: new Date(tx.created_at).getTime(), read: false, kind: isSend ? 'sent' : 'received' }, ...prev].slice(0, 50));
+            pushNotification({ id: nid, title: isSend ? `XLM Sent →` : `XLM Received ←`, description: isSend ? `${amount} ${asset} sent to ${tx.to?.slice(0, 8)}...` : `${amount} ${asset} received from ${tx.from?.slice(0, 8)}...`, time: new Date(tx.created_at).getTime(), read: false, kind: isSend ? 'sent' : 'received' });
           }
         }
         saveNotified();
@@ -161,19 +179,6 @@ export default function DashboardPage() {
     return () => clearInterval(interval);
   }, [address, checkForNotifications]);
 
-  // Close notification dropdown on outside click
-  useEffect(() => {
-    const handleClick = (e: MouseEvent) => {
-      if (!notifRef.current) return;
-      const target = e.target as HTMLElement;
-      if (notifRef.current.contains(target)) return;
-      if (target.closest('[data-bell]')) return;
-      setShowNotifications(false);
-    };
-    document.addEventListener("mousedown", handleClick);
-    return () => document.removeEventListener("mousedown", handleClick);
-  }, []);
-
   // ⌘K keyboard shortcut
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
@@ -186,15 +191,29 @@ export default function DashboardPage() {
     return () => document.removeEventListener("keydown", handler);
   }, []);
 
-  // Body scroll lock for mobile drawer
+  // Settings requested from the profile drawer → open the inline settings view
   useEffect(() => {
-    if (mobileMenuOpen) {
-      document.body.style.overflow = 'hidden';
-    } else {
-      document.body.style.overflow = '';
+    if (settingsRequested) {
+      setView("settings");
+      clearSettingsRequest();
     }
-    return () => { document.body.style.overflow = ''; };
-  }, [mobileMenuOpen]);
+  }, [settingsRequested, clearSettingsRequest]);
+
+  // Security requested from the profile drawer → open the inline security view
+  useEffect(() => {
+    if (securityRequested) {
+      setView("security");
+      clearSecurityRequest();
+    }
+  }, [securityRequested, clearSecurityRequest]);
+
+  // Activity requested from the profile drawer → open the inline activity view
+  useEffect(() => {
+    if (activityRequested) {
+      setView("activity");
+      clearActivityRequest();
+    }
+  }, [activityRequested, clearActivityRequest]);
 
   // Auto-refresh after claim
   useEffect(() => {
@@ -246,73 +265,71 @@ export default function DashboardPage() {
 
   return (
     <>
-      {/* Top Header */}
-      <header className="app-header">
-        <div className="flex flex-col">
-          <h1 className="text-xl sm:text-2xl font-extrabold tracking-tight text-primary">
-            Good afternoon, {emailName} <span className="inline-block">👋</span>
-          </h1>
-          <p className="text-sm font-medium mt-0.5 text-secondary">Here&apos;s what&apos;s happening with your wallet today.</p>
-        </div>
-        <div className="hidden md:flex items-center gap-4">
-          <button onClick={() => setSearchOpen(true)} className="header-search-trigger w-56">
-            <Search className="w-4 h-4 shrink-0" />
-            <span className="truncate flex-1 text-left">Search anything...</span>
-            <div className="flex items-center gap-1 shrink-0">
-              <span className="kbd">⌘</span>
-              <span className="kbd">K</span>
-            </div>
-          </button>
-          <button data-bell onClick={() => setShowNotifications(!showNotifications)} className="btn btn-icon btn-ghost relative" style={{ borderRadius: '9999px', border: '1px solid var(--border-default)' }}>
-            <Bell className="w-[18px] h-[18px] text-secondary" />
-            {notifications.filter(n => !n.read).length > 0 && (
-              <span className="absolute -top-1 -right-1 w-4 h-4 text-[9px] font-bold rounded-full flex items-center justify-center bg-[var(--accent-primary)] text-white">{notifications.filter(n => !n.read).length}</span>
-            )}
-          </button>
-        </div>
-        <div className="flex items-center gap-2 lg:hidden">
-          <button data-bell onClick={() => setShowNotifications(!showNotifications)} className="btn btn-icon btn-ghost relative" style={{ borderRadius: '9999px', border: '1px solid var(--border-default)' }}>
-            <Bell className="w-[18px] h-[18px] text-secondary" />
-            {notifications.filter(n => !n.read).length > 0 && (
-              <span className="absolute -top-1 -right-1 w-4 h-4 text-[9px] font-bold rounded-full flex items-center justify-center bg-[var(--accent-primary)] text-white">{notifications.filter(n => !n.read).length}</span>
-            )}
-          </button>
-          <button onClick={() => setMobileMenuOpen(true)} className="btn btn-icon btn-ghost" style={{ borderRadius: '9999px', border: '1px solid var(--border-default)' }}>
-            <Menu className="w-[18px] h-[18px] text-secondary" />
-          </button>
-        </div>
-
-        <NotificationDropdown
-          notifications={notifications}
-          show={showNotifications}
-          onClose={() => setShowNotifications(false)}
-          onMarkAllRead={() => setNotifications(prev => prev.map(n => ({ ...n, read: true })))}
-          onDelete={(id) => setNotifications(prev => prev.filter(n => n.id !== id))}
-          onDeleteAll={() => setNotifications([])}
-          notifRef={notifRef}
-        />
-      </header>
+      <AppHeader />
 
       {loading ? (
         <div className="flex-1 flex items-center justify-center p-8">
           <div className="animate-spin w-6 h-6 border-2 border-[var(--accent-primary)] border-t-transparent rounded-full" />
         </div>
       ) : (
-        <div className="app-content">
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-            {/* Left Column (spans 2) */}
-            <div className="lg:col-span-2 flex flex-col gap-6">
-              <BalanceCard balance={balance} showBalance={showBalance} onToggleBalance={() => setShowBalance(!showBalance)} onClaimClick={() => setShowClaimModal(true)} onCreateLinkClick={() => setCreateLinkOpen(true)} />
-              <AssetsList balances={balances} />
-              <PaymentLinks storedLinks={storedLinks} receivedLinks={receivedLinks} copiedLinkId={copiedLinkId} onCopyLink={copyLink} onRefund={handleRefund} />
-            </div>
+        <div className="app-content flex justify-center">
+          <div className="w-full max-w-[803px] flex flex-col gap-6 pb-20">
+            <BalanceCard balance={balance} showBalance={showBalance} onToggleBalance={() => setShowBalance(!showBalance)} emailName={emailName} publicKey={publicKey} balances={balances} hideHero={view !== "default"} onSwap={() => setView("swap")} onSend={() => setView("send")} onAddFunds={() => setView("addfunds")} onWithdraw={() => setView("withdraw")}>
+              {view === "swap" && publicKey ? (
+                <SwapCard publicKey={publicKey} balances={balances} showBack onBack={() => setView("default")} />
+              ) : view === "send" && publicKey ? (
+                <SendCard publicKey={publicKey} initialDestination={sendDestination} onBack={() => { setView("default"); setSendDestination(""); }} onSent={() => { loadData(address); }} />
+              ) : view === "addfunds" && publicKey ? (
+                <AddFundsCard publicKey={publicKey} onBack={() => setView("default")} />
+              ) : view === "withdraw" && publicKey ? (
+                <WithdrawCard publicKey={publicKey} onBack={() => setView("default")} onSent={() => { loadData(address); }} />
+              ) : view === "createlink" && publicKey ? (
+                <CreateLinkCard publicKey={publicKey} onBack={() => { setView("default"); setTab("links"); }} onCreated={() => { setStoredLinks(getStoredLinks()); }} />
+              ) : view === "manageassets" && publicKey ? (
+                <ManageAssetsCard publicKey={publicKey} onBack={() => { setView("default"); setTab("assets"); }} onChanged={() => { loadData(address); }} />
+              ) : view === "settings" && publicKey ? (
+                <SettingsCard publicKey={publicKey} onBack={() => { setView("default"); }} onSendTo={(addr) => { setSendDestination(addr); setView("send"); }} />
+              ) : view === "security" && publicKey ? (
+                <SecurityCard publicKey={publicKey} onBack={() => { setView("default"); }} />
+              ) : view === "activity" && publicKey ? (
+                <ActivityCard address={address} storedLinks={storedLinks} receivedLinks={receivedLinks} onBack={() => { setView("default"); }} />
+              ) : (
+                <>
+                  <div className="tabs">
+                    <button className="tab" data-active={tab === "assets"} onClick={() => setTab("assets")}>Assets</button>
+                    <button className="tab" data-active={tab === "links"} onClick={() => setTab("links")}>Payment Links</button>
+                    <button className="tab" data-active={tab === "activity"} onClick={() => setTab("activity")}>Activity</button>
+                  </div>
 
-            {/* Right Column (spans 1) */}
-            <div className="flex flex-col gap-6">
-              <PrivacyScoreCard />
-              <RecentActivity storedLinks={storedLinks} receivedLinks={receivedLinks} transactions={transactions} address={address} />
-              <QuickActions onClaimClick={() => setShowClaimModal(true)} onCreateLinkClick={() => setCreateLinkOpen(true)} />
-            </div>
+                  <div className="pt-5">
+                    {tab === "assets" && <AssetsList balances={balances} onManageAssets={() => setView("manageassets")} onChanged={() => { loadData(address); }} />}
+
+                    {tab === "links" && (
+                      <div className="flex flex-col gap-6">
+                        <div className="flex items-center justify-between gap-3">
+                          <h3 className="text-base font-bold text-grey-800">Payment Links</h3>
+                          <div className="flex items-center gap-2">
+                            <button onClick={() => setView("createlink")} className="flex h-11 items-center gap-2 rounded-lg bg-blue-50 px-4 text-sm font-semibold text-blue-600 transition-colors hover:bg-blue-100 active:bg-blue-200">
+                              <Link2 className="h-4 w-4" />
+                              Create Link
+                            </button>
+                            <button onClick={() => setShowClaimModal(true)} className="flex h-11 items-center gap-2 rounded-lg bg-primaryBlue px-4 text-sm font-bold text-white transition-colors hover:bg-blue-600 active:bg-blue-700">
+                              <Wand2 className="h-4 w-4" />
+                              Claim
+                            </button>
+                          </div>
+                        </div>
+                        <PaymentLinks storedLinks={storedLinks} receivedLinks={receivedLinks} copiedLinkId={copiedLinkId} onCopyLink={copyLink} onRefund={handleRefund} />
+                      </div>
+                    )}
+
+                    {tab === "activity" && (
+                      <RecentActivity storedLinks={storedLinks} receivedLinks={receivedLinks} transactions={transactions} address={address} onViewAll={() => setView("activity")} />
+                    )}
+                  </div>
+                </>
+              )}
+            </BalanceCard>
           </div>
         </div>
       )}

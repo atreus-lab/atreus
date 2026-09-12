@@ -1,17 +1,17 @@
 "use client";
 
 import { memo } from "react";
-import Link from "next/link";
-import { Activity, Link2, CheckCircle2, ArrowDownToLine, ArrowUpRight, ArrowDownLeft } from "lucide-react";
+import { Link2, CircleCheckBig, ArrowDownToLine, ArrowUpRight, ArrowDownLeft, ArrowRight } from "lucide-react";
 
 interface RecentActivityProps {
   storedLinks: any[];
   receivedLinks: any[];
   transactions: any[];
   address: string;
+  onViewAll?: () => void;
 }
 
-const RecentActivity = memo(function RecentActivity({ storedLinks, receivedLinks, transactions, address }: RecentActivityProps) {
+const RecentActivity = memo(function RecentActivity({ storedLinks, receivedLinks, transactions, address, onViewAll }: RecentActivityProps) {
   interface ActivityItem {
     id: string;
     type: 'link_created' | 'link_claimed_by_other' | 'claimed_by_you' | 'sent' | 'received';
@@ -65,66 +65,55 @@ const RecentActivity = memo(function RecentActivity({ storedLinks, receivedLinks
   const sorted = activities.sort((a, b) => b.timestamp - a.timestamp).slice(0, 7);
 
   const activityColors: Record<string, string> = {
-    link_created: '#a855f7',
-    link_claimed_by_other: '#22c55e',
-    claimed_by_you: '#3b82f6',
-    sent: '#f97316',
-    received: '#22c55e',
+    link_created: '#f59e0b',
+    link_claimed_by_other: '#16a34a',
+    claimed_by_you: '#007cbf',
+    sent: '#ef4444',
+    received: '#16a34a',
   };
   const activityIcons: Record<string, any> = {
     link_created: Link2,
-    link_claimed_by_other: CheckCircle2,
+    link_claimed_by_other: CircleCheckBig,
     claimed_by_you: ArrowDownToLine,
     sent: ArrowUpRight,
     received: ArrowDownLeft,
   };
 
   return (
-    <div className="panel flex flex-col">
-      <div className="panel-header">
-        <h3 className="section-title">Recent Activity</h3>
-        <Link href="/activity" className="text-sm font-bold text-accent">View all</Link>
+    <div className="flex flex-col">
+      <div className="mb-2 flex items-center justify-between">
+        <h3 className="text-base font-bold text-grey-800">Recent Activity</h3>
+        {onViewAll ? (
+          <button onClick={onViewAll} className="flex items-center gap-1 text-xs font-semibold text-grey-500 transition-colors hover:text-grey-800">View all <ArrowRight className="h-3 w-3" /></button>
+        ) : (
+          <span className="text-xs font-semibold text-grey-400">{activities.length} total</span>
+        )}
       </div>
 
-      <div className="panel-body">
-        <div className="timeline">
-          <div className="timeline-line" />
-
-          {sorted.length === 0 ? (
-            <div className="activity-item">
-              <div className="activity-dot" style={{ background: 'var(--foreground-secondary)' }} />
-              <div className="activity-content">
-                <span className="font-bold text-sm text-primary">No recent activity</span>
-                <span className="text-xs text-secondary">Your activity will appear here.</span>
+      {sorted.length === 0 ? (
+        <div className="py-4 text-center text-xs text-grey-400">No recent activity</div>
+      ) : (
+        <div className="flex flex-col">
+          {sorted.map((item) => {
+            const IconComponent = activityIcons[item.type] || Link2;
+            const color = activityColors[item.type] || '#8095a0';
+            return (
+              <div key={item.id} className="flex items-center gap-3 border-b border-grey-100 py-3 last:border-b-0">
+                <IconComponent className="h-4 w-4 shrink-0" style={{ color }} />
+                <div className="flex min-w-0 flex-1 flex-col">
+                  <span className="truncate text-sm font-medium text-grey-800">{item.description}</span>
+                  <span className="text-xs text-grey-400">
+                    {new Date(item.timestamp).toLocaleDateString([], { month: 'short', day: 'numeric' })}
+                  </span>
+                </div>
+                <span className="shrink-0 text-sm font-medium tabular-nums" style={{ color }}>
+                  {item.amount}
+                </span>
               </div>
-            </div>
-          ) : (
-            <div className="stagger-children">
-              {sorted.map((item) => {
-                const IconComponent = activityIcons[item.type] || Activity;
-                const dotColor = activityColors[item.type] || 'var(--foreground-secondary)';
-                return (
-                  <div key={item.id} className="activity-item">
-                    <div className="activity-dot" style={{ background: dotColor }} />
-                    <div className="activity-content">
-                      <div className="flex items-center justify-between">
-                        <span className="font-bold text-sm text-primary">{item.description}</span>
-                        <span className="activity-time">
-                          {new Date(item.timestamp).toLocaleDateString([], { month: 'short', day: 'numeric' })}
-                        </span>
-                      </div>
-                      <div className="flex items-center gap-2 mt-1">
-                        <IconComponent className="w-3 h-3" style={{ color: dotColor }} />
-                        <span className="text-xs font-medium text-secondary">{item.amount}</span>
-                      </div>
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          )}
+            );
+          })}
         </div>
-      </div>
+      )}
     </div>
   );
 });

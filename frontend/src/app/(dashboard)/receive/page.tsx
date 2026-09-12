@@ -6,6 +6,7 @@ import QRCode from "react-qr-code";
 import { loadWallet, type StoredWallet } from "@/lib/wallet";
 import { ArrowDownLeft, Copy, CheckCircle2, ShieldCheck } from "lucide-react";
 import AppHeader from "@/components/AppHeader";
+import PageHeader from "@/components/ui/PageHeader";
 import SearchDialog from "@/components/SearchDialog";
 
 export default function ReceivePage() {
@@ -40,15 +41,15 @@ export default function ReceivePage() {
 
   return (
     <>
-      <AppHeader title="Receive Assets" subtitle="Scan the QR code or share your public address" backHref="/dashboard" onSearchOpen={() => setSearchOpen(true)} />
-
+      <AppHeader />
       <div className="app-content flex flex-col gap-6">
+        <PageHeader title="Receive Assets" subtitle="Scan the QR code or share your public address" backHref="/dashboard" />
         {!mounted ? (
           <div className="flex-1 flex items-center justify-center p-8">
             <div className="animate-spin w-6 h-6 border-2 border-[var(--accent-primary)] border-t-transparent rounded-full" />
           </div>
         ) : (
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 items-start">
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 items-start max-w-[803px] mx-auto w-full">
           
           {/* QR Code Card */}
           <div className="panel flex flex-col items-center text-center p-8">
@@ -81,7 +82,7 @@ export default function ReceivePage() {
 
               <button 
                 onClick={copyToClipboard}
-                className={`btn-primary w-full py-3 rounded-lg font-bold text-sm flex items-center justify-center gap-2 ${copied ? 'bg-emerald-600' : ''}`}
+                className="btn-soft-blue w-full"
               >
                 {copied ? (
                   <><CheckCircle2 className="w-4 h-4" /> Copied!</>

@@ -193,7 +193,7 @@ export async function readLinkInfo(linkHashHex: string): Promise<{ claimed: bool
     return result;
   } catch (err: any) {
     if (err?.status === 404 || err?.code === 404 || err?.message?.includes("not found")) return result;
-    console.warn("Could not read link info from chain:", err?.message || err);
+    console.error("Failed to read link info:", err?.message || err?.data || err);
     return result;
   }
 }

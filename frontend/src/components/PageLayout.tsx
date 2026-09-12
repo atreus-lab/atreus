@@ -9,7 +9,7 @@ interface Props {
   maxWidth?: string;
 }
 
-export function PageLayout({ children, title, backHref, backLabel = "Back", maxWidth = "max-w-md" }: Props) {
+export function PageLayout({ children, title, backHref, backLabel = "Back", maxWidth = "max-w-[803px]" }: Props) {
   return (
     <div className="min-h-screen flex flex-col p-6" style={{ background: "var(--background-primary)" }}>
       <div className={`w-full mx-auto ${maxWidth} space-y-6`}>

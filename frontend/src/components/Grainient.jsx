@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Renderer, Program, Mesh, Triangle } from 'ogl';
 import './Grainient.css';
 
@@ -127,20 +127,33 @@ const Grainient = ({
   className = ''
 }) => {
   const containerRef = useRef(null);
+  const [failed, setFailed] = useState(false);
 
   useEffect(() => {
     const container = containerRef.current;
     if (!container) return;
 
-    const renderer = new Renderer({
-      webgl: 2,
-      alpha: true,
-      antialias: false,
-      dpr: Math.min(window.devicePixelRatio || 1, 2)
-    });
+    let renderer = null;
+    let ro = null;
+    let io = null;
+    let raf = 0;
+    let canvas = null;
+
+    try {
+      renderer = new Renderer({
+        webgl: 2,
+        alpha: true,
+        antialias: false,
+        dpr: Math.min(window.devicePixelRatio || 1, 2)
+      });
+    } catch (err) {
+      console.warn('WebGL unavailable, using static fallback:', err);
+      setFailed(true);
+      return;
+    }
 
     const gl = renderer.gl;
-    const canvas = gl.canvas;
+    canvas = gl.canvas;
     canvas.style.width = '100%';
     canvas.style.height = '100%';
     canvas.style.display = 'block';
@@ -191,11 +204,10 @@ const Grainient = ({
       renderer.render({ scene: mesh });
     };
 
-    const ro = new ResizeObserver(setSize);
+    ro = new ResizeObserver(setSize);
     ro.observe(container);
     setSize();
 
-    let raf = 0;
     let isVisible = true;
     let isPageVisible = !document.hidden;
     const t0 = performance.now();
@@ -213,7 +225,7 @@ const Grainient = ({
       if (raf !== 0) { cancelAnimationFrame(raf); raf = 0; }
     };
 
-    const io = new IntersectionObserver(
+    io = new IntersectionObserver(
       ([entry]) => { isVisible = entry.isIntersecting; isVisible ? tryStart() : tryStop(); },
       { threshold: 0 }
     );
@@ -229,11 +241,14 @@ const Grainient = ({
 
     return () => {
       tryStop();
-      ro.disconnect();
-      io.disconnect();
+      ro?.disconnect();
+      io?.disconnect();
       document.removeEventListener('visibilitychange', onVisibility);
       ctxMap.delete(container);
       try { container.removeChild(canvas); } catch { /* ignore */ }
+      try {
+        renderer.gl.getExtension('WEBGL_lose_context')?.loseContext();
+      } catch { /* ignore */ }
     };
   }, []);
 
@@ -272,6 +287,15 @@ const Grainient = ({
     grainAmount, grainScale, grainAnimated, contrast, gamma, saturation,
     centerX, centerY, zoom, color1, color2, color3
   ]);
+
+  if (failed) {
+    return (
+      <div
+        className={`grainient-container grainient-fallback ${className}`.trim()}
+        style={{ '--g1': color1, '--g2': color2, '--g3': color3 }}
+      />
+    );
+  }
 
   return <div ref={containerRef} className={`grainient-container ${className}`.trim()} />;
 };
