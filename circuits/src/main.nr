@@ -1,19 +1,19 @@
 mod policies;
 
 fn main(
-    secret: Field,
-    recipient: pub Field,
-    link_hash: pub Field,
-    nullifier: pub Field,
+    policy_type: pub Field,
+    balance: Field,
+    salt: Field,
+    threshold: pub Field,
+    address_commitment: pub Field,
 ) {
-    policies::secret::verify(secret, recipient, link_hash, nullifier);
-}
-
-#[test]
-fn test_main_happy_path() {
-    let s = 42;
-    let r = 123;
-    let h = std::hash::pedersen_hash([s]);
-    let n = std::hash::pedersen_hash([s, r]);
-    main(s, r, h, n);
+    match policy_type {
+        2 => {
+            policies::balance_threshold::main(balance, salt, threshold, address_commitment);
+        }
+        _ => {
+            // Existing policies 0/1 would be dispatched here
+            assert(false);
+        }
+    }
 }
