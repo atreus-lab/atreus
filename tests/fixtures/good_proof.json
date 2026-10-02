@@ -1,0 +1,6 @@
+{
+  "recipient": "0x1234567890abcdef1234567890abcdef12345678",
+  "link_hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "nullifier": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+  "proof": "good_proof_base64_placeholder_for_fixture"
+}
