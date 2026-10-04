@@ -1,16 +1,18 @@
 [workspace]
-resolver = "2"
-
 members = [
     "atreus-contract",
     "verifier-contract",
 ]
+resolver = "2"
+
+[workspace.dependencies]
+soroban-sdk = "26.1.0"
+
+[workspace.lints.rust]
+unused_variables = "allow"
 
 [profile.release]
-opt-level = "z"
-overflow-checks = true
+opt-level = 3
 debug = false
 panic = "abort"
 lto = true
-codegen-units = 1
-strip = true
